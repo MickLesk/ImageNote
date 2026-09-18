@@ -21,6 +21,9 @@ export const CHECKLIST_STORAGE_PREFIX = "imagenote:checks:";
 export const ASPECT_RATIOS = ["16:9", "4:3", "3:2", "1:1", "3:4", "9:16", "auto"];
 
 export const NOTE_ENTITY_DOMAINS = ["input_text", "text"];
+/** Entities whose state is a picture URL or media id, so the card can write a new photo into them. */
+export const IMAGE_URL_ENTITY_DOMAINS = ["input_text", "text"];
+export const MAX_MARKERS = 20;
 
 export const MEDIA_SOURCE_PREFIX = "media-source://";
 /** How long a signed media-source URL is requested for, in seconds (24 h). */
@@ -56,6 +59,11 @@ export const DEFAULTS: Omit<NormalizedConfig, "type" | "entries" | "slides"> = {
   expired_slides: "dim",
   checklist: true,
   checklist_writeback: true,
+  upload_target: "image",
+  upload_folder: "imagenote",
+  upload_max_size: 1920,
+  ken_burns: false,
+  show_camera: true,
   tap_action: FLIP_ACTION,
   hold_action: NONE_ACTION,
   double_tap_action: NONE_ACTION,

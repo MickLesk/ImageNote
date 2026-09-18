@@ -38,6 +38,13 @@ message for the wall panel.
 - **Up to ten pictures and notes per card, in any order** — picture, note,
   note, picture … Tap, swipe, arrows, dots, arrow keys or a timer move on to
   the next one. Or show them side by side as tiles that flip independently.
+- **Markers on the picture** — numbered pins or icons with a label
+  ("here is the stopcock"), optionally showing an entity's state and opening
+  its more-info dialog. Placed by clicking in the editor.
+- **A camera button on the card** — when a picture comes from an
+  `input_text` entity, a tap on the camera takes or picks a new photo, uploads
+  it and stores its address in the entity. No editor needed.
+- **Ken Burns** — a slow zoom and pan on pictures for wall panels.
 - **Five transitions** — `flip` (3D, default), `fade`, `slide`, `cube`, `none`;
   horizontal or vertical. Respects `prefers-reduced-motion`.
 - **Fits every layout** — fixed aspect ratios or the picture's natural size,
@@ -157,7 +164,11 @@ direction: vertical
 | `slides` | – | Pictures and notes in order, at most ten. Each entry is an object with `image` or `image_entity` (a picture), `note`, `note_entity` or `note_attribute` (a note), an optional `title`, or just a URL string. An entry with both picture and note becomes two slides. When set, the top-level picture and note fields are ignored. An entry without `title` uses the card title. `images` is accepted as an older name. |
 | `layout` | `stack` | How several entries are shown: `stack` (one after another) or `grid` (tiles side by side, each turning between its own picture and note). |
 | `columns` | `0` | With `layout: grid`: tiles per row. `0` fits as many as the width allows (about 150 px each). |
-| `image_entity` | – | Use the picture of an `image`, `camera` or `person` entity instead of `image`. |
+| `image_entity` | – | Use the picture of an `image`, `camera` or `person` entity, or an `input_text` / `text` entity whose state is a picture address (URL or `media-source://` id). |
+| `markers` | – | Per picture: a list of `{ x, y, label, icon, entity }` pins. `x` and `y` are percent of the picture. See [Markers](#markers). |
+| `ken_burns` | `false` | Slow zoom and pan on pictures. Off under "reduce motion". |
+| `show_camera` | `true` | Camera button on pictures from an `input_text` / `text` entity. |
+| `upload_max_size` | `1920` | Longest edge in pixels that uploaded and captured pictures are scaled down to. `0` keeps originals. |
 | `image_fit` | `cover` | `cover` fills the card and crops, `contain` shows the whole picture. |
 | `aspect_ratio` | `16:9` | `16:9`, `4:3`, `1:1`, `9:16`, any `w:h`, or `auto` for the picture's natural size. |
 | `note` | – | The note text. Markdown is rendered. Ignored when `note_entity` is set. |
@@ -184,6 +195,49 @@ direction: vertical
 | `tap_action` | `flip` | Action for a tap. See [Actions](#actions). |
 | `hold_action` | `none` | Action for a long press. |
 | `double_tap_action` | `none` | Action for a double tap. |
+
+## Markers
+
+Pins on a picture point at things and say what they are:
+
+```yaml
+type: custom:imagenote-card
+title: Boiler room
+image: /local/pictures/boiler.jpg
+markers:
+  - x: 30
+    y: 45
+    label: Stopcock
+    icon: mdi:water-off
+  - x: 72
+    y: 30
+    label: Pressure
+    entity: sensor.boiler_pressure
+  - x: 85
+    y: 85
+    entity: sensor.boiler_temp
+```
+
+A pin shows a number or its `icon`. A tap opens its label; with `entity` the
+label also shows the state and a tap on the label opens the more-info dialog.
+In the editor, click on the preview to add a pin, select a pin and click again
+to move it, and fill in label, icon and entity in the list below.
+
+## Taking photos on the card
+
+Point `image_entity` at an `input_text` (or `text`) entity. The card shows
+that entity's state as the picture address and adds a camera button. On a
+phone the button opens the camera, elsewhere a file picker; the picture is
+scaled down (`upload_max_size`), uploaded to the chosen `upload_target` and
+its address is written into the entity with `set_value`. Automations can do
+the same: any URL, `/local/` path or `media-source://` id works as a state.
+
+```yaml
+type: custom:imagenote-card
+title: Damage report
+image_entity: input_text.damage_photo
+note_entity: input_text.damage_note
+```
 
 ## Notes
 

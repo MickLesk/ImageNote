@@ -35,6 +35,13 @@ All notable changes to ImageNote are documented here. The format follows
 - `expires` per entry with "Until …" in the footer; expired pages are dimmed
   and tagged or hidden (`expired_slides`).
 - `color` per note page and a `sticky` note style.
+- Markers: numbered or icon pins on a picture with a label, optionally an
+  entity state and more-info. Placed by clicking in the editor.
+- Camera button on pictures from an `input_text` / `text` entity: takes or
+  picks a photo, uploads it and writes the address into the entity.
+- `ken_burns` slow zoom on pictures.
+- Uploaded and captured pictures are scaled down to `upload_max_size`
+  (1920 px by default) before upload.
 - Upload target per card: Home Assistant's image store or a folder in
   `/media`.
 - Pictures can be reordered in the editor.

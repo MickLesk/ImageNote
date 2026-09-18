@@ -88,6 +88,8 @@
       "mdi:arrow-left": "M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z",
       "mdi:arrow-right": "M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z",
       "mdi:image-text": "M22 13h-8v-2h8v2m0-6h-8v2h8V7m-8 10h8v-2h-8v2m-2-8v6c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V9c0-1.1.9-2 2-2h6c1.1 0 2 .9 2 2m-1.5 6-2.25-3-1.75 2.26-1.25-1.51L3.5 15h7Z",
+      "mdi:camera-plus-outline": "M20 5h-3.17L15 3H9L7.17 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9.09A5.5 5.5 0 0 1 13 20a5.47 5.47 0 0 1 .6-2.5H4V7h4.05l1.83-2h4.24l1.83 2H20v5.09c.71.11 1.39.33 2 .64V7a2 2 0 0 0-2-2M12 9a3.5 3.5 0 0 1 3.5 3.5c0 .28-.04.55-.1.81a5.5 5.5 0 0 0-3.4 1.43v.01A3.5 3.5 0 0 1 12 9m6 6h2v3h3v2h-3v3h-2v-3h-3v-2h3v-3Z",
+      "mdi:water-off": "M12 3.25S6 10 6 14c0 .77.15 1.5.43 2.19l8.24 8.24C13.86 24.79 12.94 25 12 25M20 20.72 3.27 4 2 5.27l4.71 4.71C6.23 10.87 6 12.4 6 14a6 6 0 0 0 6 6c1.03 0 2-.26 2.86-.72l3.87 3.87L20 21.86Z",
       "mdi:plus": "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z",
       "mdi:delete-outline": "M9 3v1H4v2h1v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6h1V4h-5V3H9m0 5h2v9H9V8m4 0h2v9h-2V8Z",
       "mdi:close": "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z",
@@ -136,6 +138,8 @@
     // ---- Fake hass --------------------------------------------------------------
     const states = {
       "sensor.boiler_temp": { entity_id: "sensor.boiler_temp", state: "54.5", attributes: { unit_of_measurement: "°C", friendly_name: "Boiler" } },
+      "input_text.door_photo": { entity_id: "input_text.door_photo", state: "./sample-3.svg", attributes: { max: 255, friendly_name: "Door photo" } },
+      "sensor.pressure": { entity_id: "sensor.pressure", state: "1.6", attributes: { unit_of_measurement: "bar", friendly_name: "Boiler pressure" } },
       "input_text.shopping": { entity_id: "input_text.shopping", state: "- [x] Milk\n- [ ] Bread\n- [ ] Coffee beans", attributes: { max: 255, friendly_name: "Shopping" }, last_changed: new Date(Date.now() - 3 * 3600000).toISOString() },
       "input_text.fridge_note": { entity_id: "input_text.fridge_note", state: "Milk is running low – buy 2 litres on Friday.", attributes: { max: 255, friendly_name: "Fridge note" }, last_changed: new Date(Date.now() - 7 * 60000).toISOString() },
     };
@@ -164,6 +168,12 @@
           templateSubs.add(() => callback({ result: render() }));
           return async () => {};
         },
+      },
+      async fetchWithAuth(path, init) {
+        await new Promise((r) => setTimeout(r, 200));
+        window.__uploads = (window.__uploads ?? 0) + 1;
+        if (path === "/api/image/upload") return new Response(JSON.stringify({ id: "demo123" }), { status: 200 });
+        return new Response(JSON.stringify({ media_content_id: "media-source://media_source/local/imagenote/demo.jpg" }), { status: 200 });
       },
       async callWS(msg) {
         if (msg.type === "media_source/resolve_media") return { url: "./sample-2.svg", mime_type: "image/svg+xml" };
@@ -207,6 +217,12 @@
         { note: "Parcel at the neighbour's until Friday.", color: "yellow", expires: "2020-01-01", title: "Old note" },
         { note: "Valid for a while.", color: "green", expires: "2099-12-31" },
       ] } },
+      { label: "Markers on the picture, Ken Burns", config: { type: "custom:imagenote-card", title: "Boiler room", image: "./sample-1.svg", ken_burns: true, markers: [
+        { x: 30, y: 45, label: "Stopcock", icon: "mdi:water-off" },
+        { x: 72, y: 30, label: "Pressure gauge", entity: "sensor.pressure" },
+        { x: 85, y: 85, entity: "sensor.boiler_temp" },
+      ], note: "Turn the stopcock (1) before opening the filter." } },
+      { label: "Picture from an input_text with a camera button", config: { type: "custom:imagenote-card", title: "Front door", image_entity: "input_text.door_photo", note: "Latest photo of the door. Tap the camera to replace it." } },
       { label: "Hold → more-info, double tap → URL", config: { type: "custom:imagenote-card", title: "Actions", image: "./sample-2.svg", note_entity: "input_text.fridge_note", hold_action: { action: "more-info" }, double_tap_action: { action: "url", url_path: "https://example.com" } } },
     ];
     window.__events = [];

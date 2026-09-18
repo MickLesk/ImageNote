@@ -19,6 +19,8 @@ var EXPIRED_MODES = ["dim", "hide"];
 var CHECKLIST_STORAGE_PREFIX = "imagenote:checks:";
 var ASPECT_RATIOS = ["16:9", "4:3", "3:2", "1:1", "3:4", "9:16", "auto"];
 var NOTE_ENTITY_DOMAINS = ["input_text", "text"];
+var IMAGE_URL_ENTITY_DOMAINS = ["input_text", "text"];
+var MAX_MARKERS = 20;
 var MEDIA_SOURCE_PREFIX = "media-source://";
 var MEDIA_EXPIRES_SECONDS = 24 * 60 * 60;
 var MEDIA_REFRESH_MS = (MEDIA_EXPIRES_SECONDS - 10 * 60) * 1e3;
@@ -48,6 +50,11 @@ var DEFAULTS = {
   expired_slides: "dim",
   checklist: true,
   checklist_writeback: true,
+  upload_target: "image",
+  upload_folder: "imagenote",
+  upload_max_size: 1920,
+  ken_burns: false,
+  show_camera: true,
   tap_action: FLIP_ACTION,
   hold_action: NONE_ACTION,
   double_tap_action: NONE_ACTION
@@ -288,6 +295,24 @@ function validatePage(c, prefix) {
     throw new Error(`ImageNote: ${prefix}image must be a URL, a media-source id or a media object`);
   }
 }
+function normalizeMarkers(markers) {
+  if (!Array.isArray(markers)) return [];
+  const out = [];
+  for (const raw of markers) {
+    if (!raw || typeof raw !== "object") continue;
+    const x = num(raw.x, Number.NaN, 0, 100);
+    const y = num(raw.y, Number.NaN, 0, 100);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    out.push({
+      x,
+      y,
+      label: str(raw.label).trim(),
+      icon: str(raw.icon).trim(),
+      entity: str(raw.entity).trim()
+    });
+  }
+  return out;
+}
 function normalizePage(page) {
   return {
     kind: page.kind === "note" || page.kind === "image" ? page.kind : void 0,
@@ -298,7 +323,8 @@ function normalizePage(page) {
     note_entity: str(page.note_entity).trim(),
     note_attribute: str(page.note_attribute).trim(),
     expires: str(page.expires).trim(),
-    color: str(page.color).trim()
+    color: str(page.color).trim(),
+    markers: normalizeMarkers(page.markers)
   };
 }
 function configPages(config) {
@@ -308,11 +334,15 @@ function configPages(config) {
   }
   return [
     {
+      kind: config.kind,
       image: config.image,
       image_entity: config.image_entity,
       note: config.note,
       note_entity: config.note_entity,
-      note_attribute: config.note_attribute
+      note_attribute: config.note_attribute,
+      expires: config.expires,
+      color: config.color,
+      markers: config.markers
     }
   ];
 }
@@ -363,6 +393,11 @@ function normalizeConfig(config) {
     expired_slides: pick(config.expired_slides, EXPIRED_MODES, DEFAULTS.expired_slides),
     checklist: bool(config.checklist, DEFAULTS.checklist),
     checklist_writeback: bool(config.checklist_writeback, DEFAULTS.checklist_writeback),
+    upload_target: config.upload_target === "media" ? "media" : "image",
+    upload_folder: str(config.upload_folder, DEFAULTS.upload_folder),
+    upload_max_size: Math.round(num(config.upload_max_size, DEFAULTS.upload_max_size, 0, 8e3)),
+    ken_burns: bool(config.ken_burns, DEFAULTS.ken_burns),
+    show_camera: bool(config.show_camera, DEFAULTS.show_camera),
     tap_action: action(config.tap_action, DEFAULTS.tap_action),
     hold_action: action(config.hold_action, DEFAULTS.hold_action),
     double_tap_action: action(config.double_tap_action, DEFAULTS.double_tap_action)
@@ -402,6 +437,11 @@ var en = {
   expired: "Expired",
   expiresOn: "Until {date}",
   templateError: "Template error",
+  takePhoto: "Take a photo",
+  uploading: "Uploading…",
+  uploadFailed: "Upload failed",
+  uploadTooLarge: "The file is too large",
+  uploadForbidden: "Only administrators can upload to the media folder",
   page: "Picture {index} of {total}",
   slide: "Slide {index} of {total}",
   nextPicture: "Next picture",
@@ -412,7 +452,6 @@ var en = {
   editor_image: "Picture URL",
   editor_image_help: "Upload a picture or enter a URL, a /local/ path or a media-source id.",
   editor_image_entity: "Picture entity (optional)",
-  editor_image_entity_help: "Use the picture of an image, camera or person entity instead of a static picture.",
   editor_note_source: "Note from an entity",
   editor_upload: "Upload picture",
   editor_clear: "Remove",
@@ -485,6 +524,19 @@ var en = {
   editor_upload_target_help: "Home Assistant's image storage keeps files in /config/image and serves them by id. The media folder keeps them as normal files under /media, visible in the media browser and in backups.",
   editor_upload_folder: "Folder in /media",
   editor_upload_folder_help: "Created on the first upload. Leave empty for the top level.",
+  editor_upload_max_size: "Scale pictures down to",
+  editor_upload_max_size_help: "Longest edge in pixels before upload. 0 keeps the original size.",
+  editor_ken_burns: "Slow zoom on pictures (Ken Burns)",
+  editor_show_camera: "Camera button on pictures from an input_text",
+  editor_show_camera_help: "When a picture comes from an input_text or text entity, a camera button on the card takes or picks a new photo and stores its address in the entity.",
+  editor_image_entity_help: "Use the picture of an image, camera or person entity, or an input_text / text entity that holds a picture address.",
+  editor_markers: "Markers on the picture",
+  editor_markers_help: "Click on the preview to add a pin. Select a pin in the list to move it with another click.",
+  editor_marker_label: "Label",
+  editor_marker_icon: "Icon (optional)",
+  editor_marker_entity: "Entity (optional)",
+  editor_marker_remove: "Remove pin",
+  editor_marker_none: "No pins yet.",
   upload_target_image: "Home Assistant image storage (/config/image)",
   upload_target_media: "Media folder (/media/…)",
   editor_upload_forbidden: "Only administrators can upload to the media folder",
@@ -528,6 +580,11 @@ var de = {
   expired: "Abgelaufen",
   expiresOn: "Bis {date}",
   templateError: "Template-Fehler",
+  takePhoto: "Foto aufnehmen",
+  uploading: "Wird hochgeladen…",
+  uploadFailed: "Upload fehlgeschlagen",
+  uploadTooLarge: "Die Datei ist zu groß",
+  uploadForbidden: "Nur Administratoren können in den Medienordner hochladen",
   page: "Bild {index} von {total}",
   slide: "Seite {index} von {total}",
   nextPicture: "Nächstes Bild",
@@ -538,7 +595,6 @@ var de = {
   editor_image: "Bild-URL",
   editor_image_help: "Bild hochladen oder eine URL, einen /local/-Pfad oder eine media-source-ID eingeben.",
   editor_image_entity: "Bild-Entität (optional)",
-  editor_image_entity_help: "Bild einer image-, camera- oder person-Entität statt eines festen Bildes verwenden.",
   editor_note_source: "Notiz aus einer Entität",
   editor_upload: "Bild hochladen",
   editor_clear: "Entfernen",
@@ -611,6 +667,19 @@ var de = {
   editor_upload_target_help: "Der Bildspeicher von Home Assistant legt Dateien unter /config/image ab und liefert sie per ID aus. Der Medienordner speichert sie als normale Dateien unter /media, sichtbar im Medienbrowser und in Backups.",
   editor_upload_folder: "Ordner in /media",
   editor_upload_folder_help: "Wird beim ersten Upload angelegt. Leer lassen für die oberste Ebene.",
+  editor_upload_max_size: "Bilder verkleinern auf",
+  editor_upload_max_size_help: "Längste Kante in Pixeln vor dem Upload. 0 behält die Originalgröße.",
+  editor_ken_burns: "Langsamer Zoom auf Bildern (Ken Burns)",
+  editor_show_camera: "Kamera-Button bei Bildern aus einem input_text",
+  editor_show_camera_help: "Kommt ein Bild aus einer input_text- oder text-Entität, nimmt ein Kamera-Button auf der Karte ein neues Foto auf und speichert dessen Adresse in der Entität.",
+  editor_image_entity_help: "Bild einer image-, camera- oder person-Entität verwenden, oder einer input_text- / text-Entität, die eine Bildadresse enthält.",
+  editor_markers: "Marker auf dem Bild",
+  editor_markers_help: "In die Vorschau klicken, um einen Pin zu setzen. Einen Pin in der Liste auswählen, um ihn mit einem weiteren Klick zu verschieben.",
+  editor_marker_label: "Beschriftung",
+  editor_marker_icon: "Icon (optional)",
+  editor_marker_entity: "Entität (optional)",
+  editor_marker_remove: "Pin entfernen",
+  editor_marker_none: "Noch keine Pins.",
   upload_target_image: "Bildspeicher von Home Assistant (/config/image)",
   upload_target_media: "Medienordner (/media/…)",
   editor_upload_forbidden: "Nur Administratoren können in den Medienordner hochladen",
@@ -836,6 +905,182 @@ ha-card {
 .stage.natural .face.current .layer-image img {
   height: auto;
 }
+/* ---------- ken burns ---------- */
+@keyframes imagenote-kenburns-a {
+  from { transform: scale(1) translate(0, 0); }
+  to { transform: scale(1.12) translate(-2.5%, 1.5%); }
+}
+@keyframes imagenote-kenburns-b {
+  from { transform: scale(1.12) translate(2%, -2%); }
+  to { transform: scale(1) translate(0, 0); }
+}
+.stage.ken-burns .face.kind-image.current img {
+  animation: imagenote-kenburns-a 22s ease-in-out infinite alternate;
+  will-change: transform;
+}
+.stage.ken-burns .face-b.kind-image.current img {
+  animation-name: imagenote-kenburns-b;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage.ken-burns .face.kind-image.current img {
+    animation: none;
+  }
+}
+
+/* ---------- markers ---------- */
+.markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+.pin {
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--primary-color);
+  color: #fff;
+  font: inherit;
+  font-size: 0.8em;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  transition: transform 150ms ease;
+}
+.pin ha-icon {
+  --mdc-icon-size: 16px;
+}
+.pin:hover,
+.marker.open .pin {
+  transform: scale(1.12);
+}
+.marker-label {
+  appearance: none;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 200px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  font: inherit;
+  font-size: 0.8em;
+  line-height: 1.3;
+  text-align: left;
+  white-space: normal;
+  width: max-content;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 150ms ease, visibility 0s linear 150ms;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.marker-label::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: rgba(0, 0, 0, 0.8);
+}
+.marker.below .marker-label {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+.marker.below .marker-label::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: rgba(0, 0, 0, 0.8);
+}
+.marker.align-left .marker-label {
+  left: -13px;
+  transform: none;
+}
+.marker.align-left .marker-label::after {
+  left: 20px;
+}
+.marker.align-right .marker-label {
+  left: auto;
+  right: -13px;
+  transform: none;
+}
+.marker.align-right .marker-label::after {
+  left: auto;
+  right: 14px;
+  transform: none;
+}
+.marker.open .marker-label,
+.marker:hover .marker-label {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+/* ---------- camera button ---------- */
+.camera {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  padding: 0;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: background-color 150ms ease;
+}
+.camera:hover,
+.camera:focus-visible {
+  background: rgba(0, 0, 0, 0.65);
+  outline: none;
+}
+.camera:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.camera-status {
+  position: absolute;
+  right: 54px;
+  top: 16px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.78em;
+  z-index: 3;
+  max-width: calc(100% - 70px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.camera-status.error {
+  background: var(--error-color, #db4437);
+}
+
 .placeholder {
   position: absolute;
   inset: 0;
@@ -1351,6 +1596,86 @@ function formatRelativeTime(date, language, now = /* @__PURE__ */ new Date()) {
   return formatter.format(0, "second");
 }
 
+// src/upload.ts
+var UploadError = class extends Error {
+  constructor(message, code) {
+    super(message);
+    this.code = code;
+  }
+  code;
+};
+async function fetchWithAuth(hass, path, init) {
+  if (hass.fetchWithAuth) {
+    return hass.fetchWithAuth(path, init);
+  }
+  const token = hass.auth?.data?.access_token ?? "";
+  return fetch(path, { ...init, headers: { Authorization: `Bearer ${token}` } });
+}
+function checkResponse(response) {
+  if (response.status === 413) throw new UploadError("too large", "too_large");
+  if (response.status === 401 || response.status === 403) throw new UploadError("forbidden", "forbidden");
+  if (!response.ok) throw new UploadError(`${response.status} ${response.statusText}`, "http");
+}
+async function downscaleImage(file, maxSize, quality = 0.85) {
+  if (!maxSize || !file.type.startsWith("image/") || file.type === "image/svg+xml" || file.type === "image/gif") {
+    return file;
+  }
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    return file;
+  }
+  const { width, height } = bitmap;
+  const longest = Math.max(width, height);
+  if (longest <= maxSize) {
+    bitmap.close();
+    return file;
+  }
+  const scale = maxSize / longest;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    bitmap.close();
+    return file;
+  }
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const keepPng = file.type === "image/png";
+  const type = keepPng ? "image/png" : "image/jpeg";
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, keepPng ? void 0 : quality));
+  if (!blob) return file;
+  const name = keepPng ? file.name : file.name.replace(/\.[a-z0-9]+$/i, "") + ".jpg";
+  return new File([blob], name, { type });
+}
+async function uploadToImageStore(hass, file) {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetchWithAuth(hass, "/api/image/upload", { method: "POST", body });
+  checkResponse(response);
+  const media = await response.json();
+  return `/api/image/serve/${media.id}/original`;
+}
+async function uploadToMedia(hass, file, folder) {
+  const clean = folder.trim().replace(/^\/+|\/+$/g, "");
+  const target = `${MEDIA_SOURCE_PREFIX}media_source/local${clean ? `/${clean}` : ""}`;
+  const safeName = file.name.replace(/[^A-Za-z0-9._-]+/g, "_") || "picture.jpg";
+  const renamed = new File([file], `${Date.now()}-${safeName}`, { type: file.type });
+  const body = new FormData();
+  body.append("media_content_id", target);
+  body.append("file", renamed);
+  const response = await fetchWithAuth(hass, "/api/media_source/local_source/upload", { method: "POST", body });
+  checkResponse(response);
+  const result = await response.json();
+  return result.media_content_id;
+}
+async function uploadPicture(hass, file, options) {
+  const prepared = await downscaleImage(file, options.maxSize, options.quality);
+  return options.target === "media" ? uploadToMedia(hass, prepared, options.folder) : uploadToImageStore(hass, prepared);
+}
+
 // src/notes.ts
 var TASK_LINE = /^(\s*)[-*+]\s+\[([ xX])\]\s?(.*)$/;
 function parseNoteBlocks(text) {
@@ -1463,7 +1788,11 @@ var FACE_TEMPLATE = `
       <small></small>
     </div>
     <div class="title-overlay"></div>
+    <div class="markers"></div>
     <div class="tag image-tag hidden"></div>
+    <button class="camera hidden" type="button"><ha-icon icon="mdi:camera-plus-outline"></ha-icon></button>
+    <input class="camera-input" type="file" accept="image/*" capture="environment" hidden />
+    <div class="camera-status hidden"></div>
   </div>
   <div class="layer layer-note">
     <div class="note-header">
@@ -1775,6 +2104,10 @@ var ImageNoteCard = class extends HTMLElement {
       placeholderIcon: q(el, ".placeholder ha-icon"),
       titleOverlay: q(el, ".title-overlay"),
       imageTag: q(el, ".image-tag"),
+      markers: q(el, ".markers"),
+      camera: q(el, ".camera"),
+      cameraInput: q(el, ".camera-input"),
+      cameraStatus: q(el, ".camera-status"),
       noteLayer: q(el, ".layer-note"),
       noteHeader: q(el, ".note-header"),
       noteTitle: q(el, ".note-header .title"),
@@ -1791,7 +2124,9 @@ var ImageNoteCard = class extends HTMLElement {
       cancelButton: q(el, ".cancel"),
       src: "",
       failed: false,
-      resolveToken: 0
+      resolveToken: 0,
+      entityValue: "",
+      markerStates: ""
     });
     this._els = {
       card: q(this._root, "ha-card"),
@@ -1828,6 +2163,15 @@ var ImageNoteCard = class extends HTMLElement {
     for (const view of els.faces) {
       view.img.addEventListener("error", () => this._onImageError(view));
       view.img.addEventListener("load", () => this._onImageLoad(view));
+      view.camera.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        view.cameraInput.click();
+      });
+      view.cameraInput.addEventListener("change", () => {
+        const file = view.cameraInput.files?.[0];
+        view.cameraInput.value = "";
+        if (file) void this._uploadPhoto(view, file);
+      });
       view.editButton.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (view === this._currentFace) this._startEdit();
@@ -1887,6 +2231,7 @@ var ImageNoteCard = class extends HTMLElement {
     }
     this.style.setProperty("--imagenote-fit", config.image_fit);
     els.stage.classList.toggle("hover-flip", config.hover_flip);
+    els.stage.classList.toggle("ken-burns", config.ken_burns && !this._motionQuery.matches);
     els.badge.classList.toggle("hidden", !config.show_hint || this._slides().length < 2);
     this._applyMode();
   }
@@ -2080,6 +2425,10 @@ var ImageNoteCard = class extends HTMLElement {
       view.titleOverlay.textContent = title;
       view.titleOverlay.classList.toggle("hidden", !(config.show_title && title));
       this._applyImage(view, slide);
+      this._renderMarkers(view, slide);
+      view.camera.classList.toggle("hidden", !this._cameraAllowed(slide));
+      view.camera.title = translate(this._lang, "takePhoto");
+      view.camera.setAttribute("aria-label", translate(this._lang, "takePhoto"));
     } else {
       view.noteTitle.textContent = title || translate(this._lang, "note");
       view.noteHeader.classList.toggle("no-title", !title);
@@ -2170,27 +2519,32 @@ var ImageNoteCard = class extends HTMLElement {
     return entity.state === "unknown" || entity.state === "unavailable" ? "" : entity.state;
   }
   // ---------------------------------------------------------------- picture
+  /** The picture address an entity provides: entity_picture, or the state of an input_text / text. */
   _imageSourceFromEntity(slide) {
     if (!slide.image_entity || !this._hass) return void 0;
     const entity = this._hass.states[slide.image_entity];
     if (!entity) return void 0;
+    const domain = slide.image_entity.split(".")[0];
+    if (IMAGE_URL_ENTITY_DOMAINS.includes(domain)) {
+      const value = entity.state.trim();
+      return value && value !== "unknown" && value !== "unavailable" ? value : void 0;
+    }
     const picture = entity.attributes.entity_picture;
     if (typeof picture !== "string" || !picture) return void 0;
-    const domain = slide.image_entity.split(".")[0];
     if (domain === "image" || domain === "camera") {
       const join = picture.includes("?") ? "&" : "?";
       return `${picture}${join}state=${encodeURIComponent(entity.state)}`;
     }
     return picture;
   }
+  _cameraAllowed(slide) {
+    if (!this._config?.show_camera || !slide.image_entity || !this._hass) return false;
+    return IMAGE_URL_ENTITY_DOMAINS.includes(slide.image_entity.split(".")[0]);
+  }
   _applyImage(view, slide) {
     const token = ++view.resolveToken;
     this._mediaPending = false;
-    if (slide.image_entity) {
-      this._setImage(view, this._imageSourceFromEntity(slide) ?? "", false);
-      return;
-    }
-    const image = slide.image;
+    const image = slide.image_entity ? this._imageSourceFromEntity(slide) : slide.image;
     if (!image) {
       this._setImage(view, "", false);
       return;
@@ -2273,6 +2627,95 @@ var ImageNoteCard = class extends HTMLElement {
     this._updatePlaceholder(view);
     this._updateDepth();
   }
+  // ---------------------------------------------------------------- markers
+  _renderMarkers(view, slide) {
+    view.markers.replaceChildren();
+    view.markerStates = slide.markers.map((m) => m.entity ? this._hass?.states[m.entity]?.state ?? "" : "").join("|");
+    slide.markers.forEach((marker, index) => {
+      const pin = document.createElement("div");
+      pin.className = "marker";
+      pin.style.left = `${marker.x}%`;
+      pin.style.top = `${marker.y}%`;
+      if (marker.y < 22) pin.classList.add("below");
+      if (marker.x > 70) pin.classList.add("align-right");
+      else if (marker.x < 30) pin.classList.add("align-left");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "pin";
+      if (marker.icon) {
+        const icon = document.createElement("ha-icon");
+        icon.setAttribute("icon", marker.icon);
+        button.append(icon);
+      } else {
+        button.textContent = String(index + 1);
+      }
+      const entity = marker.entity ? this._hass?.states[marker.entity] : void 0;
+      const parts = [];
+      if (marker.label) parts.push(marker.label);
+      if (marker.entity) {
+        const name = entity?.attributes.friendly_name ?? marker.entity;
+        const unit = entity?.attributes.unit_of_measurement ?? "";
+        parts.push(entity ? `${marker.label ? "" : `${name}: `}${entity.state}${unit ? ` ${unit}` : ""}` : name);
+      }
+      const text = parts.join(" · ");
+      button.setAttribute("aria-label", text || `${index + 1}`);
+      button.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const open = pin.classList.contains("open");
+        view.markers.querySelectorAll(".marker.open").forEach((el) => el.classList.remove("open"));
+        if (!open && text) pin.classList.add("open");
+      });
+      pin.append(button);
+      if (text) {
+        const bubble = document.createElement("button");
+        bubble.type = "button";
+        bubble.className = "marker-label";
+        bubble.textContent = text;
+        bubble.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          if (marker.entity) {
+            this.dispatchEvent(
+              new CustomEvent("hass-more-info", { detail: { entityId: marker.entity }, bubbles: true, composed: true })
+            );
+          } else {
+            pin.classList.remove("open");
+          }
+        });
+        pin.append(bubble);
+      }
+      view.markers.append(pin);
+    });
+  }
+  // ---------------------------------------------------------------- camera
+  /** Takes or picks a photo, uploads it and stores its address in the slide's input_text. */
+  async _uploadPhoto(view, file) {
+    const config = this._config;
+    const slide = this._slide;
+    const hass = this._hass;
+    if (!config || !hass || !this._cameraAllowed(slide)) return;
+    const t = (key) => translate(this._lang, key);
+    view.cameraStatus.textContent = t("uploading");
+    view.cameraStatus.classList.remove("hidden", "error");
+    view.camera.disabled = true;
+    try {
+      const value = await uploadPicture(hass, file, {
+        target: config.upload_target,
+        folder: config.upload_folder,
+        maxSize: config.upload_max_size
+      });
+      const domain = slide.image_entity.split(".")[0];
+      await hass.callService(domain, "set_value", { entity_id: slide.image_entity, value });
+      view.cameraStatus.classList.add("hidden");
+    } catch (err) {
+      const code = err instanceof UploadError ? err.code : "network";
+      const message = code === "too_large" ? t("uploadTooLarge") : code === "forbidden" ? t("uploadForbidden") : err?.message ?? "";
+      view.cameraStatus.textContent = `${t("uploadFailed")}${message ? `: ${message}` : ""}`;
+      view.cameraStatus.classList.add("error");
+      window.setTimeout(() => view.cameraStatus.classList.add("hidden"), 6e3);
+    } finally {
+      view.camera.disabled = false;
+    }
+  }
   // ---------------------------------------------------------------- note
   _noteSource(slide) {
     const config = this._config;
@@ -2341,8 +2784,16 @@ var ImageNoteCard = class extends HTMLElement {
     const view = this._currentFace;
     if (slide.kind === "image") {
       if (slide.image_entity) {
-        const src = this._imageSourceFromEntity(slide) ?? "";
-        if (src !== view.src) this._setImage(view, src, false);
+        const value = this._imageSourceFromEntity(slide) ?? "";
+        if (value !== view.entityValue) {
+          view.entityValue = value;
+          this._applyImage(view, slide);
+        }
+        view.camera.classList.toggle("hidden", !this._cameraAllowed(slide));
+      }
+      if (slide.markers.some((marker) => marker.entity)) {
+        const key = slide.markers.map((m) => m.entity ? this._hass?.states[m.entity]?.state ?? "" : "").join("|");
+        if (key !== view.markerStates) this._renderMarkers(view, slide);
       }
       return;
     }
@@ -2704,8 +3155,8 @@ var ImageNoteCard = class extends HTMLElement {
 // src/editor.ts
 var UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
 var UPLOAD_TARGETS = ["image", "media"];
-var EDITOR_DEFAULTS = { upload_target: "image", upload_folder: "imagenote" };
-var PAGE_KEYS = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "expires", "color"];
+var EDITOR_DEFAULTS = {};
+var PAGE_KEYS = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "expires", "color", "markers"];
 var LIST_KEYS = ["slides", "images"];
 var TEMPLATE2 = `
 <div class="pages">
@@ -2732,6 +3183,12 @@ var TEMPLATE2 = `
     <div class="status"></div>
     <input class="file" type="file" accept="image/*" hidden />
   </div>
+</div>
+<div class="markers-editor hidden">
+  <div class="picture-label markers-label"></div>
+  <div class="picture-help markers-help"></div>
+  <div class="marker-canvas"><img alt="" draggable="false" /><div class="pins"></div></div>
+  <div class="marker-list"></div>
 </div>
 <ha-form class="page-form"></ha-form>
 <div class="divider"></div>
@@ -2882,6 +3339,122 @@ var STYLES = `
 .status.error {
   color: var(--error-color, #db4437);
 }
+.markers-editor {
+  margin-bottom: 16px;
+}
+.marker-canvas {
+  position: relative;
+  margin-top: 10px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--secondary-background-color, #f2f2f2);
+  border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+  cursor: crosshair;
+  min-height: 80px;
+}
+.marker-canvas img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.marker-canvas img:not([src]) {
+  display: none;
+}
+.marker-canvas .pins {
+  position: absolute;
+  inset: 0;
+}
+.marker-canvas .pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--primary-color);
+  color: #fff;
+  font: inherit;
+  font-size: 0.75em;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+.marker-canvas .pin.selected {
+  background: var(--error-color, #db4437);
+  transform: translate(-50%, -50%) scale(1.15);
+}
+.marker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.marker-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 1fr 1fr 36px;
+  gap: 8px;
+  align-items: center;
+}
+.marker-row.selected .marker-number {
+  background: var(--error-color, #db4437);
+}
+.marker-number {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  color: #fff;
+  font-size: 0.75em;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+.marker-row input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.9em;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+  background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
+  color: var(--primary-text-color);
+  outline: none;
+}
+.marker-row input:focus {
+  border-color: var(--primary-color);
+}
+.marker-row .icon-button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--secondary-text-color);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.marker-empty {
+  font-size: 0.85em;
+  color: var(--secondary-text-color);
+  margin-top: 8px;
+}
+@media (max-width: 480px) {
+  .marker-row { grid-template-columns: 28px 1fr 36px; }
+  .marker-row input.marker-icon, .marker-row input.marker-entity { grid-column: 2; }
+}
 .divider {
   height: 1px;
   background: var(--divider-color, rgba(0, 0, 0, 0.12));
@@ -2913,6 +3486,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
   _moveRightButton;
   _uploading = false;
   _previewToken = 0;
+  _selectedMarker = -1;
+  _canvasImg;
   constructor() {
     super();
     this._root = this.attachShadow({ mode: "open" });
@@ -3034,6 +3609,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
     this._removePageButton = q(".remove-page");
     this._moveLeftButton = q(".move-left");
     this._moveRightButton = q(".move-right");
+    this._canvasImg = q(".marker-canvas img");
+    this._root.querySelector(".marker-canvas")?.addEventListener("click", (ev) => this._onCanvasClick(ev));
     this._pageForm?.addEventListener("value-changed", this._onPageValueChanged);
     this._cardForm?.addEventListener("value-changed", this._onCardValueChanged);
     this._uploadButton?.addEventListener("click", () => this._fileInput?.click());
@@ -3107,6 +3684,7 @@ var ImageNoteCardEditor = class extends HTMLElement {
     if (maxNote) maxNote.textContent = full ? t("editor_max_slides") : "";
     const currentKind = this._kindOf(this._page());
     this._root.querySelector(".picture")?.classList.toggle("hidden", currentKind === "note");
+    this._renderMarkers(currentKind !== "note");
     this._removePageButton?.classList.toggle("hidden", pages.length <= 1);
     this._moveLeftButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex === 0);
     this._moveRightButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex >= pages.length - 1);
@@ -3145,7 +3723,9 @@ var ImageNoteCardEditor = class extends HTMLElement {
         {
           name: "image_entity",
           selector: {
-            entity: { filter: [{ domain: "image" }, { domain: "camera" }, { domain: "person" }] }
+            entity: {
+              filter: [{ domain: "image" }, { domain: "camera" }, { domain: "person" }, { domain: "input_text" }, { domain: "text" }]
+            }
           }
         }
       );
@@ -3253,7 +3833,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
               { name: "show_title", selector: { boolean: {} } },
               { name: "show_hint", selector: { boolean: {} } },
               { name: "show_updated", selector: { boolean: {} } },
-              { name: "show_navigation", selector: { boolean: {} } }
+              { name: "show_navigation", selector: { boolean: {} } },
+              { name: "ken_burns", selector: { boolean: {} } }
             ]
           },
           {
@@ -3278,7 +3859,11 @@ var ImageNoteCardEditor = class extends HTMLElement {
             name: "upload_target",
             selector: { select: { mode: "dropdown", options: options(UPLOAD_TARGETS, "upload_target") } }
           },
-          { name: "upload_folder", selector: { text: {} } }
+          { name: "upload_folder", selector: { text: {} } },
+          {
+            name: "upload_max_size",
+            selector: { number: { min: 0, max: 8e3, step: 10, mode: "box", unit_of_measurement: "px" } }
+          }
         ]
       },
       {
@@ -3310,7 +3895,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
             flatten: true,
             schema: [
               { name: "checklist", selector: { boolean: {} } },
-              { name: "checklist_writeback", selector: { boolean: {} } }
+              { name: "checklist_writeback", selector: { boolean: {} } },
+              { name: "show_camera", selector: { boolean: {} } }
             ]
           },
           { name: "actions_help", type: "constant", value: "" },
@@ -3351,7 +3937,7 @@ var ImageNoteCardEditor = class extends HTMLElement {
     const page = { ...this._page() };
     for (const [key, raw] of Object.entries(value)) {
       const target = key === "page_title" ? "title" : key;
-      if (!PAGE_KEYS.includes(target) || target === "kind") continue;
+      if (!PAGE_KEYS.includes(target) || target === "kind" || target === "markers") continue;
       if (raw === void 0 || raw === null || raw === "") {
         delete page[target];
       } else {
@@ -3403,53 +3989,140 @@ var ImageNoteCardEditor = class extends HTMLElement {
     this._setStatus(t("editor_uploading"), false);
     if (this._uploadButton) this._uploadButton.disabled = true;
     try {
-      const target = this._config?.upload_target === "media" ? "media" : "image";
-      const image = target === "media" ? await this._uploadToMedia(hass, file) : await this._uploadToImageStore(hass, file);
+      const config = this._config ?? {};
+      const image = await uploadPicture(hass, file, {
+        target: config.upload_target === "media" ? "media" : "image",
+        folder: config.upload_folder ?? DEFAULTS.upload_folder,
+        maxSize: config.upload_max_size ?? DEFAULTS.upload_max_size
+      });
       this._emit(this._withPage(this._pageIndex, { ...this._page(), image, image_entity: void 0 }));
       this._setStatus(t("editor_upload_done"), false);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const code = err instanceof UploadError ? err.code : "network";
+      const message = code === "too_large" ? t("editor_upload_too_large") : code === "forbidden" ? t("editor_upload_forbidden") : err instanceof Error ? err.message : String(err);
       this._setStatus(`${t("editor_upload_failed")}: ${message}`, true);
     } finally {
       this._uploading = false;
       if (this._uploadButton) this._uploadButton.disabled = false;
     }
   }
-  async _fetch(hass, path, init) {
-    if (hass.fetchWithAuth) {
-      return hass.fetchWithAuth(path, init);
+  // ---------------------------------------------------------------- markers
+  _markers() {
+    const list = this._page().markers;
+    return Array.isArray(list) ? list.map((m) => ({ ...m })) : [];
+  }
+  _setMarkers(markers) {
+    const page = { ...this._page() };
+    if (markers.length) {
+      page.markers = markers;
+    } else {
+      delete page.markers;
     }
-    const token = hass.auth?.data?.access_token ?? "";
-    return fetch(path, { ...init, headers: { Authorization: `Bearer ${token}` } });
+    this._emit(this._withPage(this._pageIndex, page));
   }
-  _checkResponse(response) {
+  _onCanvasClick(ev) {
+    const canvas = ev.currentTarget;
+    const target = ev.target;
+    if (target.closest(".pin")) return;
+    const img = this._canvasImg;
+    if (!img || !img.getAttribute("src")) return;
+    const rect = img.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = Math.round(Math.min(100, Math.max(0, (ev.clientX - rect.left) / rect.width * 100)) * 10) / 10;
+    const y = Math.round(Math.min(100, Math.max(0, (ev.clientY - rect.top) / rect.height * 100)) * 10) / 10;
+    const markers = this._markers();
+    if (this._selectedMarker >= 0 && this._selectedMarker < markers.length) {
+      markers[this._selectedMarker] = { ...markers[this._selectedMarker], x, y };
+    } else {
+      if (markers.length >= MAX_MARKERS) return;
+      markers.push({ x, y });
+      this._selectedMarker = markers.length - 1;
+    }
+    void canvas;
+    this._setMarkers(markers);
+  }
+  _renderMarkers(show) {
+    const section = this._root.querySelector(".markers-editor");
+    const pins = this._root.querySelector(".marker-canvas .pins");
+    const list = this._root.querySelector(".marker-list");
+    if (!section || !pins || !list) return;
     const t = (key) => translate(this._lang, key);
-    if (response.status === 413) throw new Error(t("editor_upload_too_large"));
-    if (response.status === 401 || response.status === 403) throw new Error(t("editor_upload_forbidden"));
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-  }
-  /** Home Assistant's own image store (/config/image), served by id. */
-  async _uploadToImageStore(hass, file) {
-    const body = new FormData();
-    body.append("file", file);
-    const response = await this._fetch(hass, "/api/image/upload", { method: "POST", body });
-    this._checkResponse(response);
-    const media = await response.json();
-    return `/api/image/serve/${media.id}/original`;
-  }
-  /** The local media folder (/media/<folder>/), stored as a plain file. */
-  async _uploadToMedia(hass, file) {
-    const folder = (this._config?.upload_folder ?? EDITOR_DEFAULTS.upload_folder).trim().replace(/^\/+|\/+$/g, "");
-    const target = `${MEDIA_SOURCE_PREFIX}media_source/local${folder ? `/${folder}` : ""}`;
-    const safeName = file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
-    const renamed = new File([file], `${Date.now()}-${safeName}`, { type: file.type });
-    const body = new FormData();
-    body.append("media_content_id", target);
-    body.append("file", renamed);
-    const response = await this._fetch(hass, "/api/media_source/local_source/upload", { method: "POST", body });
-    this._checkResponse(response);
-    const result = await response.json();
-    return result.media_content_id;
+    const page = this._page();
+    const hasPicture2 = Boolean(page.image) || Boolean(page.image_entity);
+    section.classList.toggle("hidden", !show || !hasPicture2);
+    if (!show || !hasPicture2) return;
+    const label = section.querySelector(".markers-label");
+    const help = section.querySelector(".markers-help");
+    if (label) label.textContent = t("editor_markers");
+    if (help) help.textContent = t("editor_markers_help");
+    const markers = this._markers();
+    if (this._selectedMarker >= markers.length) this._selectedMarker = -1;
+    pins.replaceChildren();
+    list.replaceChildren();
+    markers.forEach((marker, index) => {
+      const pin = document.createElement("button");
+      pin.type = "button";
+      pin.className = `pin${index === this._selectedMarker ? " selected" : ""}`;
+      pin.style.left = `${marker.x}%`;
+      pin.style.top = `${marker.y}%`;
+      pin.textContent = String(index + 1);
+      pin.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this._selectedMarker = this._selectedMarker === index ? -1 : index;
+        this._renderMarkers(true);
+      });
+      pins.append(pin);
+      const row = document.createElement("div");
+      row.className = `marker-row${index === this._selectedMarker ? " selected" : ""}`;
+      const number = document.createElement("button");
+      number.type = "button";
+      number.className = "marker-number";
+      number.textContent = String(index + 1);
+      number.addEventListener("click", () => {
+        this._selectedMarker = this._selectedMarker === index ? -1 : index;
+        this._renderMarkers(true);
+      });
+      const field = (key, placeholder) => {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = `marker-${key}`;
+        input.placeholder = placeholder;
+        input.value = marker[key] ?? "";
+        input.addEventListener("change", () => {
+          const next = this._markers();
+          const value = input.value.trim();
+          if (value) next[index] = { ...next[index], [key]: value };
+          else delete next[index][key];
+          this._setMarkers(next);
+        });
+        return input;
+      };
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "icon-button";
+      remove.title = t("editor_marker_remove");
+      remove.innerHTML = `<ha-icon icon="mdi:close"></ha-icon>`;
+      remove.addEventListener("click", () => {
+        const next = this._markers();
+        next.splice(index, 1);
+        this._selectedMarker = -1;
+        this._setMarkers(next);
+      });
+      row.append(
+        number,
+        field("label", t("editor_marker_label")),
+        field("icon", t("editor_marker_icon")),
+        field("entity", t("editor_marker_entity")),
+        remove
+      );
+      list.append(row);
+    });
+    if (!markers.length) {
+      const empty = document.createElement("div");
+      empty.className = "marker-empty";
+      empty.textContent = t("editor_marker_none");
+      list.append(empty);
+    }
   }
   _setStatus(text, isError) {
     if (!this._status) return;
@@ -3467,19 +4140,26 @@ var ImageNoteCardEditor = class extends HTMLElement {
       if (src) {
         img.src = src;
         preview.classList.add("has-image");
+        if (this._canvasImg) this._canvasImg.src = src;
       } else {
         img.removeAttribute("src");
         preview.classList.remove("has-image");
+        this._canvasImg?.removeAttribute("src");
       }
       this._clearButton?.classList.toggle("hidden", !src && !page.image_entity);
     };
+    let image = page.image;
     if (page.image_entity && this._hass) {
       const entity = this._hass.states[page.image_entity];
-      const picture = entity?.attributes.entity_picture;
-      apply(typeof picture === "string" ? picture : "");
-      return;
+      const domain = page.image_entity.split(".")[0];
+      if (domain === "input_text" || domain === "text") {
+        image = entity && entity.state !== "unknown" ? entity.state : "";
+      } else {
+        const picture = entity?.attributes.entity_picture;
+        apply(typeof picture === "string" ? picture : "");
+        return;
+      }
     }
-    const image = page.image;
     const mediaId = typeof image === "object" && image !== null ? image.media_content_id : typeof image === "string" && image.startsWith(MEDIA_SOURCE_PREFIX) ? image : void 0;
     if (!mediaId) {
       apply(typeof image === "string" ? image : "");

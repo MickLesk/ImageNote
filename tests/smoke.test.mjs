@@ -32,7 +32,7 @@ const card = (page, index) => page.locator("#grid > .cell > imagenote-card").nth
 
 test("demo renders every card without page errors", async () => {
   const { page, context, errors } = await openDemo();
-  assert.equal(await page.locator("#grid > .cell > imagenote-card").count(), 14);
+  assert.equal(await page.locator("#grid > .cell > imagenote-card").count(), 16);
   assert.deepEqual(errors, []);
   assert.equal(await card(page, 0).locator(".face.current .title-overlay").innerText(), "Kitchen");
   assert.equal(await card(page, 0).locator(".stage").getAttribute("aria-pressed"), "false");
@@ -86,7 +86,7 @@ test("notes from an input_text entity can be edited on the card", async () => {
 
 test("hold and double tap run their actions instead of flipping", async () => {
   const { page, context } = await openDemo();
-  const actions = card(page, 13);
+  const actions = card(page, 15);
   await actions.scrollIntoViewIfNeeded();
   const box = await actions.locator(".stage").boundingBox();
   const x = box.x + box.width / 2;
@@ -334,6 +334,42 @@ test("expired pages are dimmed or hidden, colours and expiry dates show", async 
     return dots;
   });
   assert.equal(hidden, 0); // two visible slides → no dots, the expired one is gone
+  await context.close();
+});
+
+test("markers show labels and entity states, and open more-info", async () => {
+  const { page, context } = await openDemo();
+  const boiler = card(page, 13);
+  await boiler.scrollIntoViewIfNeeded();
+  const cur = () => boiler.locator(".face.current");
+  assert.equal(await cur().locator(".marker").count(), 3);
+  assert.equal(await boiler.locator(".stage").evaluate((el) => el.classList.contains("ken-burns")), true);
+  await cur().locator(".marker .pin").nth(1).click();
+  assert.equal(await cur().locator(".marker.open").count(), 1);
+  assert.match(await cur().locator(".marker.open .marker-label").innerText(), /Pressure gauge · 1\.6 bar/);
+  assert.equal(await boiler.locator(".stage").getAttribute("aria-pressed"), "false"); // no flip
+  await page.evaluate(() => (window.__events = []));
+  await cur().locator(".marker.open .marker-label").click();
+  const events = await page.evaluate(() => window.__events);
+  assert.equal(events[0]?.type, "hass-more-info");
+  assert.equal(events[0]?.detail.entityId, "sensor.pressure");
+  assert.match(await cur().locator(".marker").nth(2).locator(".marker-label").evaluate((el) => el.textContent), /Boiler: 54\.5 °C/);
+  await context.close();
+});
+
+test("a picture from an input_text gets a camera button that uploads and writes back", async () => {
+  const { page, context } = await openDemo();
+  const door = card(page, 14);
+  await door.scrollIntoViewIfNeeded();
+  const cur = () => door.locator(".face.current");
+  assert.equal(await cur().locator("img").getAttribute("src"), "./sample-3.svg");
+  assert.equal(await cur().locator(".camera").isVisible(), true);
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), cur().locator(".camera").click()]);
+  await chooser.setFiles({ name: "door.svg", mimeType: "image/svg+xml", buffer: Buffer.from("<svg xmlns='http://www.w3.org/2000/svg' width='4' height='4'/>") });
+  await page.waitForFunction(() => window.__hassStates?.()["input_text.door_photo"].state.includes("/api/image/serve/demo123/original"));
+  await page.waitForTimeout(200);
+  assert.equal(await cur().locator("img").getAttribute("src"), "/api/image/serve/demo123/original");
+  assert.equal(await door.locator(".stage").getAttribute("aria-pressed"), "false");
   await context.close();
 });
 

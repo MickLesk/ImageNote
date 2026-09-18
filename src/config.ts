@@ -2,6 +2,8 @@ import { DEFAULTS, DIRECTIONS, EXPIRED_MODES, IMAGE_FITS, LAYOUTS, MAX_SLIDES, N
 import type {
   ActionConfig,
   ImageNoteCardConfig,
+  Marker,
+  MarkerConfig,
   MediaValue,
   NormalizedConfig,
   NormalizedPage,
@@ -93,6 +95,25 @@ function validatePage(c: Record<string, unknown>, prefix: string): void {
   }
 }
 
+function normalizeMarkers(markers: unknown): Marker[] {
+  if (!Array.isArray(markers)) return [];
+  const out: Marker[] = [];
+  for (const raw of markers as MarkerConfig[]) {
+    if (!raw || typeof raw !== "object") continue;
+    const x = num(raw.x, Number.NaN, 0, 100);
+    const y = num(raw.y, Number.NaN, 0, 100);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    out.push({
+      x,
+      y,
+      label: str(raw.label).trim(),
+      icon: str(raw.icon).trim(),
+      entity: str(raw.entity).trim(),
+    });
+  }
+  return out;
+}
+
 export function normalizePage(page: PageConfig): NormalizedPage {
   return {
     kind: page.kind === "note" || page.kind === "image" ? page.kind : undefined,
@@ -104,6 +125,7 @@ export function normalizePage(page: PageConfig): NormalizedPage {
     note_attribute: str(page.note_attribute).trim(),
     expires: str(page.expires).trim(),
     color: str(page.color).trim(),
+    markers: normalizeMarkers(page.markers),
   };
 }
 
@@ -115,11 +137,15 @@ export function configPages(config: ImageNoteCardConfig): PageConfig[] {
   }
   return [
     {
+      kind: config.kind,
       image: config.image,
       image_entity: config.image_entity,
       note: config.note,
       note_entity: config.note_entity,
       note_attribute: config.note_attribute,
+      expires: config.expires,
+      color: config.color,
+      markers: config.markers,
     },
   ];
 }
@@ -175,6 +201,11 @@ export function normalizeConfig(config: ImageNoteCardConfig): NormalizedConfig {
     expired_slides: pick(config.expired_slides, EXPIRED_MODES, DEFAULTS.expired_slides),
     checklist: bool(config.checklist, DEFAULTS.checklist),
     checklist_writeback: bool(config.checklist_writeback, DEFAULTS.checklist_writeback),
+    upload_target: config.upload_target === "media" ? "media" : "image",
+    upload_folder: str(config.upload_folder, DEFAULTS.upload_folder),
+    upload_max_size: Math.round(num(config.upload_max_size, DEFAULTS.upload_max_size, 0, 8000)),
+    ken_burns: bool(config.ken_burns, DEFAULTS.ken_burns),
+    show_camera: bool(config.show_camera, DEFAULTS.show_camera),
     tap_action: action(config.tap_action, DEFAULTS.tap_action),
     hold_action: action(config.hold_action, DEFAULTS.hold_action),
     double_tap_action: action(config.double_tap_action, DEFAULTS.double_tap_action),

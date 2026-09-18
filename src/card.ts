@@ -4,6 +4,7 @@ import {
   DOUBLE_TAP_WINDOW_MS,
   EDITOR_TYPE,
   HOLD_DELAY_MS,
+  IMAGE_URL_ENTITY_DOMAINS,
   MEDIA_EXPIRES_SECONDS,
   MEDIA_REFRESH_MS,
   MEDIA_SOURCE_PREFIX,
@@ -17,6 +18,7 @@ import { normalizeConfig, parseAspectRatio, validateConfig } from "./config";
 import { resolveLanguage, translate } from "./i18n";
 import { CARD_STYLES } from "./styles";
 import { formatRelativeTime } from "./time";
+import { UploadError, uploadPicture } from "./upload";
 import {
   contrastTextColor,
   hasChecklist,
@@ -49,6 +51,10 @@ interface FaceView {
   placeholderIcon: HTMLElement;
   titleOverlay: HTMLElement;
   imageTag: HTMLElement;
+  markers: HTMLElement;
+  camera: HTMLButtonElement;
+  cameraInput: HTMLInputElement;
+  cameraStatus: HTMLElement;
   noteLayer: HTMLElement;
   noteHeader: HTMLElement;
   noteTitle: HTMLElement;
@@ -67,6 +73,9 @@ interface FaceView {
   src: string;
   failed: boolean;
   resolveToken: number;
+  /** Last value read from image_entity, to notice changes. */
+  entityValue: string;
+  markerStates: string;
 }
 
 interface Elements {
@@ -111,7 +120,11 @@ const FACE_TEMPLATE = `
       <small></small>
     </div>
     <div class="title-overlay"></div>
+    <div class="markers"></div>
     <div class="tag image-tag hidden"></div>
+    <button class="camera hidden" type="button"><ha-icon icon="mdi:camera-plus-outline"></ha-icon></button>
+    <input class="camera-input" type="file" accept="image/*" capture="environment" hidden />
+    <div class="camera-status hidden"></div>
   </div>
   <div class="layer layer-note">
     <div class="note-header">
@@ -451,6 +464,10 @@ export class ImageNoteCard extends HTMLElement {
       placeholderIcon: q(el, ".placeholder ha-icon"),
       titleOverlay: q(el, ".title-overlay"),
       imageTag: q(el, ".image-tag"),
+      markers: q(el, ".markers"),
+      camera: q(el, ".camera"),
+      cameraInput: q(el, ".camera-input"),
+      cameraStatus: q(el, ".camera-status"),
       noteLayer: q(el, ".layer-note"),
       noteHeader: q(el, ".note-header"),
       noteTitle: q(el, ".note-header .title"),
@@ -468,6 +485,8 @@ export class ImageNoteCard extends HTMLElement {
       src: "",
       failed: false,
       resolveToken: 0,
+      entityValue: "",
+      markerStates: "",
     });
     this._els = {
       card: q(this._root, "ha-card"),
@@ -506,6 +525,15 @@ export class ImageNoteCard extends HTMLElement {
     for (const view of els.faces) {
       view.img.addEventListener("error", () => this._onImageError(view));
       view.img.addEventListener("load", () => this._onImageLoad(view));
+      view.camera.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        view.cameraInput.click();
+      });
+      view.cameraInput.addEventListener("change", () => {
+        const file = view.cameraInput.files?.[0];
+        view.cameraInput.value = "";
+        if (file) void this._uploadPhoto(view, file);
+      });
       view.editButton.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (view === this._currentFace) this._startEdit();
@@ -568,6 +596,7 @@ export class ImageNoteCard extends HTMLElement {
     }
     this.style.setProperty("--imagenote-fit", config.image_fit);
     els.stage.classList.toggle("hover-flip", config.hover_flip);
+    els.stage.classList.toggle("ken-burns", config.ken_burns && !this._motionQuery.matches);
     els.badge.classList.toggle("hidden", !config.show_hint || this._slides().length < 2);
     this._applyMode();
   }
@@ -779,6 +808,10 @@ export class ImageNoteCard extends HTMLElement {
       view.titleOverlay.textContent = title;
       view.titleOverlay.classList.toggle("hidden", !(config.show_title && title));
       this._applyImage(view, slide);
+      this._renderMarkers(view, slide);
+      view.camera.classList.toggle("hidden", !this._cameraAllowed(slide));
+      view.camera.title = translate(this._lang, "takePhoto");
+      view.camera.setAttribute("aria-label", translate(this._lang, "takePhoto"));
     } else {
       view.noteTitle.textContent = title || translate(this._lang, "note");
       view.noteHeader.classList.toggle("no-title", !title);
@@ -877,13 +910,18 @@ export class ImageNoteCard extends HTMLElement {
 
   // ---------------------------------------------------------------- picture
 
+  /** The picture address an entity provides: entity_picture, or the state of an input_text / text. */
   private _imageSourceFromEntity(slide: Slide): string | undefined {
     if (!slide.image_entity || !this._hass) return undefined;
     const entity = this._hass.states[slide.image_entity];
     if (!entity) return undefined;
+    const domain = slide.image_entity.split(".")[0];
+    if (IMAGE_URL_ENTITY_DOMAINS.includes(domain)) {
+      const value = entity.state.trim();
+      return value && value !== "unknown" && value !== "unavailable" ? value : undefined;
+    }
     const picture = entity.attributes.entity_picture;
     if (typeof picture !== "string" || !picture) return undefined;
-    const domain = slide.image_entity.split(".")[0];
     if (domain === "image" || domain === "camera") {
       const join = picture.includes("?") ? "&" : "?";
       return `${picture}${join}state=${encodeURIComponent(entity.state)}`;
@@ -891,14 +929,15 @@ export class ImageNoteCard extends HTMLElement {
     return picture;
   }
 
+  private _cameraAllowed(slide: Slide): boolean {
+    if (!this._config?.show_camera || !slide.image_entity || !this._hass) return false;
+    return IMAGE_URL_ENTITY_DOMAINS.includes(slide.image_entity.split(".")[0]);
+  }
+
   private _applyImage(view: FaceView, slide: Slide): void {
     const token = ++view.resolveToken;
     this._mediaPending = false;
-    if (slide.image_entity) {
-      this._setImage(view, this._imageSourceFromEntity(slide) ?? "", false);
-      return;
-    }
-    const image = slide.image;
+    const image = slide.image_entity ? this._imageSourceFromEntity(slide) : slide.image;
     if (!image) {
       this._setImage(view, "", false);
       return;
@@ -990,6 +1029,103 @@ export class ImageNoteCard extends HTMLElement {
     this._updateDepth();
   }
 
+  // ---------------------------------------------------------------- markers
+
+  private _renderMarkers(view: FaceView, slide: Slide): void {
+    view.markers.replaceChildren();
+    view.markerStates = slide.markers
+      .map((m) => (m.entity ? this._hass?.states[m.entity]?.state ?? "" : ""))
+      .join("|");
+    slide.markers.forEach((marker, index) => {
+      const pin = document.createElement("div");
+      pin.className = "marker";
+      pin.style.left = `${marker.x}%`;
+      pin.style.top = `${marker.y}%`;
+      if (marker.y < 22) pin.classList.add("below");
+      if (marker.x > 70) pin.classList.add("align-right");
+      else if (marker.x < 30) pin.classList.add("align-left");
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "pin";
+      if (marker.icon) {
+        const icon = document.createElement("ha-icon");
+        icon.setAttribute("icon", marker.icon);
+        button.append(icon);
+      } else {
+        button.textContent = String(index + 1);
+      }
+      const entity = marker.entity ? this._hass?.states[marker.entity] : undefined;
+      const parts: string[] = [];
+      if (marker.label) parts.push(marker.label);
+      if (marker.entity) {
+        const name = (entity?.attributes.friendly_name as string | undefined) ?? marker.entity;
+        const unit = (entity?.attributes.unit_of_measurement as string | undefined) ?? "";
+        parts.push(entity ? `${marker.label ? "" : `${name}: `}${entity.state}${unit ? ` ${unit}` : ""}` : name);
+      }
+      const text = parts.join(" · ");
+      button.setAttribute("aria-label", text || `${index + 1}`);
+      button.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const open = pin.classList.contains("open");
+        view.markers.querySelectorAll(".marker.open").forEach((el) => el.classList.remove("open"));
+        if (!open && text) pin.classList.add("open");
+      });
+      pin.append(button);
+      if (text) {
+        const bubble = document.createElement("button");
+        bubble.type = "button";
+        bubble.className = "marker-label";
+        bubble.textContent = text;
+        bubble.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          if (marker.entity) {
+            this.dispatchEvent(
+              new CustomEvent("hass-more-info", { detail: { entityId: marker.entity }, bubbles: true, composed: true }),
+            );
+          } else {
+            pin.classList.remove("open");
+          }
+        });
+        pin.append(bubble);
+      }
+      view.markers.append(pin);
+    });
+  }
+
+  // ---------------------------------------------------------------- camera
+
+  /** Takes or picks a photo, uploads it and stores its address in the slide's input_text. */
+  private async _uploadPhoto(view: FaceView, file: File): Promise<void> {
+    const config = this._config;
+    const slide = this._slide;
+    const hass = this._hass;
+    if (!config || !hass || !this._cameraAllowed(slide)) return;
+    const t = (key: string) => translate(this._lang, key);
+    view.cameraStatus.textContent = t("uploading");
+    view.cameraStatus.classList.remove("hidden", "error");
+    view.camera.disabled = true;
+    try {
+      const value = await uploadPicture(hass, file, {
+        target: config.upload_target,
+        folder: config.upload_folder,
+        maxSize: config.upload_max_size,
+      });
+      const domain = slide.image_entity.split(".")[0];
+      await hass.callService(domain, "set_value", { entity_id: slide.image_entity, value });
+      view.cameraStatus.classList.add("hidden");
+    } catch (err) {
+      const code = err instanceof UploadError ? err.code : "network";
+      const message =
+        code === "too_large" ? t("uploadTooLarge") : code === "forbidden" ? t("uploadForbidden") : (err as Error)?.message ?? "";
+      view.cameraStatus.textContent = `${t("uploadFailed")}${message ? `: ${message}` : ""}`;
+      view.cameraStatus.classList.add("error");
+      window.setTimeout(() => view.cameraStatus.classList.add("hidden"), 6000);
+    } finally {
+      view.camera.disabled = false;
+    }
+  }
+
   // ---------------------------------------------------------------- note
 
   private _noteSource(slide: Slide): NoteSource {
@@ -1061,8 +1197,16 @@ export class ImageNoteCard extends HTMLElement {
     const view = this._currentFace;
     if (slide.kind === "image") {
       if (slide.image_entity) {
-        const src = this._imageSourceFromEntity(slide) ?? "";
-        if (src !== view.src) this._setImage(view, src, false);
+        const value = this._imageSourceFromEntity(slide) ?? "";
+        if (value !== view.entityValue) {
+          view.entityValue = value;
+          this._applyImage(view, slide);
+        }
+        view.camera.classList.toggle("hidden", !this._cameraAllowed(slide));
+      }
+      if (slide.markers.some((marker) => marker.entity)) {
+        const key = slide.markers.map((m) => (m.entity ? this._hass?.states[m.entity]?.state ?? "" : "")).join("|");
+        if (key !== view.markerStates) this._renderMarkers(view, slide);
       }
       return;
     }

@@ -35,6 +35,24 @@ export interface MediaValue {
   media_content_type?: string;
 }
 
+export interface MarkerConfig {
+  /** Position in percent of the picture's width and height. */
+  x: number;
+  y: number;
+  label?: string;
+  icon?: string;
+  /** Shown with its state in the label; a tap on the marker opens more-info. */
+  entity?: string;
+}
+
+export interface Marker {
+  x: number;
+  y: number;
+  label: string;
+  icon: string;
+  entity: string;
+}
+
 export interface PageConfig {
   /** Forces the kind of an entry without content yet (the editor's "add note" creates such an entry). */
   kind?: SlideKind;
@@ -48,6 +66,8 @@ export interface PageConfig {
   expires?: string;
   /** Tint of a note page: a preset name (yellow, green, …) or any CSS colour. */
   color?: string;
+  /** Pins on the picture with a label: "here is the stopcock". */
+  markers?: MarkerConfig[];
 }
 
 export interface NormalizedPage {
@@ -60,6 +80,7 @@ export interface NormalizedPage {
   note_attribute: string;
   expires: string;
   color: string;
+  markers: Marker[];
 }
 
 export type SlideKind = "image" | "note";
@@ -97,6 +118,12 @@ export interface ImageNoteCardConfig extends PageConfig {
   checklist_writeback?: boolean;
   upload_target?: "image" | "media";
   upload_folder?: string;
+  /** Longest edge for uploaded pictures in pixels; 0 keeps originals. */
+  upload_max_size?: number;
+  /** Slow zoom and pan on pictures, for wall panels. */
+  ken_burns?: boolean;
+  /** Camera button on pictures whose image_entity is an input_text / text entity. */
+  show_camera?: boolean;
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
   double_tap_action?: ActionConfig;
@@ -128,6 +155,11 @@ export interface NormalizedConfig {
   expired_slides: ExpiredMode;
   checklist: boolean;
   checklist_writeback: boolean;
+  upload_target: "image" | "media";
+  upload_folder: string;
+  upload_max_size: number;
+  ken_burns: boolean;
+  show_camera: boolean;
   tap_action: ActionConfig;
   hold_action: ActionConfig;
   double_tap_action: ActionConfig;
