@@ -14,8 +14,8 @@ import {
 } from "./const";
 import { CARD_TYPE, MAX_MARKERS, MAX_SLIDES, MEDIA_SOURCE_PREFIX as MEDIA_PREFIX } from "./const";
 import { parseAspectRatio } from "./config";
-import { UploadError, uploadPicture } from "./upload";
-import { configPages, expandSlides, hasNote, hasPicture, normalizePage } from "./config";
+import { UploadError, preferredAudioType, uploadAudio, uploadPicture } from "./upload";
+import { configPages, expandSlides, hasAudio, hasNote, hasPicture, normalizePage } from "./config";
 import { NOTE_COLOR_PRESETS } from "./notes";
 import { resolveLanguage, translate } from "./i18n";
 import { EDITOR_STYLES } from "./styles";
@@ -34,7 +34,8 @@ interface HaFormElement extends HTMLElement {
 const UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
 const UPLOAD_TARGETS = ["image", "media"];
 const EDITOR_DEFAULTS: Record<string, unknown> = {};
-const PAGE_KEYS: Array<keyof PageConfig> = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "expires", "color", "markers"];
+const PAGE_KEYS: Array<keyof PageConfig> = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "expires", "color", "markers", "audio", "audio_entity"];
+type EntryKind = "image" | "note" | "audio" | "both";
 const LIST_KEYS = ["slides", "images"];
 
 const TEMPLATE = `
@@ -73,6 +74,17 @@ const TEMPLATE = `
   <div class="picture-help markers-help"></div>
   <div class="marker-canvas"><img alt="" draggable="false" /><div class="pins"></div></div>
   <div class="marker-list"></div>
+</div>
+<div class="audio-editor hidden">
+  <div class="picture-label audio-label"></div>
+  <div class="picture-help audio-help"></div>
+  <div class="buttons">
+    <button class="btn primary record-btn" type="button"><ha-icon icon="mdi:microphone"></ha-icon><span></span></button>
+    <button class="btn upload-audio" type="button"><ha-icon icon="mdi:upload"></ha-icon><span></span></button>
+    <input class="audio-file" type="file" accept="audio/*" hidden />
+  </div>
+  <div class="status audio-editor-status"></div>
+  <audio class="audio-preview" controls preload="metadata"></audio>
 </div>
 <ha-form class="page-form"></ha-form>
 <div class="divider"></div>
@@ -387,6 +399,21 @@ const STYLES = `
   .marker-row { grid-template-columns: 28px 1fr 36px; }
   .marker-row input.marker-icon, .marker-row input.marker-entity { grid-column: 2; }
 }
+.audio-editor {
+  margin-bottom: 16px;
+}
+.audio-preview {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+}
+.audio-preview:not([src]) {
+  display: none;
+}
+.record-btn.active {
+  background: var(--error-color, #db4437);
+  border-color: var(--error-color, #db4437);
+}
 .divider {
   height: 1px;
   background: var(--divider-color, rgba(0, 0, 0, 0.12));
@@ -424,6 +451,8 @@ export class ImageNoteCardEditor extends HTMLElement {
   private _previewCard?: HTMLElement & { setConfig(config: ImageNoteCardConfig): void; hass?: HomeAssistant; flip(): void };
   private _dragIndex = -1;
   private _importing = false;
+  private _recorder?: MediaRecorder;
+  private _recordTimer?: number;
 
   constructor() {
     super();
@@ -466,10 +495,13 @@ export class ImageNoteCardEditor extends HTMLElement {
     return this._pages()[this._pageIndex] ?? {};
   }
 
-  private _kindOf(page: PageConfig): "image" | "note" | "both" {
+  private _kindOf(page: PageConfig): EntryKind {
     const picture = hasPicture(page) || page.kind === "image";
     const note = hasNote(page) || page.kind === "note";
-    if (picture && note) return "both";
+    const audio = hasAudio(page) || page.kind === "audio";
+    const parts = [picture, note, audio].filter(Boolean).length;
+    if (parts > 1) return "both";
+    if (audio) return "audio";
     return note ? "note" : "image";
   }
 
@@ -507,10 +539,10 @@ export class ImageNoteCardEditor extends HTMLElement {
     return next as unknown as ImageNoteCardConfig;
   }
 
-  private _addPage(kind: "image" | "note"): void {
+  private _addPage(kind: "image" | "note" | "audio"): void {
     const pages = this._pages().map((p) => ({ ...p }));
     if (this._slideCount(pages) >= MAX_SLIDES) return;
-    pages.push(kind === "note" ? { kind: "note" } : {});
+    pages.push(kind === "image" ? {} : { kind });
     this._pageIndex = pages.length - 1;
     this._emit(this._withPages(this._config ?? { type: "" }, pages));
   }
@@ -588,6 +620,135 @@ export class ImageNoteCardEditor extends HTMLElement {
     }
   }
 
+  // ---------------------------------------------------------------- audio
+
+  private _renderAudioEditor(show: boolean): void {
+    const section = this._root.querySelector<HTMLElement>(".audio-editor");
+    if (!section) return;
+    section.classList.toggle("hidden", !show);
+    if (!show) return;
+    const t = (key: string) => translate(this._lang, key);
+    const setText = (selector: string, text: string) => {
+      const el = section.querySelector(selector);
+      if (el) el.textContent = text;
+    };
+    setText(".audio-label", t("editor_audio"));
+    setText(".audio-help", t("editor_audio_help"));
+    setText(".record-btn span", t(this._recorder ? "editor_stop" : "editor_record"));
+    setText(".upload-audio span", t("editor_upload_audio"));
+    section.querySelector(".record-btn")?.classList.toggle("active", Boolean(this._recorder));
+    this._updateAudioPreview();
+  }
+
+  private _updateAudioPreview(): void {
+    const audio = this._root.querySelector<HTMLAudioElement>(".audio-preview");
+    if (!audio) return;
+    const page = this._page();
+    let source: string | undefined;
+    if (page.audio_entity && this._hass) {
+      const entity = this._hass.states[page.audio_entity];
+      source = entity && entity.state !== "unknown" ? entity.state : "";
+    } else {
+      source = typeof page.audio === "object" && page.audio !== null ? page.audio.media_content_id : page.audio;
+    }
+    if (!source) {
+      audio.removeAttribute("src");
+      return;
+    }
+    if (!source.startsWith(MEDIA_PREFIX)) {
+      if (audio.getAttribute("src") !== source) audio.src = source;
+      return;
+    }
+    if (!this._hass) return;
+    const wanted = source;
+    void this._hass
+      .callWS<ResolvedMedia>({ type: "media_source/resolve_media", media_content_id: wanted, expires: MEDIA_EXPIRES_SECONDS })
+      .then((result) => {
+        if (audio.dataset.mediaId !== wanted) {
+          audio.dataset.mediaId = wanted;
+          audio.src = result.url;
+        }
+      })
+      .catch(() => audio.removeAttribute("src"));
+  }
+
+  private _setAudioStatus(text: string, isError = false): void {
+    const status = this._root.querySelector<HTMLElement>(".audio-editor-status");
+    if (!status) return;
+    status.textContent = text;
+    status.classList.toggle("error", isError);
+  }
+
+  private async _uploadAudioFile(file: File | Blob, name = "memo"): Promise<void> {
+    const hass = this._hass;
+    if (!hass) return;
+    const t = (key: string) => translate(this._lang, key);
+    this._setAudioStatus(t("editor_uploading"));
+    try {
+      const folder = this._config?.upload_folder ?? (DEFAULTS.upload_folder as string);
+      const value = await uploadAudio(hass, file, folder, name);
+      const page: PageConfig = { ...this._page(), audio: value };
+      delete page.kind;
+      this._emit(this._withPage(this._pageIndex, page));
+      this._setAudioStatus(t("editor_upload_done"));
+    } catch (err) {
+      const code = err instanceof UploadError ? err.code : "network";
+      const message =
+        code === "too_large"
+          ? t("editor_upload_too_large")
+          : code === "forbidden"
+            ? t("editor_upload_forbidden")
+            : err instanceof Error
+              ? err.message
+              : String(err);
+      this._setAudioStatus(`${t("editor_upload_failed")}: ${message}`, true);
+    }
+  }
+
+  private async _toggleRecord(): Promise<void> {
+    const t = (key: string, vars?: Record<string, string | number>) => translate(this._lang, key, vars);
+    if (this._recorder) {
+      if (this._recorder.state !== "inactive") this._recorder.stop();
+      return;
+    }
+    const Recorder = (window as unknown as { MediaRecorder?: typeof MediaRecorder }).MediaRecorder;
+    if (!Recorder || !navigator.mediaDevices?.getUserMedia) {
+      this._setAudioStatus(t("micUnsupported"), true);
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      this._setAudioStatus(t("micDenied"), true);
+      return;
+    }
+    const type = preferredAudioType();
+    const recorder = type ? new Recorder(stream, { mimeType: type }) : new Recorder(stream);
+    const chunks: Blob[] = [];
+    const started = Date.now();
+    recorder.addEventListener("dataavailable", (ev) => {
+      if (ev.data.size > 0) chunks.push(ev.data);
+    });
+    recorder.addEventListener("stop", () => {
+      stream.getTracks().forEach((track) => track.stop());
+      window.clearInterval(this._recordTimer);
+      this._recorder = undefined;
+      this._renderAudioEditor(true);
+      if (chunks.length) {
+        void this._uploadAudioFile(new Blob(chunks, { type: recorder.mimeType || type || "audio/webm" }), `memo-${Date.now()}`);
+      }
+    });
+    this._recorder = recorder;
+    recorder.start();
+    this._renderAudioEditor(true);
+    this._recordTimer = window.setInterval(() => {
+      const seconds = Math.round((Date.now() - started) / 1000);
+      this._setAudioStatus(t("recording", { seconds }));
+      if (seconds >= 180 && this._recorder?.state !== "inactive") this._recorder?.stop();
+    }, 500);
+  }
+
   private _updatePreviewCard(): void {
     const card = this._previewCard;
     if (!card || !this._config) return;
@@ -647,6 +808,14 @@ export class ImageNoteCardEditor extends HTMLElement {
       if (this._previewCard) preview.append(this._previewCard);
     }
     this._root.querySelector<HTMLButtonElement>(".play")?.addEventListener("click", () => this._previewCard?.flip());
+    this._root.querySelector<HTMLButtonElement>(".record-btn")?.addEventListener("click", () => void this._toggleRecord());
+    const audioFile = this._root.querySelector<HTMLInputElement>(".audio-file");
+    this._root.querySelector<HTMLButtonElement>(".upload-audio")?.addEventListener("click", () => audioFile?.click());
+    audioFile?.addEventListener("change", () => {
+      const file = audioFile.files?.[0];
+      audioFile.value = "";
+      if (file) void this._uploadAudioFile(file);
+    });
 
     this._pageForm?.addEventListener("value-changed", this._onPageValueChanged as EventListener);
     this._cardForm?.addEventListener("value-changed", this._onCardValueChanged as EventListener);
@@ -697,7 +866,10 @@ export class ImageNoteCardEditor extends HTMLElement {
         chip.className = `chip${index === this._pageIndex ? " active" : ""}`;
         chip.dataset.kind = kind;
         const icon = document.createElement("ha-icon");
-        icon.setAttribute("icon", kind === "note" ? "mdi:note-text-outline" : kind === "both" ? "mdi:image-text" : "mdi:image-outline");
+        icon.setAttribute(
+          "icon",
+          kind === "note" ? "mdi:note-text-outline" : kind === "audio" ? "mdi:microphone-outline" : kind === "both" ? "mdi:image-text" : "mdi:image-outline",
+        );
         const label = document.createElement("span");
         label.textContent = `${index + 1} · ${t(`editor_kind_${kind}`)}`;
         chip.append(icon, label);
@@ -734,12 +906,12 @@ export class ImageNoteCardEditor extends HTMLElement {
     const addRow = this._root.querySelector<HTMLElement>(".add-row");
     if (addRow) {
       addRow.replaceChildren();
-      for (const kind of ["image", "note"] as const) {
+      for (const kind of ["image", "note", "audio"] as const) {
         const add = document.createElement("button");
         add.type = "button";
         add.className = `chip add add-${kind}`;
         add.innerHTML = `<ha-icon icon="mdi:plus"></ha-icon><span></span>`;
-        add.querySelector("span")!.textContent = t(kind === "note" ? "editor_add_note" : "editor_add_page");
+        add.querySelector("span")!.textContent = t(kind === "note" ? "editor_add_note" : kind === "audio" ? "editor_add_audio" : "editor_add_page");
         add.disabled = full;
         add.addEventListener("click", () => this._addPage(kind));
         addRow.append(add);
@@ -764,8 +936,12 @@ export class ImageNoteCardEditor extends HTMLElement {
     setText(".play span", t("editor_play"));
     this._updatePreviewCard();
     const currentKind = this._kindOf(this._page());
-    this._root.querySelector(".picture")?.classList.toggle("hidden", currentKind === "note");
-    this._renderMarkers(currentKind !== "note");
+    const currentPage = this._page();
+    const showPicture = currentKind === "image" || hasPicture(currentPage);
+    const showAudio = currentKind === "audio" || hasAudio(currentPage);
+    this._root.querySelector(".picture")?.classList.toggle("hidden", !showPicture);
+    this._renderMarkers(showPicture);
+    this._renderAudioEditor(showAudio);
     this._removePageButton?.classList.toggle("hidden", pages.length <= 1);
     this._moveLeftButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex === 0);
     this._moveRightButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex >= pages.length - 1);
@@ -798,11 +974,21 @@ export class ImageNoteCardEditor extends HTMLElement {
   private _pageSchema(multiple: boolean): FormSchema[] {
     const t = (key: string) => translate(this._lang, key);
     const schema: FormSchema[] = [];
-    const kind = this._kindOf(this._page());
+    const page = this._page();
+    const kind = this._kindOf(page);
     if (multiple) {
       schema.push({ name: "page_title", selector: { text: {} } });
     }
-    if (kind !== "note") {
+    if (kind === "audio" || hasAudio(page)) {
+      schema.push(
+        { name: "audio", selector: { text: {} } },
+        {
+          name: "audio_entity",
+          selector: { entity: { filter: [{ domain: "input_text" }, { domain: "text" }] } },
+        },
+      );
+    }
+    if (kind === "image" || hasPicture(page)) {
       schema.push(
         { name: "image", selector: { text: {} } },
         {
@@ -814,6 +1000,9 @@ export class ImageNoteCardEditor extends HTMLElement {
           },
         },
       );
+    }
+    if (kind === "audio" && !hasNote(page)) {
+      return schema;
     }
     schema.push(
       { name: "note", selector: { text: { multiline: true } } },
@@ -985,6 +1174,7 @@ export class ImageNoteCardEditor extends HTMLElement {
               { name: "checklist", selector: { boolean: {} } },
               { name: "checklist_writeback", selector: { boolean: {} } },
               { name: "show_camera", selector: { boolean: {} } },
+              { name: "show_record", selector: { boolean: {} } },
             ],
           },
           { name: "actions_help", type: "constant", value: "" },
@@ -1008,6 +1198,8 @@ export class ImageNoteCardEditor extends HTMLElement {
       note_attribute: page.note_attribute ?? "",
       expires: page.expires ?? "",
       color: page.color ?? "",
+      audio: typeof page.audio === "object" && page.audio !== null ? page.audio.media_content_id : page.audio ?? "",
+      audio_entity: page.audio_entity ?? "",
     };
   }
 

@@ -35,6 +35,8 @@ All notable changes to ImageNote are documented here. The format follows
 - `expires` per entry with "Until …" in the footer; expired pages are dimmed
   and tagged or hidden (`expired_slides`).
 - `color` per note page and a `sticky` note style.
+- Audio pages with a player: record in the editor, upload a file, or record
+  on the card into an `input_text` (`audio_entity`).
 - Markers: numbered or icon pins on a picture with a label, optionally an
   entity state and more-info. Placed by clicking in the editor.
 - Camera button on pictures from an `input_text` / `text` entity: takes or

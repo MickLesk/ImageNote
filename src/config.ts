@@ -85,13 +85,16 @@ function validatePage(c: Record<string, unknown>, prefix: string): void {
   if (c.image_entity !== undefined && c.image_entity !== "" && typeof c.image_entity !== "string") {
     throw new Error(`ImageNote: ${prefix}image_entity must be an entity id`);
   }
-  if (
-    c.image !== undefined &&
-    c.image !== null &&
-    typeof c.image !== "string" &&
-    !(typeof c.image === "object" && typeof (c.image as { media_content_id?: unknown }).media_content_id === "string")
-  ) {
-    throw new Error(`ImageNote: ${prefix}image must be a URL, a media-source id or a media object`);
+  for (const key of ["image", "audio"] as const) {
+    const value = c[key];
+    if (
+      value !== undefined &&
+      value !== null &&
+      typeof value !== "string" &&
+      !(typeof value === "object" && typeof (value as { media_content_id?: unknown }).media_content_id === "string")
+    ) {
+      throw new Error(`ImageNote: ${prefix}${key} must be a URL, a media-source id or a media object`);
+    }
   }
 }
 
@@ -116,7 +119,7 @@ function normalizeMarkers(markers: unknown): Marker[] {
 
 export function normalizePage(page: PageConfig): NormalizedPage {
   return {
-    kind: page.kind === "note" || page.kind === "image" ? page.kind : undefined,
+    kind: page.kind === "note" || page.kind === "image" || page.kind === "audio" ? page.kind : undefined,
     title: str(page.title).trim(),
     image: page.image === null || page.image === "" ? undefined : (page.image as string | MediaValue | undefined),
     image_entity: str(page.image_entity).trim(),
@@ -126,7 +129,13 @@ export function normalizePage(page: PageConfig): NormalizedPage {
     expires: str(page.expires).trim(),
     color: str(page.color).trim(),
     markers: normalizeMarkers(page.markers),
+    audio: page.audio === null || page.audio === "" ? undefined : (page.audio as string | MediaValue | undefined),
+    audio_entity: str(page.audio_entity).trim(),
   };
+}
+
+export function hasAudio(page: PageConfig | NormalizedPage): boolean {
+  return Boolean(page.audio) || Boolean(page.audio_entity);
 }
 
 /** The config entries of a card: `slides` (or the older `images`) when given, otherwise the top-level fields as one entry. */
@@ -146,6 +155,8 @@ export function configPages(config: ImageNoteCardConfig): PageConfig[] {
       expires: config.expires,
       color: config.color,
       markers: config.markers,
+      audio: config.audio,
+      audio_entity: config.audio_entity,
     },
   ];
 }
@@ -158,17 +169,21 @@ export function hasNote(page: PageConfig | NormalizedPage): boolean {
   return Boolean(page.note) || Boolean(page.note_entity);
 }
 
-/** An entry with a picture and a note becomes two slides; an empty entry is an empty picture slide. */
+/** An entry with a picture, a note and/or audio becomes one slide per part; an empty entry is an empty picture slide. */
 export function expandSlides(entries: NormalizedPage[]): Slide[] {
   const slides: Slide[] = [];
   entries.forEach((entry, index) => {
     const picture = hasPicture(entry) || entry.kind === "image";
     const note = hasNote(entry) || entry.kind === "note";
-    if (picture || !note) {
-      slides.push({ ...entry, kind: "image", entry: index, note: "", note_entity: "", note_attribute: "" });
+    const audio = hasAudio(entry) || entry.kind === "audio";
+    if (picture || (!note && !audio)) {
+      slides.push({ ...entry, kind: "image", entry: index, note: "", note_entity: "", note_attribute: "", audio: undefined, audio_entity: "" });
     }
     if (note) {
-      slides.push({ ...entry, kind: "note", entry: index, image: undefined, image_entity: "" });
+      slides.push({ ...entry, kind: "note", entry: index, image: undefined, image_entity: "", audio: undefined, audio_entity: "" });
+    }
+    if (audio) {
+      slides.push({ ...entry, kind: "audio", entry: index, image: undefined, image_entity: "", note: "", note_entity: "", note_attribute: "" });
     }
   });
   return slides;
@@ -207,6 +222,7 @@ export function normalizeConfig(config: ImageNoteCardConfig): NormalizedConfig {
     upload_crop: bool(config.upload_crop, DEFAULTS.upload_crop),
     ken_burns: bool(config.ken_burns, DEFAULTS.ken_burns),
     show_camera: bool(config.show_camera, DEFAULTS.show_camera),
+    show_record: bool(config.show_record, DEFAULTS.show_record),
     tap_action: action(config.tap_action, DEFAULTS.tap_action),
     hold_action: action(config.hold_action, DEFAULTS.hold_action),
     double_tap_action: action(config.double_tap_action, DEFAULTS.double_tap_action),

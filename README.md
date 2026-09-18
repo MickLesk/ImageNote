@@ -44,6 +44,9 @@ message for the wall panel.
 - **A camera button on the card** — when a picture comes from an
   `input_text` entity, a tap on the camera takes or picks a new photo, uploads
   it and stores its address in the entity. No editor needed.
+- **Voice memos** — an audio page with a player. Record in the editor, upload
+  a file, or point `audio_entity` at an `input_text` and record straight on the
+  card.
 - **Ken Burns** — a slow zoom and pan on pictures for wall panels.
 - **Five transitions** — `flip` (3D, default), `fade`, `slide`, `cube`, `none`;
   horizontal or vertical. Respects `prefers-reduced-motion`.
@@ -161,7 +164,10 @@ direction: vertical
 | --- | --- | --- |
 | `title` | – | Shown on the picture and above the note. |
 | `image` | – | Picture URL, `/local/` path, `/api/image/serve/…` URL or `media-source://` id. Uploads from the editor land here. |
-| `slides` | – | Pictures and notes in order, at most ten. Each entry is an object with `image` or `image_entity` (a picture), `note`, `note_entity` or `note_attribute` (a note), an optional `title`, or just a URL string. An entry with both picture and note becomes two slides. When set, the top-level picture and note fields are ignored. An entry without `title` uses the card title. `images` is accepted as an older name. |
+| `slides` | – | Pictures, notes and audio in order, at most ten. Each entry is an object with `image` or `image_entity` (a picture), `note`, `note_entity` or `note_attribute` (a note), `audio` or `audio_entity` (a recording), an optional `title`, or just a URL string. An entry with several parts becomes one page per part, in the order picture, note, audio. When set, the top-level fields are ignored. An entry without `title` uses the card title. `images` is accepted as an older name. |
+| `audio` | – | Per entry: URL or `media-source://` id of an audio file. |
+| `audio_entity` | – | Per entry: an `input_text` / `text` entity whose state is the audio address. The card then shows a record button. |
+| `show_record` | `true` | Record button on audio pages from an `input_text` / `text` entity. |
 | `layout` | `stack` | How several entries are shown: `stack` (one after another) or `grid` (tiles side by side, each turning between its own picture and note). |
 | `columns` | `0` | With `layout: grid`: tiles per row. `0` fits as many as the width allows (about 150 px each). |
 | `image_entity` | – | Use the picture of an `image`, `camera` or `person` entity, or an `input_text` / `text` entity whose state is a picture address (URL or `media-source://` id). |
@@ -238,6 +244,29 @@ type: custom:imagenote-card
 title: Damage report
 image_entity: input_text.damage_photo
 note_entity: input_text.damage_note
+```
+
+## Voice memos
+
+An audio page shows a player with a big play button, a progress bar you can
+tap to seek, and the title. Three ways to fill it:
+
+- **Record in the editor.** *+ Audio*, then *Record*. The browser asks for
+  the microphone; *Stop* uploads the memo to the media folder
+  (`upload_folder`) and fills in the address. Recording works in Chrome,
+  Firefox and Safari 14.5 or newer.
+- **Upload an audio file** or paste a URL / `media-source://` id.
+- **Record on the card.** Point `audio_entity` at an `input_text`. The page
+  gets a microphone button; a tap records (up to three minutes), a second tap
+  stops, uploads and writes the address into the entity. Requires an
+  administrator account for the media upload.
+
+```yaml
+type: custom:imagenote-card
+title: Message for Dad
+slides:
+  - image: /local/pictures/kids.jpg
+  - audio_entity: input_text.kids_memo
 ```
 
 ## Notes

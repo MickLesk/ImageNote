@@ -32,7 +32,7 @@ const card = (page, index) => page.locator("#grid > .cell > imagenote-card").nth
 
 test("demo renders every card without page errors", async () => {
   const { page, context, errors } = await openDemo();
-  assert.equal(await page.locator("#grid > .cell > imagenote-card").count(), 16);
+  assert.equal(await page.locator("#grid > .cell > imagenote-card").count(), 18);
   assert.deepEqual(errors, []);
   assert.equal(await card(page, 0).locator(".face.current .title-overlay").innerText(), "Kitchen");
   assert.equal(await card(page, 0).locator(".stage").getAttribute("aria-pressed"), "false");
@@ -86,7 +86,7 @@ test("notes from an input_text entity can be edited on the card", async () => {
 
 test("hold and double tap run their actions instead of flipping", async () => {
   const { page, context } = await openDemo();
-  const actions = card(page, 15);
+  const actions = card(page, 17);
   await actions.scrollIntoViewIfNeeded();
   const box = await actions.locator(".stage").boundingBox();
   const x = box.x + box.width / 2;
@@ -438,6 +438,56 @@ test("uploads are scaled down and cropped before they leave the browser", async 
   await page.waitForFunction(() => window.__uploaded !== null);
   const uploaded = await page.evaluate(() => window.__uploaded);
   assert.deepEqual([uploaded.width, uploaded.height, uploaded.type], [600, 600, "image/png"]);
+  await context.close();
+});
+
+test("audio pages play a memo and offer recording for input_text entities", async () => {
+  const { page, context } = await openDemo();
+  const memo = card(page, 15);
+  await memo.scrollIntoViewIfNeeded();
+  const cur = () => memo.locator(".face.current");
+  assert.equal(await memo.locator(".dots button").count(), 3);
+  assert.equal(await memo.locator(".badge span").innerText(), "Note");
+  await memo.locator(".stage").click(); // note
+  await page.waitForTimeout(800);
+  assert.equal(await memo.locator(".badge span").innerText(), "Audio");
+  await memo.locator(".stage").click(); // audio
+  await page.waitForTimeout(800);
+  assert.equal(await cur().evaluate((el) => el.classList.contains("kind-audio")), true);
+  assert.equal(await cur().locator(".audio-title").innerText(), "Voice memo");
+  assert.equal(await cur().locator(".audio-play").isVisible(), true);
+  await cur().locator(".audio-play").click();
+  await page.waitForTimeout(300);
+  assert.equal(await cur().locator(".audio-play ha-icon").getAttribute("icon"), "mdi:pause");
+  assert.equal(await memo.locator(".stage").getAttribute("aria-pressed"), "false"); // no flip
+  await page.waitForTimeout(1200);
+  assert.equal(await cur().locator(".audio-play ha-icon").getAttribute("icon"), "mdi:play"); // ended
+  assert.match(await cur().locator(".audio-time").innerText(), /0:0\d \/ 0:01/);
+  assert.equal(await cur().locator(".record").isVisible(), false);
+
+  const box = card(page, 16);
+  await box.scrollIntoViewIfNeeded();
+  const bc = () => box.locator(".face.current");
+  assert.equal(await bc().evaluate((el) => el.classList.contains("kind-audio")), true);
+  assert.match(await bc().locator(".audio-empty").innerText(), /No recording yet/);
+  assert.equal(await bc().locator(".record").isVisible(), true);
+  await context.close();
+});
+
+test("the editor adds audio entries with record and upload controls", async () => {
+  const { page, context } = await openDemo();
+  const editor = page.locator("imagenote-card-editor");
+  await page.evaluate(() => {
+    window.__configs = [];
+    document.querySelector("imagenote-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
+  });
+  await editor.locator(".chip.add-audio").click();
+  const latest = await page.evaluate(() => window.__configs.at(-1));
+  assert.equal(latest.slides[1].kind, "audio");
+  assert.equal(await editor.locator(".chip.active").innerText(), "2 · Audio");
+  assert.equal(await editor.locator(".audio-editor").isVisible(), true);
+  assert.equal(await editor.locator(".picture").isVisible(), false);
+  assert.equal(await editor.locator(".record-btn").innerText(), "Record");
   await context.close();
 });
 

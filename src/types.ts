@@ -68,6 +68,10 @@ export interface PageConfig {
   color?: string;
   /** Pins on the picture with a label: "here is the stopcock". */
   markers?: MarkerConfig[];
+  /** A voice memo or any audio file: URL or media-source id. */
+  audio?: string | MediaValue;
+  /** An input_text / text entity whose state is the audio address; enables recording on the card. */
+  audio_entity?: string;
 }
 
 export interface NormalizedPage {
@@ -81,9 +85,11 @@ export interface NormalizedPage {
   expires: string;
   color: string;
   markers: Marker[];
+  audio: string | MediaValue | undefined;
+  audio_entity: string;
 }
 
-export type SlideKind = "image" | "note";
+export type SlideKind = "image" | "note" | "audio";
 
 /** One screen of the card: either a picture or a note. */
 export interface Slide extends NormalizedPage {
@@ -126,6 +132,8 @@ export interface ImageNoteCardConfig extends PageConfig {
   ken_burns?: boolean;
   /** Camera button on pictures whose image_entity is an input_text / text entity. */
   show_camera?: boolean;
+  /** Record button on audio pages whose audio_entity is an input_text / text entity. */
+  show_record?: boolean;
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
   double_tap_action?: ActionConfig;
@@ -163,6 +171,7 @@ export interface NormalizedConfig {
   upload_crop: boolean;
   ken_burns: boolean;
   show_camera: boolean;
+  show_record: boolean;
   tap_action: ActionConfig;
   hold_action: ActionConfig;
   double_tap_action: ActionConfig;

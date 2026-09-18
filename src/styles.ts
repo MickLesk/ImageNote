@@ -169,6 +169,132 @@ ha-card {
   flex-direction: column;
   color: var(--primary-text-color);
 }
+.face.kind-audio .layer-audio {
+  display: flex;
+  flex-direction: column;
+  color: var(--primary-text-color);
+}
+
+/* ---------- audio layer ---------- */
+.audio-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 20px 8px;
+}
+.audio-play {
+  appearance: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary-color);
+  color: var(--text-primary-color, #fff);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+  padding: 0;
+}
+.audio-play ha-icon {
+  --mdc-icon-size: 34px;
+}
+.audio-play:hover {
+  transform: scale(1.05);
+}
+.audio-play:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.audio-progress {
+  width: 100%;
+  max-width: 320px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.12);
+  cursor: pointer;
+  overflow: hidden;
+}
+.audio-bar {
+  height: 100%;
+  width: 0;
+  background: var(--primary-color);
+  border-radius: 3px;
+  transition: width 200ms linear;
+}
+.audio-time {
+  font-size: 0.8em;
+  color: var(--secondary-text-color);
+  font-variant-numeric: tabular-nums;
+}
+.audio-empty {
+  text-align: center;
+  color: var(--secondary-text-color);
+}
+.audio-empty strong {
+  display: block;
+  color: var(--primary-text-color);
+  font-weight: 500;
+}
+.audio-empty small {
+  font-size: 0.85em;
+}
+.record {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
+  color: var(--primary-text-color);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  padding: 0;
+  transition: background-color 150ms ease;
+}
+.record.active {
+  background: var(--error-color, #db4437);
+  color: #fff;
+  animation: imagenote-pulse 1.2s ease-in-out infinite;
+}
+@keyframes imagenote-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(219, 68, 55, 0.5); }
+  50% { box-shadow: 0 0 0 8px rgba(219, 68, 55, 0); }
+}
+.record:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.audio-status {
+  position: absolute;
+  right: 54px;
+  top: 16px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
+  color: var(--primary-text-color);
+  font-size: 0.78em;
+  z-index: 3;
+  max-width: calc(100% - 70px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audio-status.error {
+  background: var(--error-color, #db4437);
+  color: #fff;
+}
 .stage.natural .face.current.kind-image .layer-image {
   position: relative;
   inset: auto;
@@ -524,7 +650,8 @@ ha-card {
 .note-body ha-markdown p:first-child {
   margin-top: 0;
 }
-.note-footer {
+.note-footer,
+.audio-footer {
   position: relative;
   display: flex;
   align-items: center;
@@ -546,7 +673,8 @@ ha-card {
 .layer-note.scrollable:not(.at-end) .note-footer::before {
   opacity: 1;
 }
-.note-meta {
+.note-meta,
+.audio-meta {
   max-width: 55%;
   font-size: 0.75em;
   color: var(--secondary-text-color);
@@ -554,7 +682,8 @@ ha-card {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.note-meta:empty {
+.note-meta:empty,
+.audio-meta:empty {
   display: none;
 }
 

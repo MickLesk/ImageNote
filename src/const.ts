@@ -24,6 +24,8 @@ export const NOTE_ENTITY_DOMAINS = ["input_text", "text"];
 /** Entities whose state is a picture URL or media id, so the card can write a new photo into them. */
 export const IMAGE_URL_ENTITY_DOMAINS = ["input_text", "text"];
 export const MAX_MARKERS = 20;
+/** Recordings stop on their own after this many seconds. */
+export const MAX_RECORDING_SECONDS = 180;
 
 export const MEDIA_SOURCE_PREFIX = "media-source://";
 /** How long a signed media-source URL is requested for, in seconds (24 h). */
@@ -65,6 +67,7 @@ export const DEFAULTS: Omit<NormalizedConfig, "type" | "entries" | "slides"> = {
   upload_crop: false,
   ken_burns: false,
   show_camera: true,
+  show_record: true,
   tap_action: FLIP_ACTION,
   hold_action: NONE_ACTION,
   double_tap_action: NONE_ACTION,

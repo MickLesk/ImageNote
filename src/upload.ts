@@ -124,6 +124,21 @@ export async function uploadToMedia(hass: HomeAssistant, file: File, folder: str
   return result.media_content_id;
 }
 
+/** Audio always goes to the media folder: the image store only takes pictures. */
+export function uploadAudio(hass: HomeAssistant, blob: Blob, folder: string, name = "memo"): Promise<string> {
+  const ext = blob.type.includes("mp4") || blob.type.includes("aac") ? "m4a" : blob.type.includes("ogg") ? "ogg" : blob.type.includes("wav") ? "wav" : "webm";
+  const file = new File([blob], `${name}.${ext}`, { type: blob.type || "audio/webm" });
+  return uploadToMedia(hass, file, folder);
+}
+
+/** The MediaRecorder type this browser can produce; iOS records mp4, everything else webm/opus. */
+export function preferredAudioType(): string {
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+  const Recorder = (window as unknown as { MediaRecorder?: { isTypeSupported?: (t: string) => boolean } }).MediaRecorder;
+  if (!Recorder?.isTypeSupported) return "";
+  return candidates.find((type) => Recorder.isTypeSupported?.(type)) ?? "";
+}
+
 /** Downscales and uploads; resolves to the value to store as `image`. */
 export async function uploadPicture(hass: HomeAssistant, file: File, options: UploadOptions): Promise<string> {
   const prepared = await downscaleImage(file, options.maxSize, options.quality, options.cropAspect);

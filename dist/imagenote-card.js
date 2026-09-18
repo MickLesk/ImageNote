@@ -21,6 +21,7 @@ var ASPECT_RATIOS = ["16:9", "4:3", "3:2", "1:1", "3:4", "9:16", "auto"];
 var NOTE_ENTITY_DOMAINS = ["input_text", "text"];
 var IMAGE_URL_ENTITY_DOMAINS = ["input_text", "text"];
 var MAX_MARKERS = 20;
+var MAX_RECORDING_SECONDS = 180;
 var MEDIA_SOURCE_PREFIX = "media-source://";
 var MEDIA_EXPIRES_SECONDS = 24 * 60 * 60;
 var MEDIA_REFRESH_MS = (MEDIA_EXPIRES_SECONDS - 10 * 60) * 1e3;
@@ -56,6 +57,7 @@ var DEFAULTS = {
   upload_crop: false,
   ken_burns: false,
   show_camera: true,
+  show_record: true,
   tap_action: FLIP_ACTION,
   hold_action: NONE_ACTION,
   double_tap_action: NONE_ACTION
@@ -292,8 +294,11 @@ function validatePage(c, prefix) {
   if (c.image_entity !== void 0 && c.image_entity !== "" && typeof c.image_entity !== "string") {
     throw new Error(`ImageNote: ${prefix}image_entity must be an entity id`);
   }
-  if (c.image !== void 0 && c.image !== null && typeof c.image !== "string" && !(typeof c.image === "object" && typeof c.image.media_content_id === "string")) {
-    throw new Error(`ImageNote: ${prefix}image must be a URL, a media-source id or a media object`);
+  for (const key of ["image", "audio"]) {
+    const value = c[key];
+    if (value !== void 0 && value !== null && typeof value !== "string" && !(typeof value === "object" && typeof value.media_content_id === "string")) {
+      throw new Error(`ImageNote: ${prefix}${key} must be a URL, a media-source id or a media object`);
+    }
   }
 }
 function normalizeMarkers(markers) {
@@ -316,7 +321,7 @@ function normalizeMarkers(markers) {
 }
 function normalizePage(page) {
   return {
-    kind: page.kind === "note" || page.kind === "image" ? page.kind : void 0,
+    kind: page.kind === "note" || page.kind === "image" || page.kind === "audio" ? page.kind : void 0,
     title: str(page.title).trim(),
     image: page.image === null || page.image === "" ? void 0 : page.image,
     image_entity: str(page.image_entity).trim(),
@@ -325,8 +330,13 @@ function normalizePage(page) {
     note_attribute: str(page.note_attribute).trim(),
     expires: str(page.expires).trim(),
     color: str(page.color).trim(),
-    markers: normalizeMarkers(page.markers)
+    markers: normalizeMarkers(page.markers),
+    audio: page.audio === null || page.audio === "" ? void 0 : page.audio,
+    audio_entity: str(page.audio_entity).trim()
   };
+}
+function hasAudio(page) {
+  return Boolean(page.audio) || Boolean(page.audio_entity);
 }
 function configPages(config) {
   const list = Array.isArray(config.slides) && config.slides.length > 0 ? config.slides : config.images;
@@ -343,7 +353,9 @@ function configPages(config) {
       note_attribute: config.note_attribute,
       expires: config.expires,
       color: config.color,
-      markers: config.markers
+      markers: config.markers,
+      audio: config.audio,
+      audio_entity: config.audio_entity
     }
   ];
 }
@@ -358,11 +370,15 @@ function expandSlides(entries) {
   entries.forEach((entry, index) => {
     const picture = hasPicture(entry) || entry.kind === "image";
     const note = hasNote(entry) || entry.kind === "note";
-    if (picture || !note) {
-      slides.push({ ...entry, kind: "image", entry: index, note: "", note_entity: "", note_attribute: "" });
+    const audio = hasAudio(entry) || entry.kind === "audio";
+    if (picture || !note && !audio) {
+      slides.push({ ...entry, kind: "image", entry: index, note: "", note_entity: "", note_attribute: "", audio: void 0, audio_entity: "" });
     }
     if (note) {
-      slides.push({ ...entry, kind: "note", entry: index, image: void 0, image_entity: "" });
+      slides.push({ ...entry, kind: "note", entry: index, image: void 0, image_entity: "", audio: void 0, audio_entity: "" });
+    }
+    if (audio) {
+      slides.push({ ...entry, kind: "audio", entry: index, image: void 0, image_entity: "", note: "", note_entity: "", note_attribute: "" });
     }
   });
   return slides;
@@ -400,6 +416,7 @@ function normalizeConfig(config) {
     upload_crop: bool(config.upload_crop, DEFAULTS.upload_crop),
     ken_burns: bool(config.ken_burns, DEFAULTS.ken_burns),
     show_camera: bool(config.show_camera, DEFAULTS.show_camera),
+    show_record: bool(config.show_record, DEFAULTS.show_record),
     tap_action: action(config.tap_action, DEFAULTS.tap_action),
     hold_action: action(config.hold_action, DEFAULTS.hold_action),
     double_tap_action: action(config.double_tap_action, DEFAULTS.double_tap_action)
@@ -440,6 +457,18 @@ var en = {
   expiresOn: "Until {date}",
   templateError: "Template error",
   takePhoto: "Take a photo",
+  audio: "Audio",
+  showAudio: "Play audio",
+  play: "Play",
+  pause: "Pause",
+  record: "Record a memo",
+  stopRecording: "Stop recording",
+  recording: "Recording… {seconds}s",
+  noAudio: "No recording yet",
+  noAudioHelp: "Record a memo or add an audio file in the card editor.",
+  audioError: "The recording could not be loaded",
+  micDenied: "Microphone access was denied",
+  micUnsupported: "Recording is not supported in this browser",
   uploading: "Uploading…",
   uploadFailed: "Upload failed",
   uploadTooLarge: "The file is too large",
@@ -511,6 +540,17 @@ var en = {
   editor_pages_help: "Up to 10 in any order. A tap on the card shows the next one; swiping and the arrows work too. A picture with a note counts as two.",
   editor_add_page: "Picture",
   editor_add_note: "Note",
+  editor_add_audio: "Audio",
+  editor_kind_audio: "Audio",
+  editor_audio: "Audio",
+  editor_audio_help: "Record a memo, upload an audio file, or enter a URL or media-source id. Recordings are stored in the media folder.",
+  editor_audio_url: "Audio URL",
+  editor_audio_entity: "Audio entity (optional)",
+  editor_audio_entity_help: "An input_text / text entity holding the audio address. The card then gets a record button that stores new memos in it.",
+  editor_record: "Record",
+  editor_stop: "Stop",
+  editor_upload_audio: "Upload audio file",
+  editor_show_record: "Record button on audio from an input_text",
   editor_remove_page: "Remove",
   editor_page_label: "Picture {index}",
   editor_kind_image: "Picture",
@@ -594,6 +634,18 @@ var de = {
   expiresOn: "Bis {date}",
   templateError: "Template-Fehler",
   takePhoto: "Foto aufnehmen",
+  audio: "Audio",
+  showAudio: "Audio abspielen",
+  play: "Abspielen",
+  pause: "Pause",
+  record: "Memo aufnehmen",
+  stopRecording: "Aufnahme beenden",
+  recording: "Aufnahme… {seconds}s",
+  noAudio: "Noch keine Aufnahme",
+  noAudioHelp: "Nimm ein Memo auf oder füge im Karteneditor eine Audiodatei hinzu.",
+  audioError: "Die Aufnahme konnte nicht geladen werden",
+  micDenied: "Zugriff auf das Mikrofon wurde verweigert",
+  micUnsupported: "Aufnehmen wird in diesem Browser nicht unterstützt",
   uploading: "Wird hochgeladen…",
   uploadFailed: "Upload fehlgeschlagen",
   uploadTooLarge: "Die Datei ist zu groß",
@@ -665,6 +717,17 @@ var de = {
   editor_pages_help: "Bis zu 10 in beliebiger Reihenfolge. Ein Tipp auf die Karte zeigt die nächste Seite, Wischen und Pfeile gehen auch. Ein Bild mit Notiz zählt als zwei.",
   editor_add_page: "Bild",
   editor_add_note: "Notiz",
+  editor_add_audio: "Audio",
+  editor_kind_audio: "Audio",
+  editor_audio: "Audio",
+  editor_audio_help: "Memo aufnehmen, Audiodatei hochladen oder eine URL bzw. media-source-ID eingeben. Aufnahmen landen im Medienordner.",
+  editor_audio_url: "Audio-URL",
+  editor_audio_entity: "Audio-Entität (optional)",
+  editor_audio_entity_help: "Eine input_text- / text-Entität mit der Audio-Adresse. Die Karte bekommt dann einen Aufnahme-Button, der neue Memos dort speichert.",
+  editor_record: "Aufnehmen",
+  editor_stop: "Stopp",
+  editor_upload_audio: "Audiodatei hochladen",
+  editor_show_record: "Aufnahme-Button bei Audio aus einem input_text",
   editor_remove_page: "Entfernen",
   editor_page_label: "Bild {index}",
   editor_kind_image: "Bild",
@@ -913,6 +976,132 @@ ha-card {
   display: flex;
   flex-direction: column;
   color: var(--primary-text-color);
+}
+.face.kind-audio .layer-audio {
+  display: flex;
+  flex-direction: column;
+  color: var(--primary-text-color);
+}
+
+/* ---------- audio layer ---------- */
+.audio-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 20px 8px;
+}
+.audio-play {
+  appearance: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary-color);
+  color: var(--text-primary-color, #fff);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+  padding: 0;
+}
+.audio-play ha-icon {
+  --mdc-icon-size: 34px;
+}
+.audio-play:hover {
+  transform: scale(1.05);
+}
+.audio-play:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.audio-progress {
+  width: 100%;
+  max-width: 320px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.12);
+  cursor: pointer;
+  overflow: hidden;
+}
+.audio-bar {
+  height: 100%;
+  width: 0;
+  background: var(--primary-color);
+  border-radius: 3px;
+  transition: width 200ms linear;
+}
+.audio-time {
+  font-size: 0.8em;
+  color: var(--secondary-text-color);
+  font-variant-numeric: tabular-nums;
+}
+.audio-empty {
+  text-align: center;
+  color: var(--secondary-text-color);
+}
+.audio-empty strong {
+  display: block;
+  color: var(--primary-text-color);
+  font-weight: 500;
+}
+.audio-empty small {
+  font-size: 0.85em;
+}
+.record {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
+  color: var(--primary-text-color);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  padding: 0;
+  transition: background-color 150ms ease;
+}
+.record.active {
+  background: var(--error-color, #db4437);
+  color: #fff;
+  animation: imagenote-pulse 1.2s ease-in-out infinite;
+}
+@keyframes imagenote-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(219, 68, 55, 0.5); }
+  50% { box-shadow: 0 0 0 8px rgba(219, 68, 55, 0); }
+}
+.record:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.audio-status {
+  position: absolute;
+  right: 54px;
+  top: 16px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
+  color: var(--primary-text-color);
+  font-size: 0.78em;
+  z-index: 3;
+  max-width: calc(100% - 70px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audio-status.error {
+  background: var(--error-color, #db4437);
+  color: #fff;
 }
 .stage.natural .face.current.kind-image .layer-image {
   position: relative;
@@ -1269,7 +1458,8 @@ ha-card {
 .note-body ha-markdown p:first-child {
   margin-top: 0;
 }
-.note-footer {
+.note-footer,
+.audio-footer {
   position: relative;
   display: flex;
   align-items: center;
@@ -1291,7 +1481,8 @@ ha-card {
 .layer-note.scrollable:not(.at-end) .note-footer::before {
   opacity: 1;
 }
-.note-meta {
+.note-meta,
+.audio-meta {
   max-width: 55%;
   font-size: 0.75em;
   color: var(--secondary-text-color);
@@ -1299,7 +1490,8 @@ ha-card {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.note-meta:empty {
+.note-meta:empty,
+.audio-meta:empty {
   display: none;
 }
 
@@ -1708,6 +1900,17 @@ async function uploadToMedia(hass, file, folder) {
   const result = await response.json();
   return result.media_content_id;
 }
+function uploadAudio(hass, blob, folder, name = "memo") {
+  const ext = blob.type.includes("mp4") || blob.type.includes("aac") ? "m4a" : blob.type.includes("ogg") ? "ogg" : blob.type.includes("wav") ? "wav" : "webm";
+  const file = new File([blob], `${name}.${ext}`, { type: blob.type || "audio/webm" });
+  return uploadToMedia(hass, file, folder);
+}
+function preferredAudioType() {
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+  const Recorder = window.MediaRecorder;
+  if (!Recorder?.isTypeSupported) return "";
+  return candidates.find((type) => Recorder.isTypeSupported?.(type)) ?? "";
+}
 async function uploadPicture(hass, file, options) {
   const prepared = await downscaleImage(file, options.maxSize, options.quality, options.cropAspect);
   return options.target === "media" ? uploadToMedia(hass, prepared, options.folder) : uploadToImageStore(hass, prepared);
@@ -1849,6 +2052,22 @@ var FACE_TEMPLATE = `
       </div>
     </div>
     <div class="note-footer"><div class="note-meta"></div></div>
+  </div>
+  <div class="layer layer-audio">
+    <div class="note-header">
+      <ha-icon icon="mdi:microphone-outline"></ha-icon>
+      <span class="title audio-title"></span>
+      <span class="tag audio-tag hidden"></span>
+    </div>
+    <div class="audio-body">
+      <div class="audio-empty hidden"><strong></strong><small></small></div>
+      <button class="audio-play" type="button"><ha-icon icon="mdi:play"></ha-icon></button>
+      <div class="audio-progress"><div class="audio-bar"></div></div>
+      <div class="audio-time">0:00</div>
+    </div>
+    <div class="audio-footer"><div class="audio-meta"></div></div>
+    <button class="record hidden" type="button"><ha-icon icon="mdi:microphone-plus"></ha-icon></button>
+    <div class="audio-status hidden"></div>
   </div>`;
 var TEMPLATE = `
 <style>${CARD_STYLES}</style>
@@ -1868,6 +2087,11 @@ var TEMPLATE = `
 </ha-card>`;
 function isMediaSourceId(value) {
   return value.startsWith(MEDIA_SOURCE_PREFIX);
+}
+function formatSeconds(total) {
+  const seconds = Math.max(0, Math.floor(total));
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
 var ImageNoteCard = class extends HTMLElement {
   static getConfigElement() {
@@ -1905,6 +2129,12 @@ var ImageNoteCard = class extends HTMLElement {
   _hoverQuery = window.matchMedia("(hover: hover)");
   _lastNote;
   _visible = [];
+  _audio;
+  _audioFace;
+  _recorder;
+  _recordStream;
+  _recordTimer;
+  _recordStart = 0;
   _templateText;
   _templateResult;
   _templateError = "";
@@ -1936,6 +2166,8 @@ var ImageNoteCard = class extends HTMLElement {
     window.clearInterval(this._metaTimer);
     this._metaTimer = void 0;
     this._unsubscribeTemplate();
+    this._stopAudio();
+    this._stopRecording(true);
   }
   setConfig(config) {
     validateConfig(config);
@@ -1951,6 +2183,7 @@ var ImageNoteCard = class extends HTMLElement {
     this._lastNote = void 0;
     this._resolved.clear();
     this._unsubscribeTemplate();
+    this._stopAudio();
     this._visible = this._computeVisible();
     if (this._config.layout === "grid" && this._config.entries.length > 1) {
       this._buildTiles(config);
@@ -2103,7 +2336,7 @@ var ImageNoteCard = class extends HTMLElement {
       grid.style.setProperty("--imagenote-columns", String(config.columns));
     }
     const shared = { ...raw };
-    for (const key of ["slides", "images", "image", "image_entity", "note", "note_entity", "note_attribute", "title", "layout", "columns"]) {
+    for (const key of ["slides", "images", "image", "image_entity", "note", "note_entity", "note_attribute", "audio", "audio_entity", "expires", "color", "markers", "title", "layout", "columns"]) {
       delete shared[key];
     }
     this._tiles = config.entries.map((entry) => {
@@ -2117,7 +2350,12 @@ var ImageNoteCard = class extends HTMLElement {
         image_entity: entry.image_entity,
         note: entry.note,
         note_entity: entry.note_entity,
-        note_attribute: entry.note_attribute
+        note_attribute: entry.note_attribute,
+        audio: entry.audio,
+        audio_entity: entry.audio_entity,
+        expires: entry.expires,
+        color: entry.color,
+        markers: entry.markers
       });
       if (this._hass) tile.hass = this._hass;
       grid.append(tile);
@@ -2163,7 +2401,24 @@ var ImageNoteCard = class extends HTMLElement {
       failed: false,
       resolveToken: 0,
       entityValue: "",
-      markerStates: ""
+      markerStates: "",
+      audioLayer: q(el, ".layer-audio"),
+      audioTitle: q(el, ".audio-title"),
+      audioTag: q(el, ".audio-tag"),
+      audioPlay: q(el, ".audio-play"),
+      audioPlayIcon: q(el, ".audio-play ha-icon"),
+      audioProgress: q(el, ".audio-progress"),
+      audioBar: q(el, ".audio-bar"),
+      audioTime: q(el, ".audio-time"),
+      audioEmpty: q(el, ".audio-empty"),
+      audioEmptyTitle: q(el, ".audio-empty strong"),
+      audioEmptyHelp: q(el, ".audio-empty small"),
+      audioMeta: q(el, ".audio-meta"),
+      record: q(el, ".record"),
+      recordStatus: q(el, ".audio-status"),
+      audioSrc: "",
+      audioFailed: false,
+      audioEntityValue: ""
     });
     this._els = {
       card: q(this._root, "ha-card"),
@@ -2208,6 +2463,18 @@ var ImageNoteCard = class extends HTMLElement {
         const file = view.cameraInput.files?.[0];
         view.cameraInput.value = "";
         if (file) void this._uploadPhoto(view, file);
+      });
+      view.audioPlay.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void this._togglePlay(view);
+      });
+      view.audioProgress.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this._seek(view, ev);
+      });
+      view.record.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void this._toggleRecord(view);
       });
       view.editButton.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -2366,6 +2633,7 @@ var ImageNoteCard = class extends HTMLElement {
     const mode = animate ? this._mode() : "none";
     const duration = Number.parseFloat(getComputedStyle(this).getPropertyValue("--imagenote-duration")) || 0;
     window.clearTimeout(this._animTimer);
+    this._stopAudio();
     this._index = index;
     this._lastNote = void 0;
     this._renderSlide(to, slide);
@@ -2425,19 +2693,22 @@ var ImageNoteCard = class extends HTMLElement {
     if (!els || !config) return;
     const slide = this._slide;
     const total = this._slides().length;
-    els.stage.classList.toggle("kind-note", slide.kind === "note");
+    els.stage.classList.toggle("kind-note", slide.kind !== "image");
     Array.from(els.dots.children).forEach((dot, i) => dot.classList.toggle("active", i === this._index));
     const next = this._slides()[(this._index + 1) % total];
     const t = (key, vars) => translate(this._lang, key, vars);
     if (next && total > 1) {
-      els.badgeIcon.setAttribute("icon", next.kind === "note" ? "mdi:note-text-outline" : "mdi:image-outline");
-      els.badgeLabel.textContent = t(next.kind === "note" ? "note" : "photo");
+      els.badgeIcon.setAttribute(
+        "icon",
+        next.kind === "note" ? "mdi:note-text-outline" : next.kind === "audio" ? "mdi:microphone-outline" : "mdi:image-outline"
+      );
+      els.badgeLabel.textContent = t(next.kind === "note" ? "note" : next.kind === "audio" ? "audio" : "photo");
     }
     const parts = [];
     const title = slide.title || config.title;
     if (title) parts.push(title);
     if (total > 1) parts.push(t("slide", { index: this._index + 1, total }));
-    if (next && total > 1) parts.push(t(next.kind === "note" ? "showNote" : "showPhoto"));
+    if (next && total > 1) parts.push(t(next.kind === "note" ? "showNote" : next.kind === "audio" ? "showAudio" : "showPhoto"));
     els.stage.setAttribute("aria-label", parts.join(" – "));
     els.stage.setAttribute("aria-pressed", String(slide.kind === "note"));
     this._updateScrollState(this._currentFace);
@@ -2457,8 +2728,17 @@ var ImageNoteCard = class extends HTMLElement {
     if (!config) return;
     view.el.classList.toggle("kind-image", slide.kind === "image");
     view.el.classList.toggle("kind-note", slide.kind === "note");
+    view.el.classList.toggle("kind-audio", slide.kind === "audio");
     const title = slide.title || config.title;
-    if (slide.kind === "image") {
+    if (slide.kind === "audio") {
+      view.audioTitle.textContent = title || translate(this._lang, "audio");
+      this._applyNoteColor(view, slide);
+      this._applyAudio(view, slide);
+      view.record.classList.toggle("hidden", !this._recordAllowed(slide));
+      view.record.title = translate(this._lang, "record");
+      view.record.setAttribute("aria-label", translate(this._lang, "record"));
+      this._renderAudioMeta(view, slide);
+    } else if (slide.kind === "image") {
       view.titleOverlay.textContent = title;
       view.titleOverlay.classList.toggle("hidden", !(config.show_title && title));
       this._applyImage(view, slide);
@@ -2500,6 +2780,8 @@ var ImageNoteCard = class extends HTMLElement {
     const label = dim ? translate(this._lang, "expired") : "";
     view.noteTag.textContent = label;
     view.noteTag.classList.toggle("hidden", !dim);
+    view.audioTag.textContent = label;
+    view.audioTag.classList.toggle("hidden", !dim);
     view.imageTag.textContent = label;
     view.imageTag.classList.toggle("hidden", !dim);
   }
@@ -2754,6 +3036,228 @@ var ImageNoteCard = class extends HTMLElement {
       view.camera.disabled = false;
     }
   }
+  // ---------------------------------------------------------------- audio
+  _audioSourceFromEntity(slide) {
+    if (!slide.audio_entity || !this._hass) return void 0;
+    const entity = this._hass.states[slide.audio_entity];
+    if (!entity) return void 0;
+    const value = entity.state.trim();
+    return value && value !== "unknown" && value !== "unavailable" ? value : void 0;
+  }
+  _recordAllowed(slide) {
+    if (!this._config?.show_record || !slide.audio_entity || !this._hass) return false;
+    return IMAGE_URL_ENTITY_DOMAINS.includes(slide.audio_entity.split(".")[0]);
+  }
+  _applyAudio(view, slide) {
+    const token = ++view.resolveToken;
+    const source = slide.audio_entity ? this._audioSourceFromEntity(slide) : slide.audio;
+    if (!source) {
+      this._setAudio(view, "", false);
+      return;
+    }
+    const mediaId = typeof source === "string" ? isMediaSourceId(source) ? source : void 0 : source.media_content_id;
+    if (!mediaId) {
+      this._setAudio(view, source, false);
+      return;
+    }
+    const cached = this._resolved.get(mediaId);
+    if (cached && !cached.failed && cached.expiresAt > Date.now()) {
+      this._setAudio(view, cached.url, false);
+      return;
+    }
+    if (!this._hass) {
+      this._setAudio(view, "", false);
+      return;
+    }
+    void this._hass.callWS({ type: "media_source/resolve_media", media_content_id: mediaId, expires: MEDIA_EXPIRES_SECONDS }).then((result) => {
+      this._resolved.set(mediaId, { url: result.url, failed: false, expiresAt: Date.now() + MEDIA_REFRESH_MS });
+      if (token !== view.resolveToken) return;
+      this._setAudio(view, result.url, false);
+    }).catch(() => {
+      if (token !== view.resolveToken) return;
+      this._setAudio(view, "", true);
+    });
+  }
+  _setAudio(view, src, failed) {
+    if (this._audioFace === view && this._audio && src !== view.audioSrc) this._stopAudio();
+    view.audioSrc = src;
+    view.audioFailed = failed;
+    const t = (key) => translate(this._lang, key);
+    const has = Boolean(src) && !failed;
+    view.audioEmpty.classList.toggle("hidden", has);
+    view.audioPlay.classList.toggle("hidden", !has);
+    view.audioProgress.classList.toggle("hidden", !has);
+    view.audioTime.classList.toggle("hidden", !has);
+    view.audioEmptyTitle.textContent = failed ? t("audioError") : t("noAudio");
+    view.audioEmptyHelp.textContent = failed ? "" : t("noAudioHelp");
+    view.audioBar.style.width = "0%";
+    view.audioTime.textContent = "0:00";
+    view.audioPlayIcon.setAttribute("icon", "mdi:play");
+  }
+  _renderAudioMeta(view, slide) {
+    view.audioMeta.textContent = "";
+    if (!slide.audio_entity || !this._config?.show_updated) return;
+    const entity = this._hass?.states[slide.audio_entity];
+    if (entity?.last_changed) {
+      view.audioMeta.textContent = translate(this._lang, "updated", {
+        time: formatRelativeTime(new Date(entity.last_changed), this._lang)
+      });
+    }
+  }
+  _ensureAudio() {
+    if (this._audio) return this._audio;
+    const audio = new Audio();
+    audio.preload = "metadata";
+    audio.addEventListener("timeupdate", () => this._updateAudioTime());
+    audio.addEventListener("durationchange", () => this._updateAudioTime());
+    audio.addEventListener("ended", () => {
+      this._audioFace?.audioPlayIcon.setAttribute("icon", "mdi:play");
+      this._updateAudioTime();
+    });
+    audio.addEventListener("pause", () => this._audioFace?.audioPlayIcon.setAttribute("icon", "mdi:play"));
+    audio.addEventListener("play", () => this._audioFace?.audioPlayIcon.setAttribute("icon", "mdi:pause"));
+    audio.addEventListener("error", () => {
+      if (this._audioFace) this._setAudio(this._audioFace, this._audioFace.audioSrc, true);
+    });
+    this._audio = audio;
+    return audio;
+  }
+  async _togglePlay(view) {
+    if (!view.audioSrc) return;
+    const audio = this._ensureAudio();
+    if (this._audioFace !== view || audio.getAttribute("src") !== view.audioSrc) {
+      audio.pause();
+      this._audioFace = view;
+      audio.setAttribute("src", view.audioSrc);
+      audio.load();
+    }
+    try {
+      if (audio.paused) await audio.play();
+      else audio.pause();
+    } catch (err) {
+      console.warn("ImageNote: playback failed", err);
+    }
+  }
+  _seek(view, ev) {
+    const audio = this._audio;
+    if (!audio || this._audioFace !== view || !Number.isFinite(audio.duration)) return;
+    const rect = view.audioProgress.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
+    audio.currentTime = ratio * audio.duration;
+    this._updateAudioTime();
+  }
+  _updateAudioTime() {
+    const audio = this._audio;
+    const view = this._audioFace;
+    if (!audio || !view) return;
+    const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+    const ratio = duration > 0 ? audio.currentTime / duration : 0;
+    view.audioBar.style.width = `${Math.round(ratio * 1e3) / 10}%`;
+    view.audioTime.textContent = duration > 0 ? `${formatSeconds(audio.currentTime)} / ${formatSeconds(duration)}` : formatSeconds(audio.currentTime);
+  }
+  _stopAudio() {
+    const audio = this._audio;
+    if (!audio) return;
+    audio.pause();
+    if (this._audioFace) {
+      this._audioFace.audioPlayIcon.setAttribute("icon", "mdi:play");
+      this._audioFace.audioBar.style.width = "0%";
+    }
+    try {
+      audio.currentTime = 0;
+    } catch {
+    }
+  }
+  /** Records a memo with the microphone, uploads it to the media folder and stores it in the audio entity. */
+  async _toggleRecord(view) {
+    if (this._recorder) {
+      this._stopRecording(false);
+      return;
+    }
+    const slide = this._slide;
+    const hass = this._hass;
+    const config = this._config;
+    if (!config || !hass || !this._recordAllowed(slide)) return;
+    const t = (key, vars) => translate(this._lang, key, vars);
+    const showStatus = (text, error = false) => {
+      view.recordStatus.textContent = text;
+      view.recordStatus.classList.toggle("error", error);
+      view.recordStatus.classList.remove("hidden");
+    };
+    const Recorder = window.MediaRecorder;
+    if (!Recorder || !navigator.mediaDevices?.getUserMedia) {
+      showStatus(t("micUnsupported"), true);
+      window.setTimeout(() => view.recordStatus.classList.add("hidden"), 5e3);
+      return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      showStatus(t("micDenied"), true);
+      window.setTimeout(() => view.recordStatus.classList.add("hidden"), 5e3);
+      return;
+    }
+    this._stopAudio();
+    const type = preferredAudioType();
+    const recorder = type ? new Recorder(stream, { mimeType: type }) : new Recorder(stream);
+    const chunks = [];
+    recorder.addEventListener("dataavailable", (ev) => {
+      if (ev.data.size > 0) chunks.push(ev.data);
+    });
+    recorder.addEventListener("stop", () => {
+      stream.getTracks().forEach((track) => track.stop());
+      window.clearInterval(this._recordTimer);
+      this._recordTimer = void 0;
+      this._recorder = void 0;
+      this._recordStream = void 0;
+      view.record.classList.remove("active");
+      view.record.title = t("record");
+      if (!chunks.length) {
+        view.recordStatus.classList.add("hidden");
+        return;
+      }
+      const blob = new Blob(chunks, { type: recorder.mimeType || type || "audio/webm" });
+      showStatus(t("uploading"));
+      view.record.disabled = true;
+      void uploadAudio(hass, blob, config.upload_folder, `memo-${Date.now()}`).then(async (value) => {
+        const domain = slide.audio_entity.split(".")[0];
+        await hass.callService(domain, "set_value", { entity_id: slide.audio_entity, value });
+        view.recordStatus.classList.add("hidden");
+      }).catch((err) => {
+        const code = err instanceof UploadError ? err.code : "network";
+        const message = code === "too_large" ? t("uploadTooLarge") : code === "forbidden" ? t("uploadForbidden") : err?.message ?? "";
+        showStatus(`${t("uploadFailed")}${message ? `: ${message}` : ""}`, true);
+        window.setTimeout(() => view.recordStatus.classList.add("hidden"), 6e3);
+      }).finally(() => {
+        view.record.disabled = false;
+      });
+    });
+    this._recorder = recorder;
+    this._recordStream = stream;
+    this._recordStart = Date.now();
+    recorder.start();
+    view.record.classList.add("active");
+    view.record.title = t("stopRecording");
+    showStatus(t("recording", { seconds: 0 }));
+    this._recordTimer = window.setInterval(() => {
+      const seconds = Math.round((Date.now() - this._recordStart) / 1e3);
+      showStatus(t("recording", { seconds }));
+      if (seconds >= MAX_RECORDING_SECONDS) this._stopRecording(false);
+    }, 500);
+  }
+  _stopRecording(discard) {
+    const recorder = this._recorder;
+    if (!recorder) return;
+    if (discard) {
+      this._recorder = void 0;
+      window.clearInterval(this._recordTimer);
+      this._recordStream?.getTracks().forEach((track) => track.stop());
+      this._recordStream = void 0;
+      return;
+    }
+    if (recorder.state !== "inactive") recorder.stop();
+  }
   // ---------------------------------------------------------------- note
   _noteSource(slide) {
     const config = this._config;
@@ -2820,6 +3324,18 @@ var ImageNoteCard = class extends HTMLElement {
     if (!els || !this._config) return;
     const slide = this._slide;
     const view = this._currentFace;
+    if (slide.kind === "audio") {
+      if (slide.audio_entity) {
+        const value = this._audioSourceFromEntity(slide) ?? "";
+        if (value !== view.audioEntityValue) {
+          view.audioEntityValue = value;
+          this._applyAudio(view, slide);
+        }
+        view.record.classList.toggle("hidden", !this._recordAllowed(slide));
+        this._renderAudioMeta(view, slide);
+      }
+      return;
+    }
     if (slide.kind === "image") {
       if (slide.image_entity) {
         const value = this._imageSourceFromEntity(slide) ?? "";
@@ -3095,6 +3611,7 @@ var ImageNoteCard = class extends HTMLElement {
     for (const node of ev.composedPath()) {
       if (node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement) return false;
       if (node instanceof HTMLInputElement || node instanceof HTMLLabelElement) return false;
+      if (node instanceof HTMLElement && node.classList.contains("audio-progress")) return false;
       if (node instanceof HTMLElement && node.classList.contains("note-editor")) return false;
     }
     return true;
@@ -3194,7 +3711,7 @@ var ImageNoteCard = class extends HTMLElement {
 var UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
 var UPLOAD_TARGETS = ["image", "media"];
 var EDITOR_DEFAULTS = {};
-var PAGE_KEYS = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "expires", "color", "markers"];
+var PAGE_KEYS = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "expires", "color", "markers", "audio", "audio_entity"];
 var LIST_KEYS = ["slides", "images"];
 var TEMPLATE2 = `
 <div class="pages">
@@ -3232,6 +3749,17 @@ var TEMPLATE2 = `
   <div class="picture-help markers-help"></div>
   <div class="marker-canvas"><img alt="" draggable="false" /><div class="pins"></div></div>
   <div class="marker-list"></div>
+</div>
+<div class="audio-editor hidden">
+  <div class="picture-label audio-label"></div>
+  <div class="picture-help audio-help"></div>
+  <div class="buttons">
+    <button class="btn primary record-btn" type="button"><ha-icon icon="mdi:microphone"></ha-icon><span></span></button>
+    <button class="btn upload-audio" type="button"><ha-icon icon="mdi:upload"></ha-icon><span></span></button>
+    <input class="audio-file" type="file" accept="audio/*" hidden />
+  </div>
+  <div class="status audio-editor-status"></div>
+  <audio class="audio-preview" controls preload="metadata"></audio>
 </div>
 <ha-form class="page-form"></ha-form>
 <div class="divider"></div>
@@ -3545,6 +4073,21 @@ var STYLES = `
   .marker-row { grid-template-columns: 28px 1fr 36px; }
   .marker-row input.marker-icon, .marker-row input.marker-entity { grid-column: 2; }
 }
+.audio-editor {
+  margin-bottom: 16px;
+}
+.audio-preview {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+}
+.audio-preview:not([src]) {
+  display: none;
+}
+.record-btn.active {
+  background: var(--error-color, #db4437);
+  border-color: var(--error-color, #db4437);
+}
 .divider {
   height: 1px;
   background: var(--divider-color, rgba(0, 0, 0, 0.12));
@@ -3581,6 +4124,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
   _previewCard;
   _dragIndex = -1;
   _importing = false;
+  _recorder;
+  _recordTimer;
   constructor() {
     super();
     this._root = this.attachShadow({ mode: "open" });
@@ -3618,7 +4163,10 @@ var ImageNoteCardEditor = class extends HTMLElement {
   _kindOf(page) {
     const picture = hasPicture(page) || page.kind === "image";
     const note = hasNote(page) || page.kind === "note";
-    if (picture && note) return "both";
+    const audio = hasAudio(page) || page.kind === "audio";
+    const parts = [picture, note, audio].filter(Boolean).length;
+    if (parts > 1) return "both";
+    if (audio) return "audio";
     return note ? "note" : "image";
   }
   _slideCount(pages) {
@@ -3654,7 +4202,7 @@ var ImageNoteCardEditor = class extends HTMLElement {
   _addPage(kind) {
     const pages = this._pages().map((p) => ({ ...p }));
     if (this._slideCount(pages) >= MAX_SLIDES) return;
-    pages.push(kind === "note" ? { kind: "note" } : {});
+    pages.push(kind === "image" ? {} : { kind });
     this._pageIndex = pages.length - 1;
     this._emit(this._withPages(this._config ?? { type: "" }, pages));
   }
@@ -3727,6 +4275,119 @@ var ImageNoteCardEditor = class extends HTMLElement {
       if (button) button.disabled = false;
     }
   }
+  // ---------------------------------------------------------------- audio
+  _renderAudioEditor(show) {
+    const section = this._root.querySelector(".audio-editor");
+    if (!section) return;
+    section.classList.toggle("hidden", !show);
+    if (!show) return;
+    const t = (key) => translate(this._lang, key);
+    const setText = (selector, text) => {
+      const el = section.querySelector(selector);
+      if (el) el.textContent = text;
+    };
+    setText(".audio-label", t("editor_audio"));
+    setText(".audio-help", t("editor_audio_help"));
+    setText(".record-btn span", t(this._recorder ? "editor_stop" : "editor_record"));
+    setText(".upload-audio span", t("editor_upload_audio"));
+    section.querySelector(".record-btn")?.classList.toggle("active", Boolean(this._recorder));
+    this._updateAudioPreview();
+  }
+  _updateAudioPreview() {
+    const audio = this._root.querySelector(".audio-preview");
+    if (!audio) return;
+    const page = this._page();
+    let source;
+    if (page.audio_entity && this._hass) {
+      const entity = this._hass.states[page.audio_entity];
+      source = entity && entity.state !== "unknown" ? entity.state : "";
+    } else {
+      source = typeof page.audio === "object" && page.audio !== null ? page.audio.media_content_id : page.audio;
+    }
+    if (!source) {
+      audio.removeAttribute("src");
+      return;
+    }
+    if (!source.startsWith(MEDIA_SOURCE_PREFIX)) {
+      if (audio.getAttribute("src") !== source) audio.src = source;
+      return;
+    }
+    if (!this._hass) return;
+    const wanted = source;
+    void this._hass.callWS({ type: "media_source/resolve_media", media_content_id: wanted, expires: MEDIA_EXPIRES_SECONDS }).then((result) => {
+      if (audio.dataset.mediaId !== wanted) {
+        audio.dataset.mediaId = wanted;
+        audio.src = result.url;
+      }
+    }).catch(() => audio.removeAttribute("src"));
+  }
+  _setAudioStatus(text, isError = false) {
+    const status = this._root.querySelector(".audio-editor-status");
+    if (!status) return;
+    status.textContent = text;
+    status.classList.toggle("error", isError);
+  }
+  async _uploadAudioFile(file, name = "memo") {
+    const hass = this._hass;
+    if (!hass) return;
+    const t = (key) => translate(this._lang, key);
+    this._setAudioStatus(t("editor_uploading"));
+    try {
+      const folder = this._config?.upload_folder ?? DEFAULTS.upload_folder;
+      const value = await uploadAudio(hass, file, folder, name);
+      const page = { ...this._page(), audio: value };
+      delete page.kind;
+      this._emit(this._withPage(this._pageIndex, page));
+      this._setAudioStatus(t("editor_upload_done"));
+    } catch (err) {
+      const code = err instanceof UploadError ? err.code : "network";
+      const message = code === "too_large" ? t("editor_upload_too_large") : code === "forbidden" ? t("editor_upload_forbidden") : err instanceof Error ? err.message : String(err);
+      this._setAudioStatus(`${t("editor_upload_failed")}: ${message}`, true);
+    }
+  }
+  async _toggleRecord() {
+    const t = (key, vars) => translate(this._lang, key, vars);
+    if (this._recorder) {
+      if (this._recorder.state !== "inactive") this._recorder.stop();
+      return;
+    }
+    const Recorder = window.MediaRecorder;
+    if (!Recorder || !navigator.mediaDevices?.getUserMedia) {
+      this._setAudioStatus(t("micUnsupported"), true);
+      return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      this._setAudioStatus(t("micDenied"), true);
+      return;
+    }
+    const type = preferredAudioType();
+    const recorder = type ? new Recorder(stream, { mimeType: type }) : new Recorder(stream);
+    const chunks = [];
+    const started = Date.now();
+    recorder.addEventListener("dataavailable", (ev) => {
+      if (ev.data.size > 0) chunks.push(ev.data);
+    });
+    recorder.addEventListener("stop", () => {
+      stream.getTracks().forEach((track) => track.stop());
+      window.clearInterval(this._recordTimer);
+      this._recorder = void 0;
+      this._renderAudioEditor(true);
+      if (chunks.length) {
+        void this._uploadAudioFile(new Blob(chunks, { type: recorder.mimeType || type || "audio/webm" }), `memo-${Date.now()}`);
+      }
+    });
+    this._recorder = recorder;
+    recorder.start();
+    this._renderAudioEditor(true);
+    this._recordTimer = window.setInterval(() => {
+      const seconds = Math.round((Date.now() - started) / 1e3);
+      this._setAudioStatus(t("recording", { seconds }));
+      if (seconds >= 180 && this._recorder?.state !== "inactive") this._recorder?.stop();
+    }, 500);
+  }
   _updatePreviewCard() {
     const card = this._previewCard;
     if (!card || !this._config) return;
@@ -3777,6 +4438,14 @@ var ImageNoteCardEditor = class extends HTMLElement {
       if (this._previewCard) preview.append(this._previewCard);
     }
     this._root.querySelector(".play")?.addEventListener("click", () => this._previewCard?.flip());
+    this._root.querySelector(".record-btn")?.addEventListener("click", () => void this._toggleRecord());
+    const audioFile = this._root.querySelector(".audio-file");
+    this._root.querySelector(".upload-audio")?.addEventListener("click", () => audioFile?.click());
+    audioFile?.addEventListener("change", () => {
+      const file = audioFile.files?.[0];
+      audioFile.value = "";
+      if (file) void this._uploadAudioFile(file);
+    });
     this._pageForm?.addEventListener("value-changed", this._onPageValueChanged);
     this._cardForm?.addEventListener("value-changed", this._onCardValueChanged);
     this._uploadButton?.addEventListener("click", () => this._fileInput?.click());
@@ -3824,7 +4493,10 @@ var ImageNoteCardEditor = class extends HTMLElement {
         chip.className = `chip${index === this._pageIndex ? " active" : ""}`;
         chip.dataset.kind = kind;
         const icon = document.createElement("ha-icon");
-        icon.setAttribute("icon", kind === "note" ? "mdi:note-text-outline" : kind === "both" ? "mdi:image-text" : "mdi:image-outline");
+        icon.setAttribute(
+          "icon",
+          kind === "note" ? "mdi:note-text-outline" : kind === "audio" ? "mdi:microphone-outline" : kind === "both" ? "mdi:image-text" : "mdi:image-outline"
+        );
         const label = document.createElement("span");
         label.textContent = `${index + 1} · ${t(`editor_kind_${kind}`)}`;
         chip.append(icon, label);
@@ -3861,12 +4533,12 @@ var ImageNoteCardEditor = class extends HTMLElement {
     const addRow = this._root.querySelector(".add-row");
     if (addRow) {
       addRow.replaceChildren();
-      for (const kind of ["image", "note"]) {
+      for (const kind of ["image", "note", "audio"]) {
         const add = document.createElement("button");
         add.type = "button";
         add.className = `chip add add-${kind}`;
         add.innerHTML = `<ha-icon icon="mdi:plus"></ha-icon><span></span>`;
-        add.querySelector("span").textContent = t(kind === "note" ? "editor_add_note" : "editor_add_page");
+        add.querySelector("span").textContent = t(kind === "note" ? "editor_add_note" : kind === "audio" ? "editor_add_audio" : "editor_add_page");
         add.disabled = full;
         add.addEventListener("click", () => this._addPage(kind));
         addRow.append(add);
@@ -3891,8 +4563,12 @@ var ImageNoteCardEditor = class extends HTMLElement {
     setText(".play span", t("editor_play"));
     this._updatePreviewCard();
     const currentKind = this._kindOf(this._page());
-    this._root.querySelector(".picture")?.classList.toggle("hidden", currentKind === "note");
-    this._renderMarkers(currentKind !== "note");
+    const currentPage = this._page();
+    const showPicture = currentKind === "image" || hasPicture(currentPage);
+    const showAudio = currentKind === "audio" || hasAudio(currentPage);
+    this._root.querySelector(".picture")?.classList.toggle("hidden", !showPicture);
+    this._renderMarkers(showPicture);
+    this._renderAudioEditor(showAudio);
     this._removePageButton?.classList.toggle("hidden", pages.length <= 1);
     this._moveLeftButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex === 0);
     this._moveRightButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex >= pages.length - 1);
@@ -3921,11 +4597,21 @@ var ImageNoteCardEditor = class extends HTMLElement {
   _pageSchema(multiple) {
     const t = (key) => translate(this._lang, key);
     const schema = [];
-    const kind = this._kindOf(this._page());
+    const page = this._page();
+    const kind = this._kindOf(page);
     if (multiple) {
       schema.push({ name: "page_title", selector: { text: {} } });
     }
-    if (kind !== "note") {
+    if (kind === "audio" || hasAudio(page)) {
+      schema.push(
+        { name: "audio", selector: { text: {} } },
+        {
+          name: "audio_entity",
+          selector: { entity: { filter: [{ domain: "input_text" }, { domain: "text" }] } }
+        }
+      );
+    }
+    if (kind === "image" || hasPicture(page)) {
       schema.push(
         { name: "image", selector: { text: {} } },
         {
@@ -3937,6 +4623,9 @@ var ImageNoteCardEditor = class extends HTMLElement {
           }
         }
       );
+    }
+    if (kind === "audio" && !hasNote(page)) {
+      return schema;
     }
     schema.push(
       { name: "note", selector: { text: { multiline: true } } },
@@ -4105,7 +4794,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
             schema: [
               { name: "checklist", selector: { boolean: {} } },
               { name: "checklist_writeback", selector: { boolean: {} } },
-              { name: "show_camera", selector: { boolean: {} } }
+              { name: "show_camera", selector: { boolean: {} } },
+              { name: "show_record", selector: { boolean: {} } }
             ]
           },
           { name: "actions_help", type: "constant", value: "" },
@@ -4126,7 +4816,9 @@ var ImageNoteCardEditor = class extends HTMLElement {
       note_entity: page.note_entity ?? "",
       note_attribute: page.note_attribute ?? "",
       expires: page.expires ?? "",
-      color: page.color ?? ""
+      color: page.color ?? "",
+      audio: typeof page.audio === "object" && page.audio !== null ? page.audio.media_content_id : page.audio ?? "",
+      audio_entity: page.audio_entity ?? ""
     };
   }
   _cardData() {

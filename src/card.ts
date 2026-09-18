@@ -5,6 +5,7 @@ import {
   EDITOR_TYPE,
   HOLD_DELAY_MS,
   IMAGE_URL_ENTITY_DOMAINS,
+  MAX_RECORDING_SECONDS,
   MEDIA_EXPIRES_SECONDS,
   MEDIA_REFRESH_MS,
   MEDIA_SOURCE_PREFIX,
@@ -18,7 +19,7 @@ import { normalizeConfig, parseAspectRatio, validateConfig } from "./config";
 import { resolveLanguage, translate } from "./i18n";
 import { CARD_STYLES } from "./styles";
 import { formatRelativeTime } from "./time";
-import { UploadError, uploadPicture } from "./upload";
+import { UploadError, preferredAudioType, uploadAudio, uploadPicture } from "./upload";
 import {
   contrastTextColor,
   hasChecklist,
@@ -76,6 +77,23 @@ interface FaceView {
   /** Last value read from image_entity, to notice changes. */
   entityValue: string;
   markerStates: string;
+  audioLayer: HTMLElement;
+  audioTitle: HTMLElement;
+  audioTag: HTMLElement;
+  audioPlay: HTMLButtonElement;
+  audioPlayIcon: HTMLElement;
+  audioProgress: HTMLElement;
+  audioBar: HTMLElement;
+  audioTime: HTMLElement;
+  audioEmpty: HTMLElement;
+  audioEmptyTitle: HTMLElement;
+  audioEmptyHelp: HTMLElement;
+  audioMeta: HTMLElement;
+  record: HTMLButtonElement;
+  recordStatus: HTMLElement;
+  audioSrc: string;
+  audioFailed: boolean;
+  audioEntityValue: string;
 }
 
 interface Elements {
@@ -144,6 +162,22 @@ const FACE_TEMPLATE = `
       </div>
     </div>
     <div class="note-footer"><div class="note-meta"></div></div>
+  </div>
+  <div class="layer layer-audio">
+    <div class="note-header">
+      <ha-icon icon="mdi:microphone-outline"></ha-icon>
+      <span class="title audio-title"></span>
+      <span class="tag audio-tag hidden"></span>
+    </div>
+    <div class="audio-body">
+      <div class="audio-empty hidden"><strong></strong><small></small></div>
+      <button class="audio-play" type="button"><ha-icon icon="mdi:play"></ha-icon></button>
+      <div class="audio-progress"><div class="audio-bar"></div></div>
+      <div class="audio-time">0:00</div>
+    </div>
+    <div class="audio-footer"><div class="audio-meta"></div></div>
+    <button class="record hidden" type="button"><ha-icon icon="mdi:microphone-plus"></ha-icon></button>
+    <div class="audio-status hidden"></div>
   </div>`;
 
 const TEMPLATE = `
@@ -165,6 +199,12 @@ const TEMPLATE = `
 
 function isMediaSourceId(value: string): boolean {
   return value.startsWith(MEDIA_SOURCE_PREFIX);
+}
+
+function formatSeconds(total: number): string {
+  const seconds = Math.max(0, Math.floor(total));
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 export class ImageNoteCard extends HTMLElement {
@@ -205,6 +245,12 @@ export class ImageNoteCard extends HTMLElement {
   private readonly _hoverQuery = window.matchMedia("(hover: hover)");
   private _lastNote?: NoteSource;
   private _visible: Slide[] = [];
+  private _audio?: HTMLAudioElement;
+  private _audioFace?: FaceView;
+  private _recorder?: MediaRecorder;
+  private _recordStream?: MediaStream;
+  private _recordTimer?: number;
+  private _recordStart = 0;
   private _templateText?: string;
   private _templateResult?: string;
   private _templateError = "";
@@ -240,6 +286,8 @@ export class ImageNoteCard extends HTMLElement {
     window.clearInterval(this._metaTimer);
     this._metaTimer = undefined;
     this._unsubscribeTemplate();
+    this._stopAudio();
+    this._stopRecording(true);
   }
 
   setConfig(config: ImageNoteCardConfig): void {
@@ -256,6 +304,7 @@ export class ImageNoteCard extends HTMLElement {
     this._lastNote = undefined;
     this._resolved.clear();
     this._unsubscribeTemplate();
+    this._stopAudio();
     this._visible = this._computeVisible();
     if (this._config.layout === "grid" && this._config.entries.length > 1) {
       this._buildTiles(config);
@@ -424,7 +473,7 @@ export class ImageNoteCard extends HTMLElement {
       grid.style.setProperty("--imagenote-columns", String(config.columns));
     }
     const shared: Partial<ImageNoteCardConfig> = { ...raw };
-    for (const key of ["slides", "images", "image", "image_entity", "note", "note_entity", "note_attribute", "title", "layout", "columns"] as const) {
+    for (const key of ["slides", "images", "image", "image_entity", "note", "note_entity", "note_attribute", "audio", "audio_entity", "expires", "color", "markers", "title", "layout", "columns"] as const) {
       delete shared[key];
     }
     this._tiles = config.entries.map((entry) => {
@@ -439,6 +488,11 @@ export class ImageNoteCard extends HTMLElement {
         note: entry.note,
         note_entity: entry.note_entity,
         note_attribute: entry.note_attribute,
+        audio: entry.audio,
+        audio_entity: entry.audio_entity,
+        expires: entry.expires,
+        color: entry.color,
+        markers: entry.markers,
       });
       if (this._hass) tile.hass = this._hass;
       grid.append(tile);
@@ -487,6 +541,23 @@ export class ImageNoteCard extends HTMLElement {
       resolveToken: 0,
       entityValue: "",
       markerStates: "",
+      audioLayer: q(el, ".layer-audio"),
+      audioTitle: q(el, ".audio-title"),
+      audioTag: q(el, ".audio-tag"),
+      audioPlay: q(el, ".audio-play"),
+      audioPlayIcon: q(el, ".audio-play ha-icon"),
+      audioProgress: q(el, ".audio-progress"),
+      audioBar: q(el, ".audio-bar"),
+      audioTime: q(el, ".audio-time"),
+      audioEmpty: q(el, ".audio-empty"),
+      audioEmptyTitle: q(el, ".audio-empty strong"),
+      audioEmptyHelp: q(el, ".audio-empty small"),
+      audioMeta: q(el, ".audio-meta"),
+      record: q(el, ".record"),
+      recordStatus: q(el, ".audio-status"),
+      audioSrc: "",
+      audioFailed: false,
+      audioEntityValue: "",
     });
     this._els = {
       card: q(this._root, "ha-card"),
@@ -533,6 +604,18 @@ export class ImageNoteCard extends HTMLElement {
         const file = view.cameraInput.files?.[0];
         view.cameraInput.value = "";
         if (file) void this._uploadPhoto(view, file);
+      });
+      view.audioPlay.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void this._togglePlay(view);
+      });
+      view.audioProgress.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this._seek(view, ev);
+      });
+      view.record.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void this._toggleRecord(view);
       });
       view.editButton.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -705,6 +788,7 @@ export class ImageNoteCard extends HTMLElement {
     const duration = Number.parseFloat(getComputedStyle(this).getPropertyValue("--imagenote-duration")) || 0;
 
     window.clearTimeout(this._animTimer);
+    this._stopAudio();
     this._index = index;
     this._lastNote = undefined;
     this._renderSlide(to, slide);
@@ -766,20 +850,23 @@ export class ImageNoteCard extends HTMLElement {
     if (!els || !config) return;
     const slide = this._slide;
     const total = this._slides().length;
-    els.stage.classList.toggle("kind-note", slide.kind === "note");
+    els.stage.classList.toggle("kind-note", slide.kind !== "image");
     Array.from(els.dots.children).forEach((dot, i) => dot.classList.toggle("active", i === this._index));
 
     const next = this._slides()[(this._index + 1) % total];
     const t = (key: string, vars?: Record<string, string | number>) => translate(this._lang, key, vars);
     if (next && total > 1) {
-      els.badgeIcon.setAttribute("icon", next.kind === "note" ? "mdi:note-text-outline" : "mdi:image-outline");
-      els.badgeLabel.textContent = t(next.kind === "note" ? "note" : "photo");
+      els.badgeIcon.setAttribute(
+        "icon",
+        next.kind === "note" ? "mdi:note-text-outline" : next.kind === "audio" ? "mdi:microphone-outline" : "mdi:image-outline",
+      );
+      els.badgeLabel.textContent = t(next.kind === "note" ? "note" : next.kind === "audio" ? "audio" : "photo");
     }
     const parts: string[] = [];
     const title = slide.title || config.title;
     if (title) parts.push(title);
     if (total > 1) parts.push(t("slide", { index: this._index + 1, total }));
-    if (next && total > 1) parts.push(t(next.kind === "note" ? "showNote" : "showPhoto"));
+    if (next && total > 1) parts.push(t(next.kind === "note" ? "showNote" : next.kind === "audio" ? "showAudio" : "showPhoto"));
     els.stage.setAttribute("aria-label", parts.join(" – "));
     els.stage.setAttribute("aria-pressed", String(slide.kind === "note"));
 
@@ -803,8 +890,17 @@ export class ImageNoteCard extends HTMLElement {
     if (!config) return;
     view.el.classList.toggle("kind-image", slide.kind === "image");
     view.el.classList.toggle("kind-note", slide.kind === "note");
+    view.el.classList.toggle("kind-audio", slide.kind === "audio");
     const title = slide.title || config.title;
-    if (slide.kind === "image") {
+    if (slide.kind === "audio") {
+      view.audioTitle.textContent = title || translate(this._lang, "audio");
+      this._applyNoteColor(view, slide);
+      this._applyAudio(view, slide);
+      view.record.classList.toggle("hidden", !this._recordAllowed(slide));
+      view.record.title = translate(this._lang, "record");
+      view.record.setAttribute("aria-label", translate(this._lang, "record"));
+      this._renderAudioMeta(view, slide);
+    } else if (slide.kind === "image") {
       view.titleOverlay.textContent = title;
       view.titleOverlay.classList.toggle("hidden", !(config.show_title && title));
       this._applyImage(view, slide);
@@ -848,6 +944,8 @@ export class ImageNoteCard extends HTMLElement {
     const label = dim ? translate(this._lang, "expired") : "";
     view.noteTag.textContent = label;
     view.noteTag.classList.toggle("hidden", !dim);
+    view.audioTag.textContent = label;
+    view.audioTag.classList.toggle("hidden", !dim);
     view.imageTag.textContent = label;
     view.imageTag.classList.toggle("hidden", !dim);
   }
@@ -1127,6 +1225,249 @@ export class ImageNoteCard extends HTMLElement {
     }
   }
 
+  // ---------------------------------------------------------------- audio
+
+  private _audioSourceFromEntity(slide: Slide): string | undefined {
+    if (!slide.audio_entity || !this._hass) return undefined;
+    const entity = this._hass.states[slide.audio_entity];
+    if (!entity) return undefined;
+    const value = entity.state.trim();
+    return value && value !== "unknown" && value !== "unavailable" ? value : undefined;
+  }
+
+  private _recordAllowed(slide: Slide): boolean {
+    if (!this._config?.show_record || !slide.audio_entity || !this._hass) return false;
+    return IMAGE_URL_ENTITY_DOMAINS.includes(slide.audio_entity.split(".")[0]);
+  }
+
+  private _applyAudio(view: FaceView, slide: Slide): void {
+    const token = ++view.resolveToken;
+    const source = slide.audio_entity ? this._audioSourceFromEntity(slide) : slide.audio;
+    if (!source) {
+      this._setAudio(view, "", false);
+      return;
+    }
+    const mediaId = typeof source === "string" ? (isMediaSourceId(source) ? source : undefined) : source.media_content_id;
+    if (!mediaId) {
+      this._setAudio(view, source as string, false);
+      return;
+    }
+    const cached = this._resolved.get(mediaId);
+    if (cached && !cached.failed && cached.expiresAt > Date.now()) {
+      this._setAudio(view, cached.url, false);
+      return;
+    }
+    if (!this._hass) {
+      this._setAudio(view, "", false);
+      return;
+    }
+    void this._hass
+      .callWS<ResolvedMedia>({ type: "media_source/resolve_media", media_content_id: mediaId, expires: MEDIA_EXPIRES_SECONDS })
+      .then((result) => {
+        this._resolved.set(mediaId, { url: result.url, failed: false, expiresAt: Date.now() + MEDIA_REFRESH_MS });
+        if (token !== view.resolveToken) return;
+        this._setAudio(view, result.url, false);
+      })
+      .catch(() => {
+        if (token !== view.resolveToken) return;
+        this._setAudio(view, "", true);
+      });
+  }
+
+  private _setAudio(view: FaceView, src: string, failed: boolean): void {
+    if (this._audioFace === view && this._audio && src !== view.audioSrc) this._stopAudio();
+    view.audioSrc = src;
+    view.audioFailed = failed;
+    const t = (key: string) => translate(this._lang, key);
+    const has = Boolean(src) && !failed;
+    view.audioEmpty.classList.toggle("hidden", has);
+    view.audioPlay.classList.toggle("hidden", !has);
+    view.audioProgress.classList.toggle("hidden", !has);
+    view.audioTime.classList.toggle("hidden", !has);
+    view.audioEmptyTitle.textContent = failed ? t("audioError") : t("noAudio");
+    view.audioEmptyHelp.textContent = failed ? "" : t("noAudioHelp");
+    view.audioBar.style.width = "0%";
+    view.audioTime.textContent = "0:00";
+    view.audioPlayIcon.setAttribute("icon", "mdi:play");
+  }
+
+  private _renderAudioMeta(view: FaceView, slide: Slide): void {
+    view.audioMeta.textContent = "";
+    if (!slide.audio_entity || !this._config?.show_updated) return;
+    const entity = this._hass?.states[slide.audio_entity];
+    if (entity?.last_changed) {
+      view.audioMeta.textContent = translate(this._lang, "updated", {
+        time: formatRelativeTime(new Date(entity.last_changed), this._lang),
+      });
+    }
+  }
+
+  private _ensureAudio(): HTMLAudioElement {
+    if (this._audio) return this._audio;
+    const audio = new Audio();
+    audio.preload = "metadata";
+    audio.addEventListener("timeupdate", () => this._updateAudioTime());
+    audio.addEventListener("durationchange", () => this._updateAudioTime());
+    audio.addEventListener("ended", () => {
+      this._audioFace?.audioPlayIcon.setAttribute("icon", "mdi:play");
+      this._updateAudioTime();
+    });
+    audio.addEventListener("pause", () => this._audioFace?.audioPlayIcon.setAttribute("icon", "mdi:play"));
+    audio.addEventListener("play", () => this._audioFace?.audioPlayIcon.setAttribute("icon", "mdi:pause"));
+    audio.addEventListener("error", () => {
+      if (this._audioFace) this._setAudio(this._audioFace, this._audioFace.audioSrc, true);
+    });
+    this._audio = audio;
+    return audio;
+  }
+
+  private async _togglePlay(view: FaceView): Promise<void> {
+    if (!view.audioSrc) return;
+    const audio = this._ensureAudio();
+    if (this._audioFace !== view || audio.getAttribute("src") !== view.audioSrc) {
+      audio.pause();
+      this._audioFace = view;
+      audio.setAttribute("src", view.audioSrc);
+      audio.load();
+    }
+    try {
+      if (audio.paused) await audio.play();
+      else audio.pause();
+    } catch (err) {
+      console.warn("ImageNote: playback failed", err);
+    }
+  }
+
+  private _seek(view: FaceView, ev: MouseEvent): void {
+    const audio = this._audio;
+    if (!audio || this._audioFace !== view || !Number.isFinite(audio.duration)) return;
+    const rect = view.audioProgress.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
+    audio.currentTime = ratio * audio.duration;
+    this._updateAudioTime();
+  }
+
+  private _updateAudioTime(): void {
+    const audio = this._audio;
+    const view = this._audioFace;
+    if (!audio || !view) return;
+    const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+    const ratio = duration > 0 ? audio.currentTime / duration : 0;
+    view.audioBar.style.width = `${Math.round(ratio * 1000) / 10}%`;
+    view.audioTime.textContent = duration > 0 ? `${formatSeconds(audio.currentTime)} / ${formatSeconds(duration)}` : formatSeconds(audio.currentTime);
+  }
+
+  private _stopAudio(): void {
+    const audio = this._audio;
+    if (!audio) return;
+    audio.pause();
+    if (this._audioFace) {
+      this._audioFace.audioPlayIcon.setAttribute("icon", "mdi:play");
+      this._audioFace.audioBar.style.width = "0%";
+    }
+    try {
+      audio.currentTime = 0;
+    } catch {
+      // Not seekable yet; fine.
+    }
+  }
+
+  /** Records a memo with the microphone, uploads it to the media folder and stores it in the audio entity. */
+  private async _toggleRecord(view: FaceView): Promise<void> {
+    if (this._recorder) {
+      this._stopRecording(false);
+      return;
+    }
+    const slide = this._slide;
+    const hass = this._hass;
+    const config = this._config;
+    if (!config || !hass || !this._recordAllowed(slide)) return;
+    const t = (key: string, vars?: Record<string, string | number>) => translate(this._lang, key, vars);
+    const showStatus = (text: string, error = false) => {
+      view.recordStatus.textContent = text;
+      view.recordStatus.classList.toggle("error", error);
+      view.recordStatus.classList.remove("hidden");
+    };
+    const Recorder = (window as unknown as { MediaRecorder?: typeof MediaRecorder }).MediaRecorder;
+    if (!Recorder || !navigator.mediaDevices?.getUserMedia) {
+      showStatus(t("micUnsupported"), true);
+      window.setTimeout(() => view.recordStatus.classList.add("hidden"), 5000);
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      showStatus(t("micDenied"), true);
+      window.setTimeout(() => view.recordStatus.classList.add("hidden"), 5000);
+      return;
+    }
+    this._stopAudio();
+    const type = preferredAudioType();
+    const recorder = type ? new Recorder(stream, { mimeType: type }) : new Recorder(stream);
+    const chunks: Blob[] = [];
+    recorder.addEventListener("dataavailable", (ev) => {
+      if (ev.data.size > 0) chunks.push(ev.data);
+    });
+    recorder.addEventListener("stop", () => {
+      stream.getTracks().forEach((track) => track.stop());
+      window.clearInterval(this._recordTimer);
+      this._recordTimer = undefined;
+      this._recorder = undefined;
+      this._recordStream = undefined;
+      view.record.classList.remove("active");
+      view.record.title = t("record");
+      if (!chunks.length) {
+        view.recordStatus.classList.add("hidden");
+        return;
+      }
+      const blob = new Blob(chunks, { type: recorder.mimeType || type || "audio/webm" });
+      showStatus(t("uploading"));
+      view.record.disabled = true;
+      void uploadAudio(hass, blob, config.upload_folder, `memo-${Date.now()}`)
+        .then(async (value) => {
+          const domain = slide.audio_entity.split(".")[0];
+          await hass.callService(domain, "set_value", { entity_id: slide.audio_entity, value });
+          view.recordStatus.classList.add("hidden");
+        })
+        .catch((err: unknown) => {
+          const code = err instanceof UploadError ? err.code : "network";
+          const message =
+            code === "too_large" ? t("uploadTooLarge") : code === "forbidden" ? t("uploadForbidden") : (err as Error)?.message ?? "";
+          showStatus(`${t("uploadFailed")}${message ? `: ${message}` : ""}`, true);
+          window.setTimeout(() => view.recordStatus.classList.add("hidden"), 6000);
+        })
+        .finally(() => {
+          view.record.disabled = false;
+        });
+    });
+    this._recorder = recorder;
+    this._recordStream = stream;
+    this._recordStart = Date.now();
+    recorder.start();
+    view.record.classList.add("active");
+    view.record.title = t("stopRecording");
+    showStatus(t("recording", { seconds: 0 }));
+    this._recordTimer = window.setInterval(() => {
+      const seconds = Math.round((Date.now() - this._recordStart) / 1000);
+      showStatus(t("recording", { seconds }));
+      if (seconds >= MAX_RECORDING_SECONDS) this._stopRecording(false);
+    }, 500);
+  }
+
+  private _stopRecording(discard: boolean): void {
+    const recorder = this._recorder;
+    if (!recorder) return;
+    if (discard) {
+      this._recorder = undefined;
+      window.clearInterval(this._recordTimer);
+      this._recordStream?.getTracks().forEach((track) => track.stop());
+      this._recordStream = undefined;
+      return;
+    }
+    if (recorder.state !== "inactive") recorder.stop();
+  }
+
   // ---------------------------------------------------------------- note
 
   private _noteSource(slide: Slide): NoteSource {
@@ -1196,6 +1537,18 @@ export class ImageNoteCard extends HTMLElement {
     if (!els || !this._config) return;
     const slide = this._slide;
     const view = this._currentFace;
+    if (slide.kind === "audio") {
+      if (slide.audio_entity) {
+        const value = this._audioSourceFromEntity(slide) ?? "";
+        if (value !== view.audioEntityValue) {
+          view.audioEntityValue = value;
+          this._applyAudio(view, slide);
+        }
+        view.record.classList.toggle("hidden", !this._recordAllowed(slide));
+        this._renderAudioMeta(view, slide);
+      }
+      return;
+    }
     if (slide.kind === "image") {
       if (slide.image_entity) {
         const value = this._imageSourceFromEntity(slide) ?? "";
@@ -1503,6 +1856,7 @@ export class ImageNoteCard extends HTMLElement {
     for (const node of ev.composedPath()) {
       if (node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement) return false;
       if (node instanceof HTMLInputElement || node instanceof HTMLLabelElement) return false;
+      if (node instanceof HTMLElement && node.classList.contains("audio-progress")) return false;
       if (node instanceof HTMLElement && node.classList.contains("note-editor")) return false;
     }
     return true;
