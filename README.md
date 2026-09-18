@@ -26,7 +26,12 @@ message for the wall panel.
 - **Upload a picture from the editor** — stored by Home Assistant, no `www`
   folder needed. URLs, `/local/` paths, `media-source://` ids and `image`,
   `camera` or `person` entities work too.
-- **Notes in Markdown** — bold, lists, links.
+- **Notes in Markdown** — bold, lists, links, plus **checklists** you can tick
+  on the card and **templates** such as `{{ states('sensor.boiler') }}` that
+  follow state changes.
+- **Notes with a shelf life and a colour** — `expires` dims or hides a note
+  after a date, `color` tints the page, and the sticky-note look makes notes
+  read like a note on the fridge.
 - **Edit the note on the card** — link an `input_text` or `text` entity and a
   pencil appears on the note side. Changes are saved with `set_value`, so
   automations and other dashboards see them immediately.
@@ -158,6 +163,12 @@ direction: vertical
 | `note` | – | The note text. Markdown is rendered. Ignored when `note_entity` is set. |
 | `note_entity` | – | Read the note from an entity. `input_text` and `text` entities are editable on the card. |
 | `note_attribute` | – | Read the note from this attribute of `note_entity` instead of its state (read-only). |
+| `expires` | – | Per entry: `2026-10-01` or `2026-10-01 18:00`. Afterwards the page is dimmed and marked, or hidden (`expired_slides`). Until then the note shows "Until …". |
+| `color` | – | Per note page: `yellow`, `green`, `blue`, `pink`, `orange`, `purple`, `grey` or any CSS colour. |
+| `note_style` | `plain` | `plain` or `sticky`. Sticky notes get a paper tint and a folded corner. |
+| `expired_slides` | `dim` | `dim` keeps expired pages greyed out with an "Expired" tag, `hide` removes them from the sequence. |
+| `checklist` | `true` | Lines like `- [ ] item` become checkboxes on the card. |
+| `checklist_writeback` | `true` | Ticks on notes from an `input_text` or `text` entity are saved to the entity. Ticks on other notes are remembered in the browser only. |
 | `transition` | `flip` | `flip`, `fade`, `slide`, `cube` or `none`. |
 | `direction` | `horizontal` | `horizontal` or `vertical`, for `flip`, `slide` and `cube`. |
 | `duration` | `700` | Animation length in milliseconds. |
@@ -173,6 +184,25 @@ direction: vertical
 | `tap_action` | `flip` | Action for a tap. See [Actions](#actions). |
 | `hold_action` | `none` | Action for a long press. |
 | `double_tap_action` | `none` | Action for a double tap. |
+
+## Notes
+
+Markdown is rendered by Home Assistant's own markdown element. On top of that:
+
+- **Checklists.** `- [ ] Bread` and `- [x] Milk` become real checkboxes. When
+  the note comes from an `input_text` or `text` entity the tick is written
+  back, so every dashboard and automation sees it. For notes in the card
+  config the tick is remembered in that browser.
+- **Templates.** Anything with `{{ … }}` or `{% … %}` is rendered by Home
+  Assistant and updates live:
+  ```yaml
+  note: "Boiler at **{{ states('sensor.boiler_temp') }} °C**, last error: {{ states('sensor.boiler_error') }}"
+  ```
+  Templated notes are read-only for checklists (the text changes under them).
+- **Expiry.** `expires: 2026-10-01` shows "Until 1 Oct" in the footer and dims
+  or hides the page afterwards. Good for "parcel at the neighbour's".
+- **Colours and sticky notes.** `color: yellow` on an entry, or
+  `note_style: sticky` on the card for the classic look.
 
 ## Actions
 

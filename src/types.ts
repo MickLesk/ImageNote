@@ -3,6 +3,8 @@ export type Direction = "horizontal" | "vertical";
 export type Side = "image" | "note";
 export type ImageFit = "cover" | "contain";
 export type Layout = "stack" | "grid";
+export type NoteStyle = "plain" | "sticky";
+export type ExpiredMode = "dim" | "hide";
 
 export type ActionName =
   | "flip"
@@ -42,6 +44,10 @@ export interface PageConfig {
   note?: string;
   note_entity?: string;
   note_attribute?: string;
+  /** "2026-10-01" or "2026-10-01 18:00": after this the slide is dimmed or hidden. */
+  expires?: string;
+  /** Tint of a note page: a preset name (yellow, green, …) or any CSS colour. */
+  color?: string;
 }
 
 export interface NormalizedPage {
@@ -52,6 +58,8 @@ export interface NormalizedPage {
   note: string;
   note_entity: string;
   note_attribute: string;
+  expires: string;
+  color: string;
 }
 
 export type SlideKind = "image" | "note";
@@ -83,6 +91,10 @@ export interface ImageNoteCardConfig extends PageConfig {
   show_title?: boolean;
   show_updated?: boolean;
   show_navigation?: boolean;
+  note_style?: NoteStyle;
+  expired_slides?: ExpiredMode;
+  checklist?: boolean;
+  checklist_writeback?: boolean;
   upload_target?: "image" | "media";
   upload_folder?: string;
   tap_action?: ActionConfig;
@@ -112,6 +124,10 @@ export interface NormalizedConfig {
   show_title: boolean;
   show_updated: boolean;
   show_navigation: boolean;
+  note_style: NoteStyle;
+  expired_slides: ExpiredMode;
+  checklist: boolean;
+  checklist_writeback: boolean;
   tap_action: ActionConfig;
   hold_action: ActionConfig;
   double_tap_action: ActionConfig;
@@ -136,6 +152,12 @@ export interface HomeAssistant {
   ): Promise<unknown>;
   callWS<T>(message: Record<string, unknown>): Promise<T>;
   fetchWithAuth?(path: string, init?: RequestInit): Promise<Response>;
+  connection?: {
+    subscribeMessage<T>(
+      callback: (message: T) => void,
+      message: Record<string, unknown>,
+    ): Promise<() => Promise<void>>;
+  };
   auth?: { data?: { access_token?: string } };
 }
 

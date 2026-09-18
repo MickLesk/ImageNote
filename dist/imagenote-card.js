@@ -14,6 +14,9 @@ var IMAGE_FITS = ["cover", "contain"];
 var LAYOUTS = ["stack", "grid"];
 var TILE_MIN_WIDTH_PX = 150;
 var MAX_SLIDES = 10;
+var NOTE_STYLES = ["plain", "sticky"];
+var EXPIRED_MODES = ["dim", "hide"];
+var CHECKLIST_STORAGE_PREFIX = "imagenote:checks:";
 var ASPECT_RATIOS = ["16:9", "4:3", "3:2", "1:1", "3:4", "9:16", "auto"];
 var NOTE_ENTITY_DOMAINS = ["input_text", "text"];
 var MEDIA_SOURCE_PREFIX = "media-source://";
@@ -41,6 +44,10 @@ var DEFAULTS = {
   show_title: true,
   show_updated: true,
   show_navigation: true,
+  note_style: "plain",
+  expired_slides: "dim",
+  checklist: true,
+  checklist_writeback: true,
   tap_action: FLIP_ACTION,
   hold_action: NONE_ACTION,
   double_tap_action: NONE_ACTION
@@ -289,7 +296,9 @@ function normalizePage(page) {
     image_entity: str(page.image_entity).trim(),
     note: str(page.note),
     note_entity: str(page.note_entity).trim(),
-    note_attribute: str(page.note_attribute).trim()
+    note_attribute: str(page.note_attribute).trim(),
+    expires: str(page.expires).trim(),
+    color: str(page.color).trim()
   };
 }
 function configPages(config) {
@@ -350,6 +359,10 @@ function normalizeConfig(config) {
     show_title: bool(config.show_title, DEFAULTS.show_title),
     show_updated: bool(config.show_updated, DEFAULTS.show_updated),
     show_navigation: bool(config.show_navigation, DEFAULTS.show_navigation),
+    note_style: pick(config.note_style, NOTE_STYLES, DEFAULTS.note_style),
+    expired_slides: pick(config.expired_slides, EXPIRED_MODES, DEFAULTS.expired_slides),
+    checklist: bool(config.checklist, DEFAULTS.checklist),
+    checklist_writeback: bool(config.checklist_writeback, DEFAULTS.checklist_writeback),
     tap_action: action(config.tap_action, DEFAULTS.tap_action),
     hold_action: action(config.hold_action, DEFAULTS.hold_action),
     double_tap_action: action(config.double_tap_action, DEFAULTS.double_tap_action)
@@ -386,6 +399,9 @@ var en = {
   imageError: "The picture could not be loaded",
   charsLeft: "{count} characters left",
   updated: "Updated {time}",
+  expired: "Expired",
+  expiresOn: "Until {date}",
+  templateError: "Template error",
   page: "Picture {index} of {total}",
   slide: "Slide {index} of {total}",
   nextPicture: "Next picture",
@@ -405,7 +421,27 @@ var en = {
   editor_upload_failed: "Upload failed",
   editor_upload_too_large: "The file is too large",
   editor_note: "Note",
-  editor_note_help: "Markdown is supported. Ignored when a note entity is set.",
+  editor_note_help: "Markdown, checklists (- [ ] item) and templates ({{ states('sensor.x') }}) are supported. Ignored when a note entity is set.",
+  editor_expires: "Valid until (optional)",
+  editor_expires_help: 'Afterwards the page is dimmed or hidden, see "Expired pages" in Appearance.',
+  editor_color: "Page colour (optional)",
+  editor_note_style: "Note pages look",
+  note_style_plain: "Plain card",
+  note_style_sticky: "Sticky note",
+  editor_expired_slides: "Expired pages",
+  expired_dim: "Dim and mark",
+  expired_hide: "Hide",
+  editor_checklist: "Interactive checklists",
+  editor_checklist_help: '"- [ ] item" lines become checkboxes. Notes from an input_text or text entity are written back; others remember the ticks in this browser.',
+  editor_checklist_writeback: "Write ticks back to the entity",
+  color_none: "Card colour",
+  color_yellow: "Yellow",
+  color_green: "Green",
+  color_blue: "Blue",
+  color_pink: "Pink",
+  color_orange: "Orange",
+  color_purple: "Purple",
+  color_grey: "Grey",
   editor_note_entity: "Note entity (optional)",
   editor_note_entity_help: "Read and edit the note from an input_text or text entity. The note can then be changed on the card itself.",
   editor_note_attribute: "Note attribute (optional)",
@@ -489,6 +525,9 @@ var de = {
   imageError: "Das Bild konnte nicht geladen werden",
   charsLeft: "{count} Zeichen übrig",
   updated: "Geändert {time}",
+  expired: "Abgelaufen",
+  expiresOn: "Bis {date}",
+  templateError: "Template-Fehler",
   page: "Bild {index} von {total}",
   slide: "Seite {index} von {total}",
   nextPicture: "Nächstes Bild",
@@ -508,7 +547,27 @@ var de = {
   editor_upload_failed: "Upload fehlgeschlagen",
   editor_upload_too_large: "Die Datei ist zu groß",
   editor_note: "Notiz",
-  editor_note_help: "Markdown wird unterstützt. Wird ignoriert, wenn eine Notiz-Entität gesetzt ist.",
+  editor_note_help: "Markdown, Checklisten (- [ ] Punkt) und Templates ({{ states('sensor.x') }}) werden unterstützt. Wird ignoriert, wenn eine Notiz-Entität gesetzt ist.",
+  editor_expires: "Gültig bis (optional)",
+  editor_expires_help: "Danach wird die Seite abgeblendet oder ausgeblendet, siehe „Abgelaufene Seiten“ unter Darstellung.",
+  editor_color: "Seitenfarbe (optional)",
+  editor_note_style: "Aussehen der Notizseiten",
+  note_style_plain: "Schlichte Karte",
+  note_style_sticky: "Haftnotiz",
+  editor_expired_slides: "Abgelaufene Seiten",
+  expired_dim: "Abblenden und markieren",
+  expired_hide: "Ausblenden",
+  editor_checklist: "Interaktive Checklisten",
+  editor_checklist_help: "Zeilen mit „- [ ] Punkt“ werden zu Kästchen. Bei Notizen aus input_text oder text wird der Haken zurückgeschrieben, sonst merkt sich dieser Browser die Haken.",
+  editor_checklist_writeback: "Haken in die Entität zurückschreiben",
+  color_none: "Kartenfarbe",
+  color_yellow: "Gelb",
+  color_green: "Grün",
+  color_blue: "Blau",
+  color_pink: "Rosa",
+  color_orange: "Orange",
+  color_purple: "Lila",
+  color_grey: "Grau",
   editor_note_entity: "Notiz-Entität (optional)",
   editor_note_entity_help: "Notiz aus einer input_text- oder text-Entität lesen und bearbeiten. Die Notiz lässt sich dann direkt auf der Karte ändern.",
   editor_note_attribute: "Notiz-Attribut (optional)",
@@ -678,6 +737,65 @@ ha-card {
 .face.hidden-face {
   visibility: hidden;
 }
+.face.tinted .layer-note {
+  color: var(--imagenote-note-text, var(--primary-text-color));
+}
+.face.tinted .note-header ha-icon,
+.face.tinted .icon-button,
+.face.tinted .note-meta,
+.face.tinted .note-header.no-title .title {
+  color: inherit;
+  opacity: 0.75;
+}
+.face.sticky.kind-note {
+  --imagenote-note-background: var(--imagenote-sticky-color, #fff3a8);
+  --imagenote-note-text: #2b2b2b;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+}
+.face.sticky.kind-note .layer-note {
+  color: var(--imagenote-note-text);
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.35), rgba(0, 0, 0, 0) 60%);
+}
+.face.sticky.kind-note .layer-note::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 26px;
+  height: 26px;
+  background: linear-gradient(135deg, transparent 50%, rgba(0, 0, 0, 0.12) 50%, rgba(0, 0, 0, 0.05));
+  border-top-left-radius: 6px;
+  pointer-events: none;
+}
+.face.sticky.kind-note .note-header ha-icon,
+.face.sticky.kind-note .icon-button {
+  color: inherit;
+  opacity: 0.7;
+}
+.face.expired .layer-note,
+.face.expired .layer-image img {
+  filter: grayscale(0.6);
+  opacity: 0.55;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--error-color, #db4437);
+  flex: none;
+}
+.image-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+}
 .stage.natural .face.current {
   position: relative;
   inset: auto;
@@ -815,6 +933,63 @@ ha-card {
 }
 .note-body .note-empty {
   color: var(--secondary-text-color);
+}
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 8px;
+}
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 6px 4px 2px;
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: background-color 120ms ease;
+}
+.check:hover {
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.05);
+}
+.check input {
+  appearance: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  border: 2px solid var(--secondary-text-color);
+  border-radius: 5px;
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  background: transparent;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.check input::before {
+  content: "";
+  width: 10px;
+  height: 6px;
+  border-left: 2.5px solid #fff;
+  border-bottom: 2.5px solid #fff;
+  transform: rotate(-45deg) translate(1px, -1px) scale(0);
+  transition: transform 120ms ease;
+}
+.check input:checked {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+.check input:checked::before {
+  transform: rotate(-45deg) translate(1px, -1px) scale(1);
+}
+.check input:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+.check.done span {
+  text-decoration: line-through;
+  opacity: 0.6;
 }
 .note-body .note-empty small {
   display: block;
@@ -1006,8 +1181,8 @@ ha-card {
   .nav { opacity: 0.8; }
 }
 .stage.kind-note .nav {
-  color: var(--primary-text-color);
-  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
+  /* Arrows would sit on top of the text; notes are turned with a tap, a swipe, the dots or the keys. */
+  display: none;
 }
 .stage.editing .nav {
   display: none;
@@ -1176,6 +1351,108 @@ function formatRelativeTime(date, language, now = /* @__PURE__ */ new Date()) {
   return formatter.format(0, "second");
 }
 
+// src/notes.ts
+var TASK_LINE = /^(\s*)[-*+]\s+\[([ xX])\]\s?(.*)$/;
+function parseNoteBlocks(text) {
+  const lines = text.split("\n");
+  const blocks = [];
+  let markdown = [];
+  let items = [];
+  const flushMarkdown = () => {
+    if (markdown.length && markdown.some((l) => l.trim() !== "")) {
+      blocks.push({ type: "markdown", text: markdown.join("\n") });
+    }
+    markdown = [];
+  };
+  const flushItems = () => {
+    if (items.length) blocks.push({ type: "checklist", items });
+    items = [];
+  };
+  lines.forEach((line, index) => {
+    const match = TASK_LINE.exec(line);
+    if (match) {
+      flushMarkdown();
+      items.push({ line: index, checked: match[2] !== " ", text: match[3] });
+    } else {
+      flushItems();
+      markdown.push(line);
+    }
+  });
+  flushMarkdown();
+  flushItems();
+  return blocks;
+}
+function hasChecklist(text) {
+  return text.split("\n").some((line) => TASK_LINE.test(line));
+}
+function toggleChecklistLine(text, line, checked) {
+  const lines = text.split("\n");
+  const match = TASK_LINE.exec(lines[line] ?? "");
+  if (!match) return text;
+  lines[line] = `${match[1]}- [${checked ? "x" : " "}] ${match[3]}`;
+  return lines.join("\n");
+}
+function hasTemplate(text) {
+  return /\{\{|\{%/.test(text);
+}
+function parseExpiry(value) {
+  const text = value.trim();
+  if (!text) return null;
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (dateOnly) {
+    return new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]), 23, 59, 59, 999);
+  }
+  const date = new Date(text.includes("T") ? text : text.replace(" ", "T"));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+function isExpired(value, now = /* @__PURE__ */ new Date()) {
+  const date = parseExpiry(value);
+  return date !== null && date.getTime() < now.getTime();
+}
+var NOTE_COLOR_PRESETS = {
+  yellow: "#fff3a8",
+  green: "#d4f5cd",
+  blue: "#d6ebff",
+  pink: "#ffd9e6",
+  orange: "#ffe0b8",
+  purple: "#e6dcff",
+  grey: "#e9e9ee"
+};
+function resolveNoteColor(value) {
+  const text = value.trim().toLowerCase();
+  if (!text) return null;
+  return NOTE_COLOR_PRESETS[text] ?? value.trim();
+}
+function contrastTextColor(color) {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+  let r = 255;
+  let g = 255;
+  let b = 255;
+  if (hex) {
+    let h = hex[1];
+    if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+    r = Number.parseInt(h.slice(0, 2), 16);
+    g = Number.parseInt(h.slice(2, 4), 16);
+    b = Number.parseInt(h.slice(4, 6), 16);
+  } else {
+    const rgb = /^rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/i.exec(color.trim());
+    if (rgb) {
+      r = Number(rgb[1]);
+      g = Number(rgb[2]);
+      b = Number(rgb[3]);
+    }
+  }
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.55 ? "#1f1f1f" : "#ffffff";
+}
+function hashText(text) {
+  let hash = 5381;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash << 5) + hash + text.charCodeAt(i) | 0;
+  }
+  return (hash >>> 0).toString(36);
+}
+
 // src/card.ts
 var FACE_TEMPLATE = `
   <div class="layer layer-image">
@@ -1186,11 +1463,13 @@ var FACE_TEMPLATE = `
       <small></small>
     </div>
     <div class="title-overlay"></div>
+    <div class="tag image-tag hidden"></div>
   </div>
   <div class="layer layer-note">
     <div class="note-header">
       <ha-icon icon="mdi:note-text-outline"></ha-icon>
       <span class="title"></span>
+      <span class="tag note-tag hidden"></span>
       <button class="icon-button edit" type="button"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
     </div>
     <div class="note-body"></div>
@@ -1259,6 +1538,11 @@ var ImageNoteCard = class extends HTMLElement {
   _motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   _hoverQuery = window.matchMedia("(hover: hover)");
   _lastNote;
+  _visible = [];
+  _templateText;
+  _templateResult;
+  _templateError = "";
+  _templateUnsub;
   _markdownReady = customElements.get("ha-markdown") !== void 0;
   constructor() {
     super();
@@ -1271,7 +1555,10 @@ var ImageNoteCard = class extends HTMLElement {
     this._observeResize();
     this._startTimers();
     window.clearInterval(this._metaTimer);
-    this._metaTimer = window.setInterval(() => this._renderMeta(), 3e4);
+    this._metaTimer = window.setInterval(() => {
+      this._checkExpiry();
+      this._renderMeta();
+    }, 3e4);
   }
   disconnectedCallback() {
     this._motionQuery.removeEventListener("change", this._onMotionChange);
@@ -1282,6 +1569,7 @@ var ImageNoteCard = class extends HTMLElement {
     window.clearTimeout(this._animTimer);
     window.clearInterval(this._metaTimer);
     this._metaTimer = void 0;
+    this._unsubscribeTemplate();
   }
   setConfig(config) {
     validateConfig(config);
@@ -1296,6 +1584,8 @@ var ImageNoteCard = class extends HTMLElement {
     this._saving = false;
     this._lastNote = void 0;
     this._resolved.clear();
+    this._unsubscribeTemplate();
+    this._visible = this._computeVisible();
     if (this._config.layout === "grid" && this._config.entries.length > 1) {
       this._buildTiles(config);
       return;
@@ -1348,7 +1638,7 @@ var ImageNoteCard = class extends HTMLElement {
     }
     if (!this._config || this._editing) return;
     if (side) {
-      const target = this._config.slides.findIndex((slide) => slide.kind === side);
+      const target = this._slides().findIndex((slide) => slide.kind === side);
       if (target >= 0 && target !== this._index) this._go(target, target > this._index ? 1 : -1, true);
       return;
     }
@@ -1358,7 +1648,7 @@ var ImageNoteCard = class extends HTMLElement {
   goTo(target) {
     const config = this._config;
     if (!config || this._editing || this._tiles) return;
-    const total = config.slides.length;
+    const total = this._slides().length;
     if (total < 2) return;
     let index;
     let dir = 1;
@@ -1378,8 +1668,42 @@ var ImageNoteCard = class extends HTMLElement {
   get slide() {
     return this._slide;
   }
+  /** The slides currently shown: expired ones drop out when expired_slides is "hide". */
+  _slides() {
+    return this._visible;
+  }
+  _computeVisible() {
+    const config = this._config;
+    if (!config) return [];
+    const now = /* @__PURE__ */ new Date();
+    const visible = config.slides.filter(
+      (slide) => !(config.expired_slides === "hide" && slide.expires && isExpired(slide.expires, now))
+    );
+    return visible.length > 0 ? visible : config.slides.slice(0, 1);
+  }
+  /** Runs every half minute: hides newly expired slides and marks dimmed ones. */
+  _checkExpiry() {
+    const config = this._config;
+    if (!config || !this._els || this._editing) return;
+    const before = this._visible;
+    const after = this._computeVisible();
+    const same = before.length === after.length && before.every((slide, i) => slide === after[i]);
+    if (!same) {
+      const current = before[this._index];
+      this._visible = after;
+      const next = Math.max(0, after.indexOf(current));
+      this._index = Math.min(next, after.length - 1);
+      this._buildDots();
+      this._renderSlide(this._currentFace, this._slide);
+      this._afterSlideChange(false);
+      return;
+    }
+    if (this._slide.expires) {
+      this._applyExpiry(this._currentFace, this._slide);
+    }
+  }
   get _slide() {
-    const slides = this._config?.slides ?? [];
+    const slides = this._slides();
     return slides[Math.min(this._index, slides.length - 1)];
   }
   get _currentFace() {
@@ -1389,7 +1713,7 @@ var ImageNoteCard = class extends HTMLElement {
     const config = this._config;
     if (!config) return 0;
     if (config.default_side === "note") {
-      const first = config.slides.findIndex((slide) => slide.kind === "note");
+      const first = this._slides().findIndex((slide) => slide.kind === "note");
       if (first >= 0) return first;
     }
     return 0;
@@ -1450,9 +1774,11 @@ var ImageNoteCard = class extends HTMLElement {
       placeholderHelp: q(el, ".placeholder small"),
       placeholderIcon: q(el, ".placeholder ha-icon"),
       titleOverlay: q(el, ".title-overlay"),
+      imageTag: q(el, ".image-tag"),
       noteLayer: q(el, ".layer-note"),
       noteHeader: q(el, ".note-header"),
       noteTitle: q(el, ".note-header .title"),
+      noteTag: q(el, ".note-tag"),
       editButton: q(el, ".edit"),
       noteBody: q(el, ".note-body"),
       noteFooter: q(el, ".note-footer"),
@@ -1529,7 +1855,7 @@ var ImageNoteCard = class extends HTMLElement {
     const els = this._els;
     const config = this._config;
     if (!els || !config) return;
-    const total = config.slides.length;
+    const total = this._slides().length;
     const show = total > 2 && config.show_navigation;
     els.dots.replaceChildren();
     els.dots.classList.toggle("hidden", !show);
@@ -1561,7 +1887,7 @@ var ImageNoteCard = class extends HTMLElement {
     }
     this.style.setProperty("--imagenote-fit", config.image_fit);
     els.stage.classList.toggle("hover-flip", config.hover_flip);
-    els.badge.classList.toggle("hidden", !config.show_hint || config.slides.length < 2);
+    els.badge.classList.toggle("hidden", !config.show_hint || this._slides().length < 2);
     this._applyMode();
   }
   _mode() {
@@ -1649,7 +1975,7 @@ var ImageNoteCard = class extends HTMLElement {
     const els = this._els;
     const config = this._config;
     if (!els || !config || this._editing) return;
-    const slide = config.slides[index];
+    const slide = this._slides()[index];
     if (!slide) return;
     const fromIndex = this._current;
     const toIndex = fromIndex === 0 ? 1 : 0;
@@ -1716,10 +2042,10 @@ var ImageNoteCard = class extends HTMLElement {
     const config = this._config;
     if (!els || !config) return;
     const slide = this._slide;
-    const total = config.slides.length;
+    const total = this._slides().length;
     els.stage.classList.toggle("kind-note", slide.kind === "note");
     Array.from(els.dots.children).forEach((dot, i) => dot.classList.toggle("active", i === this._index));
-    const next = config.slides[(this._index + 1) % total];
+    const next = this._slides()[(this._index + 1) % total];
     const t = (key, vars) => translate(this._lang, key, vars);
     if (next && total > 1) {
       els.badgeIcon.setAttribute("icon", next.kind === "note" ? "mdi:note-text-outline" : "mdi:image-outline");
@@ -1740,7 +2066,7 @@ var ImageNoteCard = class extends HTMLElement {
     }
   }
   _onSwipe(direction) {
-    if (!this._config || this._config.slides.length < 2 || this._editing) return;
+    if (!this._config || this._slides().length < 2 || this._editing) return;
     this.goTo(direction === "left" ? "next" : "prev");
   }
   // ---------------------------------------------------------------- rendering a slide into a face
@@ -1757,12 +2083,91 @@ var ImageNoteCard = class extends HTMLElement {
     } else {
       view.noteTitle.textContent = title || translate(this._lang, "note");
       view.noteHeader.classList.toggle("no-title", !title);
+      this._applyNoteColor(view, slide);
+      this._ensureTemplate(slide);
       const source = this._noteSource(slide);
       if (view === this._currentFace) this._lastNote = source;
       view.editButton.classList.toggle("hidden", !source.editable);
       this._renderNote(view, source);
       this._renderMetaFor(view, source);
     }
+    this._applyExpiry(view, slide);
+  }
+  _applyNoteColor(view, slide) {
+    const config = this._config;
+    const color = resolveNoteColor(slide.color);
+    view.el.classList.toggle("sticky", config?.note_style === "sticky");
+    if (color) {
+      view.el.style.setProperty("--imagenote-note-background", color);
+      view.el.style.setProperty("--imagenote-note-text", contrastTextColor(color));
+      view.el.classList.add("tinted");
+    } else {
+      view.el.style.removeProperty("--imagenote-note-background");
+      view.el.style.removeProperty("--imagenote-note-text");
+      view.el.classList.remove("tinted");
+    }
+  }
+  _applyExpiry(view, slide) {
+    const expired = Boolean(slide.expires) && isExpired(slide.expires);
+    const dim = expired && this._config?.expired_slides !== "hide";
+    view.el.classList.toggle("expired", dim);
+    const label = dim ? translate(this._lang, "expired") : "";
+    view.noteTag.textContent = label;
+    view.noteTag.classList.toggle("hidden", !dim);
+    view.imageTag.textContent = label;
+    view.imageTag.classList.toggle("hidden", !dim);
+  }
+  // ---------------------------------------------------------------- templates
+  /** Notes with {{ }} or {% %} are rendered by Home Assistant and follow state changes. */
+  _ensureTemplate(slide) {
+    const raw = this._rawNoteText(slide);
+    if (!hasTemplate(raw) || !this._hass?.connection) {
+      if (this._templateText !== void 0) this._unsubscribeTemplate();
+      return;
+    }
+    if (raw === this._templateText) return;
+    this._unsubscribeTemplate();
+    this._templateText = raw;
+    this._templateResult = void 0;
+    this._templateError = "";
+    const connection = this._hass.connection;
+    this._templateUnsub = connection.subscribeMessage(
+      (message) => {
+        if (this._templateText !== raw) return;
+        if (message.error !== void 0) {
+          this._templateError = String(message.error);
+        } else {
+          this._templateError = "";
+          this._templateResult = typeof message.result === "string" ? message.result : JSON.stringify(message.result);
+        }
+        this._lastNote = void 0;
+        this._applyHass();
+      },
+      { type: "render_template", template: raw, timeout: 3, report_errors: true }
+    );
+    this._templateUnsub.catch(() => {
+      this._templateError = "subscribe failed";
+    });
+  }
+  _unsubscribeTemplate() {
+    const pending = this._templateUnsub;
+    this._templateUnsub = void 0;
+    this._templateText = void 0;
+    this._templateResult = void 0;
+    this._templateError = "";
+    if (pending) {
+      pending.then((unsub) => unsub()).catch(() => void 0);
+    }
+  }
+  _rawNoteText(slide) {
+    if (!slide.note_entity) return slide.note;
+    const entity = this._hass?.states[slide.note_entity];
+    if (!entity) return "";
+    if (slide.note_attribute) {
+      const raw = entity.attributes[slide.note_attribute];
+      return raw === void 0 || raw === null ? "" : typeof raw === "string" ? raw : JSON.stringify(raw);
+    }
+    return entity.state === "unknown" || entity.state === "unavailable" ? "" : entity.state;
   }
   // ---------------------------------------------------------------- picture
   _imageSourceFromEntity(slide) {
@@ -1871,10 +2276,20 @@ var ImageNoteCard = class extends HTMLElement {
   // ---------------------------------------------------------------- note
   _noteSource(slide) {
     const config = this._config;
-    const empty = { text: "", editable: false, error: "", max: null, domain: "", changed: "", entityId: "" };
+    const empty = {
+      text: "",
+      raw: "",
+      templated: false,
+      editable: false,
+      error: "",
+      max: null,
+      domain: "",
+      changed: "",
+      entityId: ""
+    };
     if (!config) return empty;
     if (!slide.note_entity) {
-      return { ...empty, text: slide.note };
+      return this._withTemplate({ ...empty, text: slide.note, raw: slide.note });
     }
     const entity = this._hass?.states[slide.note_entity];
     if (!entity) {
@@ -1894,15 +2309,29 @@ var ImageNoteCard = class extends HTMLElement {
       text = entity.state === "unknown" || entity.state === "unavailable" ? "" : entity.state;
     }
     const max = typeof entity.attributes.max === "number" ? entity.attributes.max : null;
-    return {
+    return this._withTemplate({
       text,
+      raw: text,
+      templated: false,
       editable: !attr && NOTE_ENTITY_DOMAINS.includes(domain),
       error: "",
       max,
       domain,
       changed: config.show_updated ? entity.last_changed ?? "" : "",
       entityId: slide.note_entity
-    };
+    });
+  }
+  _withTemplate(source) {
+    if (!hasTemplate(source.raw)) return source;
+    if (this._templateText === source.raw) {
+      if (this._templateError) {
+        return { ...source, templated: true, error: `${translate(this._lang, "templateError")}: ${this._templateError}` };
+      }
+      if (this._templateResult !== void 0) {
+        return { ...source, templated: true, text: this._templateResult };
+      }
+    }
+    return { ...source, templated: true };
   }
   /** Reacts to state changes for the slide currently shown. */
   _applyHass() {
@@ -1917,9 +2346,10 @@ var ImageNoteCard = class extends HTMLElement {
       }
       return;
     }
+    this._ensureTemplate(slide);
     const source = this._noteSource(slide);
     const last = this._lastNote;
-    if (last && last.text === source.text && last.editable === source.editable && last.error === source.error && last.max === source.max && last.changed === source.changed && last.entityId === source.entityId) {
+    if (last && last.text === source.text && last.raw === source.raw && last.editable === source.editable && last.error === source.error && last.max === source.max && last.changed === source.changed && last.entityId === source.entityId) {
       return;
     }
     this._lastNote = source;
@@ -1935,12 +2365,21 @@ var ImageNoteCard = class extends HTMLElement {
     this._renderMetaFor(this._currentFace, this._lastNote);
   }
   _renderMetaFor(view, source) {
-    if (!source.changed || this._editing) {
-      view.noteMeta.textContent = "";
-      return;
+    view.noteMeta.textContent = "";
+    if (this._editing) return;
+    const parts = [];
+    if (source.changed) {
+      parts.push(translate(this._lang, "updated", { time: formatRelativeTime(new Date(source.changed), this._lang) }));
     }
-    const relative = formatRelativeTime(new Date(source.changed), this._lang);
-    view.noteMeta.textContent = translate(this._lang, "updated", { time: relative });
+    const slide = this._slide;
+    if (slide?.expires && !isExpired(slide.expires)) {
+      const date = parseExpiry(slide.expires);
+      if (date) {
+        const formatted = new Intl.DateTimeFormat(this._lang, { day: "numeric", month: "short" }).format(date);
+        parts.push(translate(this._lang, "expiresOn", { date: formatted }));
+      }
+    }
+    view.noteMeta.textContent = parts.join(" · ");
   }
   _updateScrollState(view) {
     const body = view.noteBody;
@@ -1971,18 +2410,89 @@ var ImageNoteCard = class extends HTMLElement {
       body.append(div);
       return;
     }
+    if (this._config?.checklist && hasChecklist(source.text)) {
+      const overrides = this._localChecks(source);
+      for (const block of parseNoteBlocks(source.text)) {
+        if (block.type === "markdown") {
+          body.append(this._markdownElement(block.text));
+          continue;
+        }
+        const list = document.createElement("div");
+        list.className = "checklist";
+        for (const item of block.items) {
+          const label = document.createElement("label");
+          label.className = "check";
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.checked = overrides?.[item.line] ?? item.checked;
+          const text = document.createElement("span");
+          text.textContent = item.text;
+          label.classList.toggle("done", input.checked);
+          input.addEventListener("change", () => {
+            label.classList.toggle("done", input.checked);
+            void this._toggleCheck(view, source, item.line, input.checked);
+          });
+          label.append(input, text);
+          list.append(label);
+        }
+        body.append(list);
+      }
+      return;
+    }
+    body.append(this._markdownElement(source.text));
+  }
+  _markdownElement(text) {
     if (this._markdownReady) {
       const md = document.createElement("ha-markdown");
       md.setAttribute("breaks", "");
       md.breaks = true;
-      md.content = source.text;
-      body.append(md);
-    } else {
-      const div = document.createElement("div");
-      div.className = "note-text";
-      div.textContent = source.text;
-      body.append(div);
+      md.content = text;
+      return md;
     }
+    const div = document.createElement("div");
+    div.className = "note-text";
+    div.textContent = text;
+    return div;
+  }
+  // ---------------------------------------------------------------- checklists
+  _canWriteBack(source) {
+    return Boolean(this._config?.checklist_writeback) && source.editable && !source.templated && Boolean(this._hass);
+  }
+  _checkKey(source) {
+    return `${CHECKLIST_STORAGE_PREFIX}${hashText(source.text)}`;
+  }
+  /** Ticks remembered in this browser for notes that cannot be written back. */
+  _localChecks(source) {
+    if (this._canWriteBack(source)) return void 0;
+    try {
+      const raw = window.localStorage.getItem(this._checkKey(source));
+      return raw ? JSON.parse(raw) : void 0;
+    } catch {
+      return void 0;
+    }
+  }
+  async _toggleCheck(view, source, line, checked) {
+    if (this._canWriteBack(source) && this._hass) {
+      const value = toggleChecklistLine(source.raw, line, checked);
+      const optimistic = { ...source, raw: value, text: value };
+      this._lastNote = optimistic;
+      try {
+        await this._hass.callService(source.domain, "set_value", { entity_id: source.entityId, value });
+      } catch (err) {
+        console.warn("ImageNote: could not save the checklist", err);
+        this._lastNote = void 0;
+        this._applyHass();
+      }
+      return;
+    }
+    try {
+      const key = this._checkKey(source);
+      const current = this._localChecks(source) ?? {};
+      current[line] = checked;
+      window.localStorage.setItem(key, JSON.stringify(current));
+    } catch {
+    }
+    void view;
   }
   _ensureMarkdown() {
     if (this._markdownReady) return;
@@ -2095,6 +2605,7 @@ var ImageNoteCard = class extends HTMLElement {
     if (this._editing) return false;
     for (const node of ev.composedPath()) {
       if (node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement) return false;
+      if (node instanceof HTMLInputElement || node instanceof HTMLLabelElement) return false;
       if (node instanceof HTMLElement && node.classList.contains("note-editor")) return false;
     }
     return true;
@@ -2154,7 +2665,7 @@ var ImageNoteCard = class extends HTMLElement {
     const config = this._config;
     if (!this.isConnected || !config || this._tiles || !this._els) return;
     const seconds = config.auto_flip || config.auto_advance;
-    if (seconds > 0 && config.slides.length > 1) {
+    if (seconds > 0 && this._slides().length > 1) {
       this._autoTimer = window.setInterval(() => {
         if (!this._editing) this.goTo("next");
       }, seconds * 1e3);
@@ -2194,7 +2705,7 @@ var ImageNoteCard = class extends HTMLElement {
 var UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
 var UPLOAD_TARGETS = ["image", "media"];
 var EDITOR_DEFAULTS = { upload_target: "image", upload_folder: "imagenote" };
-var PAGE_KEYS = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute"];
+var PAGE_KEYS = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "expires", "color"];
 var LIST_KEYS = ["slides", "images"];
 var TEMPLATE2 = `
 <div class="pages">
@@ -2656,6 +3167,27 @@ var ImageNoteCardEditor = class extends HTMLElement {
             context: { filter_entity: "note_entity" }
           }
         ]
+      },
+      {
+        name: "note_extras",
+        type: "grid",
+        flatten: true,
+        schema: [
+          { name: "expires", selector: { datetime: {} } },
+          {
+            name: "color",
+            selector: {
+              select: {
+                mode: "dropdown",
+                custom_value: true,
+                options: [
+                  { value: "", label: t("color_none") },
+                  ...Object.keys(NOTE_COLOR_PRESETS).map((name) => ({ value: name, label: t(`color_${name}`) }))
+                ]
+              }
+            }
+          }
+        ]
       }
     );
     return schema;
@@ -2723,6 +3255,15 @@ var ImageNoteCardEditor = class extends HTMLElement {
               { name: "show_updated", selector: { boolean: {} } },
               { name: "show_navigation", selector: { boolean: {} } }
             ]
+          },
+          {
+            name: "appearance_notes",
+            type: "grid",
+            flatten: true,
+            schema: [
+              { name: "note_style", selector: { select: { mode: "dropdown", options: options(NOTE_STYLES, "note_style") } } },
+              { name: "expired_slides", selector: { select: { mode: "dropdown", options: options(EXPIRED_MODES, "expired") } } }
+            ]
           }
         ]
       },
@@ -2763,6 +3304,15 @@ var ImageNoteCardEditor = class extends HTMLElement {
               { name: "hover_flip", selector: { boolean: {} } }
             ]
           },
+          {
+            name: "behaviour_checklist",
+            type: "grid",
+            flatten: true,
+            schema: [
+              { name: "checklist", selector: { boolean: {} } },
+              { name: "checklist_writeback", selector: { boolean: {} } }
+            ]
+          },
           { name: "actions_help", type: "constant", value: "" },
           { name: "hold_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } },
           { name: "double_tap_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } }
@@ -2779,7 +3329,9 @@ var ImageNoteCardEditor = class extends HTMLElement {
       image_entity: page.image_entity ?? "",
       note: page.note ?? "",
       note_entity: page.note_entity ?? "",
-      note_attribute: page.note_attribute ?? ""
+      note_attribute: page.note_attribute ?? "",
+      expires: page.expires ?? "",
+      color: page.color ?? ""
     };
   }
   _cardData() {

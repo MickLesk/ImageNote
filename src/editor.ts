@@ -2,8 +2,10 @@ import {
   ASPECT_RATIOS,
   DEFAULTS,
   DIRECTIONS,
+  EXPIRED_MODES,
   IMAGE_FITS,
   LAYOUTS,
+  NOTE_STYLES,
   MEDIA_EXPIRES_SECONDS,
   MEDIA_SOURCE_PREFIX,
   SIDES,
@@ -12,6 +14,7 @@ import {
 } from "./const";
 import { MAX_SLIDES } from "./const";
 import { configPages, expandSlides, hasNote, hasPicture, normalizePage } from "./config";
+import { NOTE_COLOR_PRESETS } from "./notes";
 import { resolveLanguage, translate } from "./i18n";
 import { EDITOR_STYLES } from "./styles";
 import type { HomeAssistant, ImageNoteCardConfig, PageConfig, ResolvedMedia } from "./types";
@@ -29,7 +32,7 @@ interface HaFormElement extends HTMLElement {
 const UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
 const UPLOAD_TARGETS = ["image", "media"];
 const EDITOR_DEFAULTS: Record<string, unknown> = { upload_target: "image", upload_folder: "imagenote" };
-const PAGE_KEYS: Array<keyof PageConfig> = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute"];
+const PAGE_KEYS: Array<keyof PageConfig> = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "expires", "color"];
 const LIST_KEYS = ["slides", "images"];
 
 const TEMPLATE = `
@@ -525,6 +528,27 @@ export class ImageNoteCardEditor extends HTMLElement {
           },
         ],
       },
+      {
+        name: "note_extras",
+        type: "grid",
+        flatten: true,
+        schema: [
+          { name: "expires", selector: { datetime: {} } },
+          {
+            name: "color",
+            selector: {
+              select: {
+                mode: "dropdown",
+                custom_value: true,
+                options: [
+                  { value: "", label: t("color_none") },
+                  ...Object.keys(NOTE_COLOR_PRESETS).map((name) => ({ value: name, label: t(`color_${name}`) })),
+                ],
+              },
+            },
+          },
+        ],
+      },
     );
     return schema;
   }
@@ -594,6 +618,15 @@ export class ImageNoteCardEditor extends HTMLElement {
               { name: "show_navigation", selector: { boolean: {} } },
             ],
           },
+          {
+            name: "appearance_notes",
+            type: "grid",
+            flatten: true,
+            schema: [
+              { name: "note_style", selector: { select: { mode: "dropdown", options: options(NOTE_STYLES, "note_style") } } },
+              { name: "expired_slides", selector: { select: { mode: "dropdown", options: options(EXPIRED_MODES, "expired") } } },
+            ],
+          },
         ],
       },
       {
@@ -633,6 +666,15 @@ export class ImageNoteCardEditor extends HTMLElement {
               { name: "hover_flip", selector: { boolean: {} } },
             ],
           },
+          {
+            name: "behaviour_checklist",
+            type: "grid",
+            flatten: true,
+            schema: [
+              { name: "checklist", selector: { boolean: {} } },
+              { name: "checklist_writeback", selector: { boolean: {} } },
+            ],
+          },
           { name: "actions_help", type: "constant", value: "" },
           { name: "hold_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } },
           { name: "double_tap_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } },
@@ -652,6 +694,8 @@ export class ImageNoteCardEditor extends HTMLElement {
       note: page.note ?? "",
       note_entity: page.note_entity ?? "",
       note_attribute: page.note_attribute ?? "",
+      expires: page.expires ?? "",
+      color: page.color ?? "",
     };
   }
 

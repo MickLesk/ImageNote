@@ -1,5 +1,6 @@
 import {
   CARD_TYPE,
+  CHECKLIST_STORAGE_PREFIX,
   DOUBLE_TAP_WINDOW_MS,
   EDITOR_TYPE,
   HOLD_DELAY_MS,
@@ -16,6 +17,17 @@ import { normalizeConfig, parseAspectRatio, validateConfig } from "./config";
 import { resolveLanguage, translate } from "./i18n";
 import { CARD_STYLES } from "./styles";
 import { formatRelativeTime } from "./time";
+import {
+  contrastTextColor,
+  hasChecklist,
+  hasTemplate,
+  hashText,
+  isExpired,
+  parseExpiry,
+  parseNoteBlocks,
+  resolveNoteColor,
+  toggleChecklistLine,
+} from "./notes";
 import type {
   HassEntity,
   HomeAssistant,
@@ -36,9 +48,11 @@ interface FaceView {
   placeholderHelp: HTMLElement;
   placeholderIcon: HTMLElement;
   titleOverlay: HTMLElement;
+  imageTag: HTMLElement;
   noteLayer: HTMLElement;
   noteHeader: HTMLElement;
   noteTitle: HTMLElement;
+  noteTag: HTMLElement;
   editButton: HTMLButtonElement;
   noteBody: HTMLElement;
   noteFooter: HTMLElement;
@@ -69,7 +83,11 @@ interface Elements {
 }
 
 interface NoteSource {
+  /** The text as rendered (template results applied). */
   text: string;
+  /** The text as stored, used when writing checklist ticks back. */
+  raw: string;
+  templated: boolean;
   editable: boolean;
   error: string;
   max: number | null;
@@ -93,11 +111,13 @@ const FACE_TEMPLATE = `
       <small></small>
     </div>
     <div class="title-overlay"></div>
+    <div class="tag image-tag hidden"></div>
   </div>
   <div class="layer layer-note">
     <div class="note-header">
       <ha-icon icon="mdi:note-text-outline"></ha-icon>
       <span class="title"></span>
+      <span class="tag note-tag hidden"></span>
       <button class="icon-button edit" type="button"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
     </div>
     <div class="note-body"></div>
@@ -171,6 +191,11 @@ export class ImageNoteCard extends HTMLElement {
   private readonly _motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   private readonly _hoverQuery = window.matchMedia("(hover: hover)");
   private _lastNote?: NoteSource;
+  private _visible: Slide[] = [];
+  private _templateText?: string;
+  private _templateResult?: string;
+  private _templateError = "";
+  private _templateUnsub?: Promise<() => Promise<void>>;
   private _markdownReady = customElements.get("ha-markdown") !== undefined;
 
   constructor() {
@@ -186,7 +211,10 @@ export class ImageNoteCard extends HTMLElement {
     this._observeResize();
     this._startTimers();
     window.clearInterval(this._metaTimer);
-    this._metaTimer = window.setInterval(() => this._renderMeta(), 30_000);
+    this._metaTimer = window.setInterval(() => {
+      this._checkExpiry();
+      this._renderMeta();
+    }, 30_000);
   }
 
   disconnectedCallback(): void {
@@ -198,6 +226,7 @@ export class ImageNoteCard extends HTMLElement {
     window.clearTimeout(this._animTimer);
     window.clearInterval(this._metaTimer);
     this._metaTimer = undefined;
+    this._unsubscribeTemplate();
   }
 
   setConfig(config: ImageNoteCardConfig): void {
@@ -213,6 +242,8 @@ export class ImageNoteCard extends HTMLElement {
     this._saving = false;
     this._lastNote = undefined;
     this._resolved.clear();
+    this._unsubscribeTemplate();
+    this._visible = this._computeVisible();
     if (this._config.layout === "grid" && this._config.entries.length > 1) {
       this._buildTiles(config);
       return;
@@ -270,7 +301,7 @@ export class ImageNoteCard extends HTMLElement {
     }
     if (!this._config || this._editing) return;
     if (side) {
-      const target = this._config.slides.findIndex((slide) => slide.kind === side);
+      const target = this._slides().findIndex((slide) => slide.kind === side);
       if (target >= 0 && target !== this._index) this._go(target, target > this._index ? 1 : -1, true);
       return;
     }
@@ -281,7 +312,7 @@ export class ImageNoteCard extends HTMLElement {
   goTo(target: number | "next" | "prev"): void {
     const config = this._config;
     if (!config || this._editing || this._tiles) return;
-    const total = config.slides.length;
+    const total = this._slides().length;
     if (total < 2) return;
     let index: number;
     let dir: 1 | -1 = 1;
@@ -303,8 +334,46 @@ export class ImageNoteCard extends HTMLElement {
     return this._slide;
   }
 
+  /** The slides currently shown: expired ones drop out when expired_slides is "hide". */
+  private _slides(): Slide[] {
+    return this._visible;
+  }
+
+  private _computeVisible(): Slide[] {
+    const config = this._config;
+    if (!config) return [];
+    const now = new Date();
+    const visible = config.slides.filter(
+      (slide) => !(config.expired_slides === "hide" && slide.expires && isExpired(slide.expires, now)),
+    );
+    // Never hide everything: an all-expired card still shows its first slide.
+    return visible.length > 0 ? visible : config.slides.slice(0, 1);
+  }
+
+  /** Runs every half minute: hides newly expired slides and marks dimmed ones. */
+  private _checkExpiry(): void {
+    const config = this._config;
+    if (!config || !this._els || this._editing) return;
+    const before = this._visible;
+    const after = this._computeVisible();
+    const same = before.length === after.length && before.every((slide, i) => slide === after[i]);
+    if (!same) {
+      const current = before[this._index];
+      this._visible = after;
+      const next = Math.max(0, after.indexOf(current));
+      this._index = Math.min(next, after.length - 1);
+      this._buildDots();
+      this._renderSlide(this._currentFace, this._slide);
+      this._afterSlideChange(false);
+      return;
+    }
+    if (this._slide.expires) {
+      this._applyExpiry(this._currentFace, this._slide);
+    }
+  }
+
   private get _slide(): Slide {
-    const slides = this._config?.slides ?? [];
+    const slides = this._slides();
     return slides[Math.min(this._index, slides.length - 1)];
   }
 
@@ -316,7 +385,7 @@ export class ImageNoteCard extends HTMLElement {
     const config = this._config;
     if (!config) return 0;
     if (config.default_side === "note") {
-      const first = config.slides.findIndex((slide) => slide.kind === "note");
+      const first = this._slides().findIndex((slide) => slide.kind === "note");
       if (first >= 0) return first;
     }
     return 0;
@@ -381,9 +450,11 @@ export class ImageNoteCard extends HTMLElement {
       placeholderHelp: q(el, ".placeholder small"),
       placeholderIcon: q(el, ".placeholder ha-icon"),
       titleOverlay: q(el, ".title-overlay"),
+      imageTag: q(el, ".image-tag"),
       noteLayer: q(el, ".layer-note"),
       noteHeader: q(el, ".note-header"),
       noteTitle: q(el, ".note-header .title"),
+      noteTag: q(el, ".note-tag"),
       editButton: q(el, ".edit"),
       noteBody: q(el, ".note-body"),
       noteFooter: q(el, ".note-footer"),
@@ -464,7 +535,7 @@ export class ImageNoteCard extends HTMLElement {
     const els = this._els;
     const config = this._config;
     if (!els || !config) return;
-    const total = config.slides.length;
+    const total = this._slides().length;
     const show = total > 2 && config.show_navigation;
     els.dots.replaceChildren();
     els.dots.classList.toggle("hidden", !show);
@@ -497,7 +568,7 @@ export class ImageNoteCard extends HTMLElement {
     }
     this.style.setProperty("--imagenote-fit", config.image_fit);
     els.stage.classList.toggle("hover-flip", config.hover_flip);
-    els.badge.classList.toggle("hidden", !config.show_hint || config.slides.length < 2);
+    els.badge.classList.toggle("hidden", !config.show_hint || this._slides().length < 2);
     this._applyMode();
   }
 
@@ -595,7 +666,7 @@ export class ImageNoteCard extends HTMLElement {
     const els = this._els;
     const config = this._config;
     if (!els || !config || this._editing) return;
-    const slide = config.slides[index];
+    const slide = this._slides()[index];
     if (!slide) return;
     const fromIndex = this._current;
     const toIndex: 0 | 1 = fromIndex === 0 ? 1 : 0;
@@ -665,11 +736,11 @@ export class ImageNoteCard extends HTMLElement {
     const config = this._config;
     if (!els || !config) return;
     const slide = this._slide;
-    const total = config.slides.length;
+    const total = this._slides().length;
     els.stage.classList.toggle("kind-note", slide.kind === "note");
     Array.from(els.dots.children).forEach((dot, i) => dot.classList.toggle("active", i === this._index));
 
-    const next = config.slides[(this._index + 1) % total];
+    const next = this._slides()[(this._index + 1) % total];
     const t = (key: string, vars?: Record<string, string | number>) => translate(this._lang, key, vars);
     if (next && total > 1) {
       els.badgeIcon.setAttribute("icon", next.kind === "note" ? "mdi:note-text-outline" : "mdi:image-outline");
@@ -692,7 +763,7 @@ export class ImageNoteCard extends HTMLElement {
   }
 
   private _onSwipe(direction: SwipeDirection): void {
-    if (!this._config || this._config.slides.length < 2 || this._editing) return;
+    if (!this._config || this._slides().length < 2 || this._editing) return;
     this.goTo(direction === "left" ? "next" : "prev");
   }
 
@@ -711,12 +782,97 @@ export class ImageNoteCard extends HTMLElement {
     } else {
       view.noteTitle.textContent = title || translate(this._lang, "note");
       view.noteHeader.classList.toggle("no-title", !title);
+      this._applyNoteColor(view, slide);
+      this._ensureTemplate(slide);
       const source = this._noteSource(slide);
       if (view === this._currentFace) this._lastNote = source;
       view.editButton.classList.toggle("hidden", !source.editable);
       this._renderNote(view, source);
       this._renderMetaFor(view, source);
     }
+    this._applyExpiry(view, slide);
+  }
+
+  private _applyNoteColor(view: FaceView, slide: Slide): void {
+    const config = this._config;
+    const color = resolveNoteColor(slide.color);
+    view.el.classList.toggle("sticky", config?.note_style === "sticky");
+    if (color) {
+      view.el.style.setProperty("--imagenote-note-background", color);
+      view.el.style.setProperty("--imagenote-note-text", contrastTextColor(color));
+      view.el.classList.add("tinted");
+    } else {
+      view.el.style.removeProperty("--imagenote-note-background");
+      view.el.style.removeProperty("--imagenote-note-text");
+      view.el.classList.remove("tinted");
+    }
+  }
+
+  private _applyExpiry(view: FaceView, slide: Slide): void {
+    const expired = Boolean(slide.expires) && isExpired(slide.expires);
+    const dim = expired && this._config?.expired_slides !== "hide";
+    view.el.classList.toggle("expired", dim);
+    const label = dim ? translate(this._lang, "expired") : "";
+    view.noteTag.textContent = label;
+    view.noteTag.classList.toggle("hidden", !dim);
+    view.imageTag.textContent = label;
+    view.imageTag.classList.toggle("hidden", !dim);
+  }
+
+  // ---------------------------------------------------------------- templates
+
+  /** Notes with {{ }} or {% %} are rendered by Home Assistant and follow state changes. */
+  private _ensureTemplate(slide: Slide): void {
+    const raw = this._rawNoteText(slide);
+    if (!hasTemplate(raw) || !this._hass?.connection) {
+      if (this._templateText !== undefined) this._unsubscribeTemplate();
+      return;
+    }
+    if (raw === this._templateText) return;
+    this._unsubscribeTemplate();
+    this._templateText = raw;
+    this._templateResult = undefined;
+    this._templateError = "";
+    const connection = this._hass.connection;
+    this._templateUnsub = connection.subscribeMessage<{ result?: unknown; error?: string }>(
+      (message) => {
+        if (this._templateText !== raw) return;
+        if (message.error !== undefined) {
+          this._templateError = String(message.error);
+        } else {
+          this._templateError = "";
+          this._templateResult = typeof message.result === "string" ? message.result : JSON.stringify(message.result);
+        }
+        this._lastNote = undefined;
+        this._applyHass();
+      },
+      { type: "render_template", template: raw, timeout: 3, report_errors: true },
+    );
+    this._templateUnsub.catch(() => {
+      this._templateError = "subscribe failed";
+    });
+  }
+
+  private _unsubscribeTemplate(): void {
+    const pending = this._templateUnsub;
+    this._templateUnsub = undefined;
+    this._templateText = undefined;
+    this._templateResult = undefined;
+    this._templateError = "";
+    if (pending) {
+      pending.then((unsub) => unsub()).catch(() => undefined);
+    }
+  }
+
+  private _rawNoteText(slide: Slide): string {
+    if (!slide.note_entity) return slide.note;
+    const entity = this._hass?.states[slide.note_entity];
+    if (!entity) return "";
+    if (slide.note_attribute) {
+      const raw = entity.attributes[slide.note_attribute];
+      return raw === undefined || raw === null ? "" : typeof raw === "string" ? raw : JSON.stringify(raw);
+    }
+    return entity.state === "unknown" || entity.state === "unavailable" ? "" : entity.state;
   }
 
   // ---------------------------------------------------------------- picture
@@ -838,10 +994,20 @@ export class ImageNoteCard extends HTMLElement {
 
   private _noteSource(slide: Slide): NoteSource {
     const config = this._config;
-    const empty: NoteSource = { text: "", editable: false, error: "", max: null, domain: "", changed: "", entityId: "" };
+    const empty: NoteSource = {
+      text: "",
+      raw: "",
+      templated: false,
+      editable: false,
+      error: "",
+      max: null,
+      domain: "",
+      changed: "",
+      entityId: "",
+    };
     if (!config) return empty;
     if (!slide.note_entity) {
-      return { ...empty, text: slide.note };
+      return this._withTemplate({ ...empty, text: slide.note, raw: slide.note });
     }
     const entity: HassEntity | undefined = this._hass?.states[slide.note_entity];
     if (!entity) {
@@ -861,15 +1027,30 @@ export class ImageNoteCard extends HTMLElement {
       text = entity.state === "unknown" || entity.state === "unavailable" ? "" : entity.state;
     }
     const max = typeof entity.attributes.max === "number" ? entity.attributes.max : null;
-    return {
+    return this._withTemplate({
       text,
+      raw: text,
+      templated: false,
       editable: !attr && NOTE_ENTITY_DOMAINS.includes(domain),
       error: "",
       max,
       domain,
       changed: config.show_updated ? entity.last_changed ?? "" : "",
       entityId: slide.note_entity,
-    };
+    });
+  }
+
+  private _withTemplate(source: NoteSource): NoteSource {
+    if (!hasTemplate(source.raw)) return source;
+    if (this._templateText === source.raw) {
+      if (this._templateError) {
+        return { ...source, templated: true, error: `${translate(this._lang, "templateError")}: ${this._templateError}` };
+      }
+      if (this._templateResult !== undefined) {
+        return { ...source, templated: true, text: this._templateResult };
+      }
+    }
+    return { ...source, templated: true };
   }
 
   /** Reacts to state changes for the slide currently shown. */
@@ -885,11 +1066,13 @@ export class ImageNoteCard extends HTMLElement {
       }
       return;
     }
+    this._ensureTemplate(slide);
     const source = this._noteSource(slide);
     const last = this._lastNote;
     if (
       last &&
       last.text === source.text &&
+      last.raw === source.raw &&
       last.editable === source.editable &&
       last.error === source.error &&
       last.max === source.max &&
@@ -913,12 +1096,21 @@ export class ImageNoteCard extends HTMLElement {
   }
 
   private _renderMetaFor(view: FaceView, source: NoteSource): void {
-    if (!source.changed || this._editing) {
-      view.noteMeta.textContent = "";
-      return;
+    view.noteMeta.textContent = "";
+    if (this._editing) return;
+    const parts: string[] = [];
+    if (source.changed) {
+      parts.push(translate(this._lang, "updated", { time: formatRelativeTime(new Date(source.changed), this._lang) }));
     }
-    const relative = formatRelativeTime(new Date(source.changed), this._lang);
-    view.noteMeta.textContent = translate(this._lang, "updated", { time: relative });
+    const slide = this._slide;
+    if (slide?.expires && !isExpired(slide.expires)) {
+      const date = parseExpiry(slide.expires);
+      if (date) {
+        const formatted = new Intl.DateTimeFormat(this._lang, { day: "numeric", month: "short" }).format(date);
+        parts.push(translate(this._lang, "expiresOn", { date: formatted }));
+      }
+    }
+    view.noteMeta.textContent = parts.join(" · ");
   }
 
   private _updateScrollState(view: FaceView): void {
@@ -951,18 +1143,96 @@ export class ImageNoteCard extends HTMLElement {
       body.append(div);
       return;
     }
+    if (this._config?.checklist && hasChecklist(source.text)) {
+      const overrides = this._localChecks(source);
+      for (const block of parseNoteBlocks(source.text)) {
+        if (block.type === "markdown") {
+          body.append(this._markdownElement(block.text));
+          continue;
+        }
+        const list = document.createElement("div");
+        list.className = "checklist";
+        for (const item of block.items) {
+          const label = document.createElement("label");
+          label.className = "check";
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.checked = overrides?.[item.line] ?? item.checked;
+          const text = document.createElement("span");
+          text.textContent = item.text;
+          label.classList.toggle("done", input.checked);
+          input.addEventListener("change", () => {
+            label.classList.toggle("done", input.checked);
+            void this._toggleCheck(view, source, item.line, input.checked);
+          });
+          label.append(input, text);
+          list.append(label);
+        }
+        body.append(list);
+      }
+      return;
+    }
+    body.append(this._markdownElement(source.text));
+  }
+
+  private _markdownElement(text: string): HTMLElement {
     if (this._markdownReady) {
       const md = document.createElement("ha-markdown") as HTMLElement & { content?: string; breaks?: boolean };
       md.setAttribute("breaks", "");
       md.breaks = true;
-      md.content = source.text;
-      body.append(md);
-    } else {
-      const div = document.createElement("div");
-      div.className = "note-text";
-      div.textContent = source.text;
-      body.append(div);
+      md.content = text;
+      return md;
     }
+    const div = document.createElement("div");
+    div.className = "note-text";
+    div.textContent = text;
+    return div;
+  }
+
+  // ---------------------------------------------------------------- checklists
+
+  private _canWriteBack(source: NoteSource): boolean {
+    return Boolean(this._config?.checklist_writeback) && source.editable && !source.templated && Boolean(this._hass);
+  }
+
+  private _checkKey(source: NoteSource): string {
+    return `${CHECKLIST_STORAGE_PREFIX}${hashText(source.text)}`;
+  }
+
+  /** Ticks remembered in this browser for notes that cannot be written back. */
+  private _localChecks(source: NoteSource): Record<number, boolean> | undefined {
+    if (this._canWriteBack(source)) return undefined;
+    try {
+      const raw = window.localStorage.getItem(this._checkKey(source));
+      return raw ? (JSON.parse(raw) as Record<number, boolean>) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async _toggleCheck(view: FaceView, source: NoteSource, line: number, checked: boolean): Promise<void> {
+    if (this._canWriteBack(source) && this._hass) {
+      const value = toggleChecklistLine(source.raw, line, checked);
+      const optimistic = { ...source, raw: value, text: value };
+      this._lastNote = optimistic;
+      try {
+        await this._hass.callService(source.domain, "set_value", { entity_id: source.entityId, value });
+      } catch (err) {
+        console.warn("ImageNote: could not save the checklist", err);
+        this._lastNote = undefined;
+        this._applyHass();
+      }
+      return;
+    }
+    try {
+      const key = this._checkKey(source);
+      const current = this._localChecks(source) ?? {};
+      current[line] = checked;
+      window.localStorage.setItem(key, JSON.stringify(current));
+    } catch {
+      // Private mode or blocked storage: the tick still shows until the next render.
+    }
+    void view;
   }
 
   private _ensureMarkdown(): void {
@@ -1087,6 +1357,7 @@ export class ImageNoteCard extends HTMLElement {
     if (this._editing) return false;
     for (const node of ev.composedPath()) {
       if (node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement) return false;
+      if (node instanceof HTMLInputElement || node instanceof HTMLLabelElement) return false;
       if (node instanceof HTMLElement && node.classList.contains("note-editor")) return false;
     }
     return true;
@@ -1155,7 +1426,7 @@ export class ImageNoteCard extends HTMLElement {
     const config = this._config;
     if (!this.isConnected || !config || this._tiles || !this._els) return;
     const seconds = config.auto_flip || config.auto_advance;
-    if (seconds > 0 && config.slides.length > 1) {
+    if (seconds > 0 && this._slides().length > 1) {
       this._autoTimer = window.setInterval(() => {
         if (!this._editing) this.goTo("next");
       }, seconds * 1000);

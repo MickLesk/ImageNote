@@ -32,7 +32,7 @@ const card = (page, index) => page.locator("#grid > .cell > imagenote-card").nth
 
 test("demo renders every card without page errors", async () => {
   const { page, context, errors } = await openDemo();
-  assert.equal(await page.locator("#grid > .cell > imagenote-card").count(), 12);
+  assert.equal(await page.locator("#grid > .cell > imagenote-card").count(), 14);
   assert.deepEqual(errors, []);
   assert.equal(await card(page, 0).locator(".face.current .title-overlay").innerText(), "Kitchen");
   assert.equal(await card(page, 0).locator(".stage").getAttribute("aria-pressed"), "false");
@@ -86,7 +86,8 @@ test("notes from an input_text entity can be edited on the card", async () => {
 
 test("hold and double tap run their actions instead of flipping", async () => {
   const { page, context } = await openDemo();
-  const actions = card(page, 11);
+  const actions = card(page, 13);
+  await actions.scrollIntoViewIfNeeded();
   const box = await actions.locator(".stage").boundingBox();
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
@@ -129,7 +130,8 @@ test("pictures with notes become a slide sequence with arrows, dots, keys and sw
   assert.match(await cur().locator(".note-body").innerText(), /Chain oiled/);
   assert.equal(await stage.getAttribute("aria-pressed"), "true");
 
-  await gallery.locator(".nav.next").click(); // → second picture
+  await stage.focus();
+  await page.keyboard.press("ArrowRight");   // → second picture (arrows are hidden on note pages)
   await page.waitForTimeout(800);
   assert.equal(await cur().locator(".title-overlay").innerText(), "Garage");
   assert.equal(await gallery.locator(".dots button.active").evaluate((el) => Array.from(el.parentNode.children).indexOf(el)), 2);
@@ -276,6 +278,62 @@ test("layout: grid renders one tile per picture that flips on its own", async ()
   const tile = await page.locator("#sections .host").nth(3).locator("imagenote-card imagenote-card").first().boundingBox();
   assert.ok(tile.y + tile.height <= host.y + host.height + 0.5);
   assert.ok(tile.height > 100);
+  await context.close();
+});
+
+test("checklists tick, write back to input_text and stay local otherwise", async () => {
+  const { page, context } = await openDemo();
+  const shopping = card(page, 11);
+  const cur = () => shopping.locator(".face.current");
+  await page.waitForTimeout(300);
+  assert.equal(await cur().locator(".check").count(), 3);
+  assert.equal(await cur().locator(".check input").nth(0).isChecked(), true);
+  assert.equal(await cur().evaluate((el) => el.classList.contains("sticky")), true);
+  await cur().locator(".check input").nth(1).click();
+  await page.waitForFunction(() => window.__hassStates?.()["input_text.shopping"].state.includes("- [x] Bread"));
+  assert.equal(await shopping.locator(".stage").getAttribute("aria-pressed"), "true"); // still on the note, no flip
+
+  const boiler = card(page, 12);
+  await boiler.locator(".stage").click();
+  await page.waitForTimeout(800);
+  const bc = () => boiler.locator(".face.current");
+  assert.match(await bc().locator(".note-body").innerText(), /54\.5 °C/);
+  await bc().locator(".check input").nth(0).click();
+  await page.waitForTimeout(100);
+  const stored = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("imagenote:checks:")).length);
+  assert.equal(stored, 1);
+  await page.reload({ waitUntil: "networkidle" });
+  const boiler2 = card(page, 12);
+  await boiler2.locator(".stage").click();
+  await page.waitForTimeout(800);
+  assert.equal(await boiler2.locator(".face.current .check input").nth(0).isChecked(), true);
+  await context.close();
+});
+
+test("expired pages are dimmed or hidden, colours and expiry dates show", async () => {
+  const { page, context } = await openDemo();
+  const boiler = card(page, 12);
+  const cur = () => boiler.locator(".face.current");
+  assert.equal(await boiler.locator(".dots button").count(), 4);
+  await boiler.locator(".dots button").nth(2).click();
+  await page.waitForTimeout(800);
+  assert.equal(await cur().evaluate((el) => el.classList.contains("expired")), true);
+  assert.equal(await cur().locator(".note-tag").innerText(), "EXPIRED");
+  await boiler.locator(".dots button").nth(3).click();
+  await page.waitForTimeout(800);
+  assert.match(await cur().locator(".note-meta").innerText(), /Until/);
+  const bg = await cur().evaluate((el) => getComputedStyle(el).getPropertyValue("--imagenote-note-background").trim());
+  assert.equal(bg, "#d4f5cd");
+
+  const hidden = await page.evaluate(() => {
+    const el = document.createElement("imagenote-card");
+    el.setConfig({ type: "custom:imagenote-card", expired_slides: "hide", slides: [{ note: "a" }, { note: "old", expires: "2020-01-01" }, { note: "c" }] });
+    document.body.append(el);
+    const dots = el.shadowRoot.querySelectorAll(".dots button").length;
+    el.remove();
+    return dots;
+  });
+  assert.equal(hidden, 0); // two visible slides → no dots, the expired one is gone
   await context.close();
 });
 

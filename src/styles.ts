@@ -85,6 +85,65 @@ ha-card {
 .face.hidden-face {
   visibility: hidden;
 }
+.face.tinted .layer-note {
+  color: var(--imagenote-note-text, var(--primary-text-color));
+}
+.face.tinted .note-header ha-icon,
+.face.tinted .icon-button,
+.face.tinted .note-meta,
+.face.tinted .note-header.no-title .title {
+  color: inherit;
+  opacity: 0.75;
+}
+.face.sticky.kind-note {
+  --imagenote-note-background: var(--imagenote-sticky-color, #fff3a8);
+  --imagenote-note-text: #2b2b2b;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+}
+.face.sticky.kind-note .layer-note {
+  color: var(--imagenote-note-text);
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.35), rgba(0, 0, 0, 0) 60%);
+}
+.face.sticky.kind-note .layer-note::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 26px;
+  height: 26px;
+  background: linear-gradient(135deg, transparent 50%, rgba(0, 0, 0, 0.12) 50%, rgba(0, 0, 0, 0.05));
+  border-top-left-radius: 6px;
+  pointer-events: none;
+}
+.face.sticky.kind-note .note-header ha-icon,
+.face.sticky.kind-note .icon-button {
+  color: inherit;
+  opacity: 0.7;
+}
+.face.expired .layer-note,
+.face.expired .layer-image img {
+  filter: grayscale(0.6);
+  opacity: 0.55;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--error-color, #db4437);
+  flex: none;
+}
+.image-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+}
 .stage.natural .face.current {
   position: relative;
   inset: auto;
@@ -222,6 +281,63 @@ ha-card {
 }
 .note-body .note-empty {
   color: var(--secondary-text-color);
+}
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 8px;
+}
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 6px 4px 2px;
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: background-color 120ms ease;
+}
+.check:hover {
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.05);
+}
+.check input {
+  appearance: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  border: 2px solid var(--secondary-text-color);
+  border-radius: 5px;
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  background: transparent;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.check input::before {
+  content: "";
+  width: 10px;
+  height: 6px;
+  border-left: 2.5px solid #fff;
+  border-bottom: 2.5px solid #fff;
+  transform: rotate(-45deg) translate(1px, -1px) scale(0);
+  transition: transform 120ms ease;
+}
+.check input:checked {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+.check input:checked::before {
+  transform: rotate(-45deg) translate(1px, -1px) scale(1);
+}
+.check input:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+.check.done span {
+  text-decoration: line-through;
+  opacity: 0.6;
 }
 .note-body .note-empty small {
   display: block;
@@ -413,8 +529,8 @@ ha-card {
   .nav { opacity: 0.8; }
 }
 .stage.kind-note .nav {
-  color: var(--primary-text-color);
-  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
+  /* Arrows would sit on top of the text; notes are turned with a tap, a swipe, the dots or the keys. */
+  display: none;
 }
 .stage.editing .nav {
   display: none;

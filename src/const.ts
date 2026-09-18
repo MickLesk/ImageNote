@@ -1,4 +1,4 @@
-import type { ActionConfig, NormalizedConfig, Transition, Direction, Side, ImageFit, Layout } from "./types";
+import type { ActionConfig, NormalizedConfig, Transition, Direction, Side, ImageFit, Layout, NoteStyle, ExpiredMode } from "./types";
 
 export const CARD_TYPE = "imagenote-card";
 export const EDITOR_TYPE = "imagenote-card-editor";
@@ -15,6 +15,9 @@ export const IMAGE_FITS: ImageFit[] = ["cover", "contain"];
 export const LAYOUTS: Layout[] = ["stack", "grid"];
 export const TILE_MIN_WIDTH_PX = 150;
 export const MAX_SLIDES = 10;
+export const NOTE_STYLES: NoteStyle[] = ["plain", "sticky"];
+export const EXPIRED_MODES: ExpiredMode[] = ["dim", "hide"];
+export const CHECKLIST_STORAGE_PREFIX = "imagenote:checks:";
 export const ASPECT_RATIOS = ["16:9", "4:3", "3:2", "1:1", "3:4", "9:16", "auto"];
 
 export const NOTE_ENTITY_DOMAINS = ["input_text", "text"];
@@ -49,6 +52,10 @@ export const DEFAULTS: Omit<NormalizedConfig, "type" | "entries" | "slides"> = {
   show_title: true,
   show_updated: true,
   show_navigation: true,
+  note_style: "plain",
+  expired_slides: "dim",
+  checklist: true,
+  checklist_writeback: true,
   tap_action: FLIP_ACTION,
   hold_action: NONE_ACTION,
   double_tap_action: NONE_ACTION,

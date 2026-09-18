@@ -29,6 +29,12 @@ All notable changes to ImageNote are documented here. The format follows
   "+ Note".
 - `layout: grid` shows the entries side by side as tiles inside one card,
   each turning on its own; `columns` fixes the tiles per row.
+- Checklists in notes: `- [ ]` lines become checkboxes, written back to
+  `input_text` / `text` entities or remembered in the browser.
+- Templates in notes are rendered by Home Assistant and update live.
+- `expires` per entry with "Until …" in the footer; expired pages are dimmed
+  and tagged or hidden (`expired_slides`).
+- `color` per note page and a `sticky` note style.
 - Upload target per card: Home Assistant's image store or a folder in
   `/media`.
 - Pictures can be reordered in the editor.

@@ -135,10 +135,13 @@
 
     // ---- Fake hass --------------------------------------------------------------
     const states = {
+      "sensor.boiler_temp": { entity_id: "sensor.boiler_temp", state: "54.5", attributes: { unit_of_measurement: "°C", friendly_name: "Boiler" } },
+      "input_text.shopping": { entity_id: "input_text.shopping", state: "- [x] Milk\n- [ ] Bread\n- [ ] Coffee beans", attributes: { max: 255, friendly_name: "Shopping" }, last_changed: new Date(Date.now() - 3 * 3600000).toISOString() },
       "input_text.fridge_note": { entity_id: "input_text.fridge_note", state: "Milk is running low – buy 2 litres on Friday.", attributes: { max: 255, friendly_name: "Fridge note" }, last_changed: new Date(Date.now() - 7 * 60000).toISOString() },
     };
     let language = "en";
     const listeners = new Set();
+    const templateSubs = new Set();
     const makeHass = () => ({
       states: { ...states },
       language,
@@ -148,7 +151,19 @@
         if (service === "set_value") {
           states[data.entity_id] = { ...states[data.entity_id], state: data.value, last_changed: new Date().toISOString() };
           listeners.forEach((f) => f());
+          templateSubs.forEach((f) => f());
         }
+      },
+      connection: {
+        // Just enough of render_template for the demo: {{ states('x') }} and {{ now().strftime(...) }}.
+        async subscribeMessage(callback, msg) {
+          const render = () => msg.template
+            .replace(/\{\{\s*states\('([^']+)'\)\s*\}\}/g, (_, id) => states[id]?.state ?? "unknown")
+            .replace(/\{\{[^}]*\}\}/g, "…");
+          callback({ result: render() });
+          templateSubs.add(() => callback({ result: render() }));
+          return async () => {};
+        },
       },
       async callWS(msg) {
         if (msg.type === "media_source/resolve_media") return { url: "./sample-2.svg", mime_type: "image/svg+xml" };
@@ -184,6 +199,13 @@
         { image: "./sample-2.svg", title: "Herbs", note: "Cut back the mint." },
         { image: "./sample-3.svg", title: "Lawn", note_entity: "input_text.fridge_note" },
         { image: "./sample-1.svg", title: "Compost", note: "Turn it on Sunday." },
+      ] } },
+      { label: "Checklist from an input_text (writes back), sticky look", config: { type: "custom:imagenote-card", title: "Shopping", image: "./sample-2.svg", note_entity: "input_text.shopping", note_style: "sticky", default_side: "note" } },
+      { label: "Checklist in the config (ticks stay in this browser), template, colour, expiry", config: { type: "custom:imagenote-card", title: "Boiler", slides: [
+        { image: "./sample-1.svg" },
+        { note: "Boiler is at **{{ states('sensor.boiler_temp') }} °C**.\n\n- [ ] Check pressure\n- [x] Bleed radiators\n- [ ] Order filter", color: "blue" },
+        { note: "Parcel at the neighbour's until Friday.", color: "yellow", expires: "2020-01-01", title: "Old note" },
+        { note: "Valid for a while.", color: "green", expires: "2099-12-31" },
       ] } },
       { label: "Hold → more-info, double tap → URL", config: { type: "custom:imagenote-card", title: "Actions", image: "./sample-2.svg", note_entity: "input_text.fridge_note", hold_action: { action: "more-info" }, double_tap_action: { action: "url", url_path: "https://example.com" } } },
     ];
@@ -229,6 +251,7 @@
     document.getElementById("lang").addEventListener("click", () => { language = language === "en" ? "de" : "en"; push(); });
     document.getElementById("flipall").addEventListener("click", () => cards.forEach((c) => c.flip()));
     window.__cards = cards;
+    window.__hassStates = () => states;
   </script>
 </body>
 </html>

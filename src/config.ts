@@ -1,4 +1,4 @@
-import { DEFAULTS, DIRECTIONS, IMAGE_FITS, LAYOUTS, MAX_SLIDES, SIDES, TRANSITIONS } from "./const";
+import { DEFAULTS, DIRECTIONS, EXPIRED_MODES, IMAGE_FITS, LAYOUTS, MAX_SLIDES, NOTE_STYLES, SIDES, TRANSITIONS } from "./const";
 import type {
   ActionConfig,
   ImageNoteCardConfig,
@@ -102,6 +102,8 @@ export function normalizePage(page: PageConfig): NormalizedPage {
     note: str(page.note),
     note_entity: str(page.note_entity).trim(),
     note_attribute: str(page.note_attribute).trim(),
+    expires: str(page.expires).trim(),
+    color: str(page.color).trim(),
   };
 }
 
@@ -169,6 +171,10 @@ export function normalizeConfig(config: ImageNoteCardConfig): NormalizedConfig {
     show_title: bool(config.show_title, DEFAULTS.show_title),
     show_updated: bool(config.show_updated, DEFAULTS.show_updated),
     show_navigation: bool(config.show_navigation, DEFAULTS.show_navigation),
+    note_style: pick(config.note_style, NOTE_STYLES, DEFAULTS.note_style),
+    expired_slides: pick(config.expired_slides, EXPIRED_MODES, DEFAULTS.expired_slides),
+    checklist: bool(config.checklist, DEFAULTS.checklist),
+    checklist_writeback: bool(config.checklist_writeback, DEFAULTS.checklist_writeback),
     tap_action: action(config.tap_action, DEFAULTS.tap_action),
     hold_action: action(config.hold_action, DEFAULTS.hold_action),
     double_tap_action: action(config.double_tap_action, DEFAULTS.double_tap_action),
