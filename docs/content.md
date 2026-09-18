@@ -218,6 +218,40 @@ it. `swipe: false` hands those swipes back to the dashboard. With more than two 
 on pictures (`show_navigation`). On note pages the arrows stay hidden so they
 never sit on the text.
 
+## Conditional pages
+
+A page can depend on an entity. It joins the sequence while the condition
+holds and leaves it otherwise, so a card can show the doorbell camera only
+while someone is at the door, or a "heating fault" note only while the boiler
+reports one.
+
+```yaml
+slides:
+  - image: /local/pictures/door.jpg
+  - image_entity: camera.door
+    title: Someone rang
+    visible:
+      entity: binary_sensor.doorbell
+      state: "on"
+  - note: "Boiler error: {{ states('sensor.boiler_error') }}"
+    color: pink
+    visible:
+      - entity: sensor.boiler_error
+        state_not: ["none", "0"]
+```
+
+`state` accepts a single value or a list, `state_not` the opposite,
+`attribute` compares an attribute instead of the state, and a condition
+without `state` holds whenever the entity is available. Several conditions
+must all hold. The editor offers one entity and state per page; lists and
+attributes are YAML only.
+
+## Actions per page
+
+`tap_action`, `hold_action` and `double_tap_action` on a page override the
+card's actions on that page, for example a hold on the camera page that opens
+the camera's more-info dialog while other pages keep the default.
+
 ## Tiles
 
 `layout: grid` shows the entries side by side inside one card. Every tile is

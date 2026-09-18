@@ -14,7 +14,7 @@ import {
   TILE_MIN_WIDTH_PX,
 } from "./const";
 import { GestureDetector, runAction, type ActionKind, type SwipeDirection } from "./actions";
-import { normalizeConfig, parseAspectRatio, validateConfig } from "./config";
+import { conditionsHold, normalizeConfig, parseAspectRatio, validateConfig } from "./config";
 import { resolveLanguage, translate } from "./i18n";
 import { CARD_STYLES } from "./styles";
 import { formatRelativeTime } from "./time";
@@ -275,7 +275,7 @@ export class PinboardCard extends HTMLElement {
     this._startTimers();
     window.clearInterval(this._metaTimer);
     this._metaTimer = window.setInterval(() => {
-      this._checkExpiry();
+      this._refreshVisible();
       this._renderMeta();
     }, 30_000);
   }
@@ -328,6 +328,7 @@ export class PinboardCard extends HTMLElement {
   }
 
   set hass(hass: HomeAssistant) {
+    const previous = this._hass;
     this._hass = hass;
     const lang = resolveLanguage(hass);
     if (lang !== this._lang) {
@@ -338,10 +339,33 @@ export class PinboardCard extends HTMLElement {
       for (const tile of this._tiles) tile.hass = hass;
       return;
     }
-    if (this._mediaPending && this._els) {
+    if (!this._els) return;
+    // Home Assistant hands every card a new hass object on every state change anywhere.
+    // Skip the work unless one of the entities this card looks at actually changed.
+    if (previous && !this._mediaPending && !this._watchedChanged(previous, hass)) return;
+    if (this._mediaPending) {
       this._applyImage(this._currentFace, this._slide);
     }
+    if (this._visibilityChanged(previous, hass)) this._refreshVisible();
     this._applyHass();
+  }
+
+  private _watchedChanged(previous: HomeAssistant, next: HomeAssistant): boolean {
+    if (previous.states === next.states) return false;
+    const slide = this._slide;
+    const ids = [slide.note_entity, slide.image_entity, slide.audio_entity, slide.todo_entity, ...slide.markers.map((m) => m.entity)];
+    for (const other of this._config?.slides ?? []) {
+      for (const condition of other.visible) ids.push(condition.entity);
+    }
+    return ids.some((id) => id && previous.states[id] !== next.states[id]);
+  }
+
+  private _visibilityChanged(previous: HomeAssistant | undefined, next: HomeAssistant): boolean {
+    const config = this._config;
+    if (!config) return false;
+    return config.slides.some((slide) =>
+      slide.visible.some((condition) => !previous || previous.states[condition.entity] !== next.states[condition.entity]),
+    );
   }
 
   get hass(): HomeAssistant | undefined {
@@ -411,15 +435,18 @@ export class PinboardCard extends HTMLElement {
     const config = this._config;
     if (!config) return [];
     const now = new Date();
+    const states = this._hass?.states;
     const visible = config.slides.filter(
-      (slide) => !(config.expired_slides === "hide" && slide.expires && isExpired(slide.expires, now)),
+      (slide) =>
+        !(config.expired_slides === "hide" && slide.expires && isExpired(slide.expires, now)) &&
+        conditionsHold(slide.visible, states),
     );
     // Never hide everything: an all-expired card still shows its first slide.
     return visible.length > 0 ? visible : config.slides.slice(0, 1);
   }
 
-  /** Runs every half minute: hides newly expired slides and marks dimmed ones. */
-  private _checkExpiry(): void {
+  /** Re-evaluates expiry and visibility conditions; rebuilds the sequence when it changed. */
+  private _refreshVisible(): void {
     const config = this._config;
     if (!config || !this._els || this._editing) return;
     const before = this._visible;
@@ -444,6 +471,7 @@ export class PinboardCard extends HTMLElement {
     const slides = this._slides();
     return slides[Math.min(this._index, slides.length - 1)];
   }
+
 
   private get _currentFace(): FaceView {
     return this._els!.faces[this._current];
@@ -477,7 +505,7 @@ export class PinboardCard extends HTMLElement {
       grid.style.setProperty("--pinboard-columns", String(config.columns));
     }
     const shared: Partial<PinboardCardConfig> = { ...raw };
-    for (const key of ["slides", "images", "image", "image_entity", "note", "note_entity", "note_attribute", "audio", "audio_entity", "expires", "color", "markers", "title", "layout", "columns"] as const) {
+    for (const key of ["slides", "images", "image", "image_entity", "note", "note_entity", "note_attribute", "todo_entity", "audio", "audio_entity", "expires", "color", "markers", "visible", "title", "layout", "columns"] as const) {
       delete shared[key];
     }
     this._tiles = config.entries.map((entry) => {
@@ -497,6 +525,10 @@ export class PinboardCard extends HTMLElement {
         expires: entry.expires,
         color: entry.color,
         markers: entry.markers,
+        visible: entry.visible,
+        tap_action: entry.tap_action,
+        hold_action: entry.hold_action,
+        double_tap_action: entry.double_tap_action,
       });
       if (this._hass) tile.hass = this._hass;
       grid.append(tile);
@@ -580,7 +612,7 @@ export class PinboardCard extends HTMLElement {
       doubleTapWindow: DOUBLE_TAP_WINDOW_MS,
       swipeThreshold: SWIPE_THRESHOLD_PX,
       captureTouch: () => Boolean(this._config?.swipe) && this._slides().length > 1 && !this._editing,
-      hasDoubleTap: () => this._config?.double_tap_action.action !== "none",
+      hasDoubleTap: () => (this._slide?.double_tap_action ?? this._config?.double_tap_action)?.action !== "none",
       enabled: (ev) => this._gestureAllowed(ev),
       onSwipe: (direction) => this._onSwipe(direction),
     });
@@ -687,6 +719,12 @@ export class PinboardCard extends HTMLElement {
     this._applyMode();
   }
 
+  private _durationMs(): number {
+    const config = this._config;
+    if (!config) return 0;
+    return this._motionQuery.matches ? Math.min(config.duration, 200) : config.duration;
+  }
+
   private _mode(): Transition {
     const config = this._config;
     if (!config) return "flip";
@@ -697,9 +735,7 @@ export class PinboardCard extends HTMLElement {
     const els = this._els;
     const config = this._config;
     if (!els || !config) return;
-    const reduced = this._motionQuery.matches;
-    const duration = reduced ? Math.min(config.duration, 200) : config.duration;
-    this.style.setProperty("--pinboard-duration", `${duration}ms`);
+    this.style.setProperty("--pinboard-duration", `${this._durationMs()}ms`);
     els.scene.classList.remove("mode-flip", "mode-fade", "mode-slide", "mode-cube", "mode-none");
     els.scene.classList.add(`mode-${this._mode()}`);
     this._resetPositions();
@@ -786,7 +822,7 @@ export class PinboardCard extends HTMLElement {
     const from = els.faces[fromIndex];
     const to = els.faces[toIndex];
     const mode = animate ? this._mode() : "none";
-    const duration = Number.parseFloat(getComputedStyle(this).getPropertyValue("--pinboard-duration")) || 0;
+    const duration = this._durationMs();
 
     window.clearTimeout(this._animTimer);
     this._stopAudio();
@@ -2018,7 +2054,11 @@ export class PinboardCard extends HTMLElement {
     // Default entities come from the config entry, so a picture slide still knows its note entity.
     const entry = config.entries[slide.entry] ?? slide;
     const action =
-      kind === "hold" ? config.hold_action : kind === "double_tap" ? config.double_tap_action : config.tap_action;
+      kind === "hold"
+        ? (slide.hold_action ?? config.hold_action)
+        : kind === "double_tap"
+          ? (slide.double_tap_action ?? config.double_tap_action)
+          : (slide.tap_action ?? config.tap_action);
     try {
       const shouldFlip = await runAction(
         this,

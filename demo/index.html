@@ -148,6 +148,7 @@
       "sensor.pressure": { entity_id: "sensor.pressure", state: "1.6", attributes: { unit_of_measurement: "bar", friendly_name: "Boiler pressure" } },
       "input_text.memo": { entity_id: "input_text.memo", state: "", attributes: { max: 255, friendly_name: "Memo" } },
       "todo.shopping": { entity_id: "todo.shopping", state: "2", attributes: { friendly_name: "Shopping list" }, last_changed: new Date(Date.now() - 600000).toISOString() },
+      "binary_sensor.doorbell": { entity_id: "binary_sensor.doorbell", state: "off", attributes: { friendly_name: "Doorbell" } },
       "input_text.shopping": { entity_id: "input_text.shopping", state: "- [x] Milk\n- [ ] Bread\n- [ ] Coffee beans", attributes: { max: 255, friendly_name: "Shopping" }, last_changed: new Date(Date.now() - 3 * 3600000).toISOString() },
       "input_text.fridge_note": { entity_id: "input_text.fridge_note", state: "Milk is running low – buy 2 litres on Friday.", attributes: { max: 255, friendly_name: "Fridge note" }, last_changed: new Date(Date.now() - 7 * 60000).toISOString() },
     };
@@ -271,6 +272,11 @@
       { label: "Picture from an input_text with a camera button", config: { type: "custom:pinboard-card", title: "Front door", image_entity: "input_text.door_photo", note: "Latest photo of the door. Tap the camera to replace it." } },
       { label: "Audio memo: picture, then a recording", config: { type: "custom:pinboard-card", title: "Voice memo", image: "./sample-2.svg", audio: silentWav, note: "Also a note after the memo." } },
       { label: "Audio from an input_text with a record button", config: { type: "custom:pinboard-card", title: "Memo box", audio_entity: "input_text.memo", color: "purple", note_style: "sticky" } },
+      { label: "Conditional page: the second picture only while binary_sensor.doorbell is on; per-page hold action", config: { type: "custom:pinboard-card", title: "Door", slides: [
+        { image: "./sample-3.svg", title: "Always" },
+        { image: "./sample-1.svg", title: "Someone rang", visible: { entity: "binary_sensor.doorbell", state: "on" }, hold_action: { action: "url", url_path: "https://example.com/door" } },
+        { note: "Always shown too." },
+      ] } },
       { label: "Hold → more-info, double tap → URL", config: { type: "custom:pinboard-card", title: "Actions", image: "./sample-2.svg", note_entity: "input_text.fridge_note", hold_action: { action: "more-info" }, double_tap_action: { action: "url", url_path: "https://example.com" } } },
     ];
     window.__events = [];
@@ -314,6 +320,7 @@
     document.getElementById("theme").addEventListener("click", () => document.body.classList.toggle("dark"));
     document.getElementById("lang").addEventListener("click", () => { language = language === "en" ? "de" : "en"; push(); });
     document.getElementById("flipall").addEventListener("click", () => cards.forEach((c) => c.flip()));
+    window.__setState = (id, state) => { states[id] = { ...states[id], state, last_changed: new Date().toISOString() }; push(); };
     window.__cards = cards;
     window.__hassStates = () => states;
   </script>

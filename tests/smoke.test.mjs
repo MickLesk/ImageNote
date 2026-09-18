@@ -32,7 +32,7 @@ const card = (page, index) => page.locator("#grid > .cell > pinboard-card").nth(
 
 test("demo renders every card without page errors", async () => {
   const { page, context, errors } = await openDemo();
-  assert.equal(await page.locator("#grid > .cell > pinboard-card").count(), 19);
+  assert.equal(await page.locator("#grid > .cell > pinboard-card").count(), 20);
   assert.deepEqual(errors, []);
   assert.equal(await card(page, 0).locator(".face.current .title-overlay").innerText(), "Kitchen");
   assert.equal(await card(page, 0).locator(".stage").getAttribute("aria-pressed"), "false");
@@ -86,7 +86,7 @@ test("notes from an input_text entity can be edited on the card", async () => {
 
 test("hold and double tap run their actions instead of flipping", async () => {
   const { page, context } = await openDemo();
-  const actions = card(page, 18);
+  const actions = card(page, 19);
   await actions.scrollIntoViewIfNeeded();
   const box = await actions.locator(".stage").boundingBox();
   const x = box.x + box.width / 2;
@@ -527,6 +527,58 @@ test("touches on a multi-page card do not reach dashboard swipe navigation", asy
   });
   assert.equal(result.multi, 0);
   assert.equal(result.single, true);
+  await context.close();
+});
+
+test("pages with conditions appear and disappear with entity states", async () => {
+  const { page, context } = await openDemo();
+  const door = card(page, 18);
+  await door.scrollIntoViewIfNeeded();
+  const cur = () => door.locator(".face.current");
+  assert.equal(await door.locator(".dots button").count(), 0); // two visible pages → no dots
+  await door.locator(".stage").click();
+  await page.waitForTimeout(800);
+  assert.match(await cur().locator(".note-body").innerText(), /Always shown too/);
+  await page.evaluate(() => window.__setState("binary_sensor.doorbell", "on"));
+  await page.waitForTimeout(100);
+  assert.equal(await door.locator(".dots button").count(), 3);
+  await door.locator(".stage").focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.waitForTimeout(800);
+  assert.equal(await cur().locator(".title-overlay").innerText(), "Someone rang");
+  // The per-page hold action opens the URL instead of the card's default.
+  await page.evaluate(() => (window.__events = []));
+  const box = await door.locator(".stage").boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(650);
+  await page.mouse.up();
+  const events = await page.evaluate(() => window.__events);
+  assert.equal(events[0]?.url, "https://example.com/door");
+  await page.evaluate(() => window.__setState("binary_sensor.doorbell", "off"));
+  await page.waitForTimeout(100);
+  assert.equal(await door.locator(".dots button").count(), 0);
+  assert.notEqual(await cur().locator(".title-overlay").innerText(), "Someone rang");
+  await context.close();
+});
+
+test("unrelated state changes do not re-render the card", async () => {
+  const { page, context } = await openDemo();
+  await card(page, 1).locator(".stage").click(); // show the note from input_text.fridge_note
+  await page.waitForTimeout(800);
+  const count = await page.evaluate(async () => {
+    const card = document.querySelectorAll("#grid > .cell > pinboard-card")[1];
+    let renders = 0;
+    const original = card._renderNote.bind(card);
+    card._renderNote = (...args) => { renders++; return original(...args); };
+    const before = renders;
+    for (let i = 0; i < 20; i++) window.__setState("sensor.boiler_temp", String(50 + i));
+    const unrelated = renders - before;
+    window.__setState("input_text.fridge_note", "Changed " + Date.now());
+    return { unrelated, related: renders - before - unrelated };
+  });
+  assert.equal(count.unrelated, 0);
+  assert.equal(count.related, 1);
   await context.close();
 });
 

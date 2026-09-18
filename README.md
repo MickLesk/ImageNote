@@ -125,6 +125,14 @@ slides:
     title: Voice memo
   - audio_entity: input_text.garage_memo     # audio from an entity; record button on the card
     kind: audio                              # only needed for an entry without content yet
+  - image_entity: camera.driveway
+    title: Someone is there
+    visible:                                 # shown only while the condition holds
+      entity: binary_sensor.driveway_motion
+      state: "on"
+    hold_action:                             # per-page override of the card's actions
+      action: more-info
+      entity: camera.driveway
 
 # --- layout ----------------------------------------------------------------
 layout: stack                      # stack: one page after another | grid: entries side by side as tiles
@@ -243,6 +251,8 @@ string is treated as `image`.
 | `color` | – | Tint of a note page: `yellow`, `green`, `blue`, `pink`, `orange`, `purple`, `grey` or any CSS colour. |
 | `markers` | – | A list of pins on the picture. See [Marker](#marker). |
 | `kind` | – | `image`, `note` or `audio`. Only needed for an entry that has no content yet; the editor sets it. |
+| `visible` | – | One condition or a list: `{ entity, state }`, `{ entity, state_not }` or `{ entity, attribute, state }`. `state` may be a list. Without `state` the page shows whenever the entity is available. The page is only part of the sequence while every condition holds. |
+| `tap_action`, `hold_action`, `double_tap_action` | card's | Per-page overrides of the card's actions. |
 
 ### Marker
 

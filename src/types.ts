@@ -53,6 +53,16 @@ export interface Marker {
   entity: string;
 }
 
+/** A page is shown only while every condition holds. */
+export interface VisibilityCondition {
+  entity: string;
+  /** Match the state (or one of the states). Without state and state_not, any state except unavailable/unknown counts. */
+  state?: string | string[];
+  state_not?: string | string[];
+  /** Compare an attribute instead of the state. */
+  attribute?: string;
+}
+
 export interface PageConfig {
   /** Forces the kind of an entry without content yet (the editor's "add note" creates such an entry). */
   kind?: SlideKind;
@@ -74,6 +84,11 @@ export interface PageConfig {
   audio?: string | MediaValue;
   /** An input_text / text entity whose state is the audio address; enables recording on the card. */
   audio_entity?: string;
+  visible?: VisibilityCondition | VisibilityCondition[];
+  /** Per-page overrides of the card's actions. */
+  tap_action?: ActionConfig;
+  hold_action?: ActionConfig;
+  double_tap_action?: ActionConfig;
 }
 
 export interface NormalizedPage {
@@ -90,6 +105,10 @@ export interface NormalizedPage {
   markers: Marker[];
   audio: string | MediaValue | undefined;
   audio_entity: string;
+  visible: VisibilityCondition[];
+  tap_action?: ActionConfig;
+  hold_action?: ActionConfig;
+  double_tap_action?: ActionConfig;
 }
 
 export type SlideKind = "image" | "note" | "audio";

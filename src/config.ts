@@ -9,6 +9,7 @@ import type {
   NormalizedPage,
   PageConfig,
   Slide,
+  VisibilityCondition,
 } from "./types";
 
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -117,6 +118,27 @@ function normalizeMarkers(markers: unknown): Marker[] {
   return out;
 }
 
+function normalizeVisibility(value: unknown): VisibilityCondition[] {
+  const list = Array.isArray(value) ? value : value ? [value] : [];
+  const out: VisibilityCondition[] = [];
+  for (const raw of list as VisibilityCondition[]) {
+    if (!raw || typeof raw !== "object" || typeof raw.entity !== "string" || !raw.entity.trim()) continue;
+    const condition: VisibilityCondition = { entity: raw.entity.trim() };
+    if (raw.state !== undefined) condition.state = Array.isArray(raw.state) ? raw.state.map(String) : String(raw.state);
+    if (raw.state_not !== undefined) {
+      condition.state_not = Array.isArray(raw.state_not) ? raw.state_not.map(String) : String(raw.state_not);
+    }
+    if (raw.attribute) condition.attribute = str(raw.attribute).trim();
+    out.push(condition);
+  }
+  return out;
+}
+
+function optionalAction(value: unknown): ActionConfig | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  return action(value, { action: "none" });
+}
+
 export function normalizePage(page: PageConfig): NormalizedPage {
   return {
     kind: page.kind === "note" || page.kind === "image" || page.kind === "audio" ? page.kind : undefined,
@@ -132,7 +154,35 @@ export function normalizePage(page: PageConfig): NormalizedPage {
     markers: normalizeMarkers(page.markers),
     audio: page.audio === null || page.audio === "" ? undefined : (page.audio as string | MediaValue | undefined),
     audio_entity: str(page.audio_entity).trim(),
+    visible: normalizeVisibility(page.visible),
+    tap_action: optionalAction(page.tap_action),
+    hold_action: optionalAction(page.hold_action),
+    double_tap_action: optionalAction(page.double_tap_action),
   };
+}
+
+/** True when every condition of the page holds for the given states. Pages without conditions are always visible. */
+export function conditionsHold(
+  conditions: VisibilityCondition[],
+  states: Record<string, { state: string; attributes: Record<string, unknown> }> | undefined,
+): boolean {
+  if (!conditions.length) return true;
+  if (!states) return true;
+  return conditions.every((condition) => {
+    const entity = states[condition.entity];
+    if (!entity) return false;
+    const raw = condition.attribute ? entity.attributes[condition.attribute] : entity.state;
+    const value = raw === undefined || raw === null ? "" : String(raw);
+    if (condition.state !== undefined) {
+      const wanted = Array.isArray(condition.state) ? condition.state : [condition.state];
+      return wanted.includes(value);
+    }
+    if (condition.state_not !== undefined) {
+      const unwanted = Array.isArray(condition.state_not) ? condition.state_not : [condition.state_not];
+      return !unwanted.includes(value);
+    }
+    return value !== "" && value !== "unavailable" && value !== "unknown";
+  });
 }
 
 export function hasAudio(page: PageConfig | NormalizedPage): boolean {
@@ -159,6 +209,7 @@ export function configPages(config: PinboardCardConfig): PageConfig[] {
       markers: config.markers,
       audio: config.audio,
       audio_entity: config.audio_entity,
+      visible: config.visible,
     },
   ];
 }

@@ -19,7 +19,7 @@ import { configPages, expandSlides, hasAudio, hasNote, hasPicture, normalizePage
 import { NOTE_COLOR_PRESETS } from "./notes";
 import { resolveLanguage, translate } from "./i18n";
 import { EDITOR_STYLES } from "./styles";
-import type { HomeAssistant, PinboardCardConfig, MarkerConfig, PageConfig, ResolvedMedia } from "./types";
+import type { HomeAssistant, PinboardCardConfig, MarkerConfig, PageConfig, ResolvedMedia, VisibilityCondition } from "./types";
 
 type FormSchema = Record<string, unknown> & { name: string };
 
@@ -34,7 +34,10 @@ interface HaFormElement extends HTMLElement {
 const UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
 const UPLOAD_TARGETS = ["image", "media"];
 const EDITOR_DEFAULTS: Record<string, unknown> = {};
-const PAGE_KEYS: Array<keyof PageConfig> = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "todo_entity", "expires", "color", "markers", "audio", "audio_entity"];
+const PAGE_KEYS: Array<keyof PageConfig> = [
+  "kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "todo_entity",
+  "expires", "color", "markers", "audio", "audio_entity", "visible", "tap_action", "hold_action", "double_tap_action",
+];
 type EntryKind = "image" | "note" | "audio" | "both";
 const LIST_KEYS = ["slides", "images"];
 
@@ -945,8 +948,12 @@ export class PinboardCardEditor extends HTMLElement {
       const text = t(key);
       return text === key ? "" : text;
     };
-    const computeLabel = (schema: FormSchema) =>
-      schema.name === "actions_help" ? t("editor_actions_help") : t(`editor_${schema.name}`);
+    const HELP_LABELS: Record<string, string> = {
+      actions_help: "editor_actions_help",
+      visible_help: "editor_visible_help",
+      page_actions_help: "editor_page_actions_help",
+    };
+    const computeLabel = (schema: FormSchema) => t(HELP_LABELS[schema.name] ?? `editor_${schema.name}`);
 
     if (this._pageForm) {
       this._pageForm.hass = this._hass;
@@ -970,44 +977,37 @@ export class PinboardCardEditor extends HTMLElement {
     const schema: FormSchema[] = [];
     const page = this._page();
     const kind = this._kindOf(page);
+    const section = (name: string, icon: string, expanded: boolean, inner: FormSchema[]): FormSchema => ({
+      name,
+      type: "expandable",
+      flatten: true,
+      icon,
+      title: t(`editor_section_${name}`),
+      expanded,
+      schema: inner,
+    });
     if (multiple) {
       schema.push({ name: "page_title", selector: { text: {} } });
     }
-    if (kind === "audio" || hasAudio(page)) {
-      schema.push(
-        { name: "audio", selector: { text: {} } },
-        {
-          name: "audio_entity",
-          selector: { entity: { filter: [{ domain: "input_text" }, { domain: "text" }] } },
-        },
-      );
-    }
     if (kind === "image" || hasPicture(page)) {
       schema.push(
-        { name: "image", selector: { text: {} } },
-        {
-          name: "image_entity",
-          selector: {
-            entity: {
-              filter: [{ domain: "image" }, { domain: "camera" }, { domain: "person" }, { domain: "input_text" }, { domain: "text" }],
+        section("picture", "mdi:image-outline", true, [
+          { name: "image", selector: { text: {} } },
+          {
+            name: "image_entity",
+            selector: {
+              entity: {
+                filter: [{ domain: "image" }, { domain: "camera" }, { domain: "person" }, { domain: "input_text" }, { domain: "text" }],
+              },
             },
           },
-        },
+        ]),
       );
     }
-    if (kind === "audio" && !hasNote(page)) {
-      return schema;
-    }
-    schema.push(
-      { name: "note", selector: { text: { multiline: true } } },
-      {
-        name: "note_source",
-        type: "expandable",
-        flatten: true,
-        icon: "mdi:text-box-edit-outline",
-        title: t("editor_note_source"),
-        expanded: Boolean(this._page().note_entity || this._page().todo_entity),
-        schema: [
+    if (kind !== "audio" || hasNote(page)) {
+      schema.push(
+        section("note", "mdi:note-text-outline", kind === "note" || kind === "both", [
+          { name: "note", selector: { text: { multiline: true } } },
           { name: "todo_entity", selector: { entity: { filter: [{ domain: "todo" }] } } },
           { name: "note_entity", selector: { entity: {} } },
           {
@@ -1015,29 +1015,54 @@ export class PinboardCardEditor extends HTMLElement {
             selector: { attribute: {} },
             context: { filter_entity: "note_entity" },
           },
-        ],
-      },
-      {
-        name: "note_extras",
-        type: "grid",
-        flatten: true,
-        schema: [
-          { name: "expires", selector: { datetime: {} } },
+        ]),
+      );
+    }
+    if (kind === "audio" || hasAudio(page)) {
+      schema.push(
+        section("audio", "mdi:microphone-outline", true, [
+          { name: "audio", selector: { text: {} } },
           {
-            name: "color",
-            selector: {
-              select: {
-                mode: "dropdown",
-                custom_value: true,
-                options: [
-                  { value: "", label: t("color_none") },
-                  ...Object.keys(NOTE_COLOR_PRESETS).map((name) => ({ value: name, label: t(`color_${name}`) })),
-                ],
+            name: "audio_entity",
+            selector: { entity: { filter: [{ domain: "input_text" }, { domain: "text" }] } },
+          },
+        ]),
+      );
+    }
+    schema.push(
+      section("display", "mdi:palette-outline", Boolean(page.expires || page.color), [
+        {
+          name: "display_grid",
+          type: "grid",
+          flatten: true,
+          schema: [
+            { name: "expires", selector: { datetime: {} } },
+            {
+              name: "color",
+              selector: {
+                select: {
+                  mode: "dropdown",
+                  custom_value: true,
+                  options: [
+                    { value: "", label: t("color_none") },
+                    ...Object.keys(NOTE_COLOR_PRESETS).map((name) => ({ value: name, label: t(`color_${name}`) })),
+                  ],
+                },
               },
             },
-          },
-        ],
-      },
+          ],
+        },
+      ]),
+      section("visibility", "mdi:eye-outline", Boolean(page.visible), [
+        { name: "visible_entity", selector: { entity: {} } },
+        { name: "visible_state", selector: { text: {} } },
+        { name: "visible_help", type: "constant", value: "" },
+      ]),
+      section("page_actions", "mdi:gesture-tap", Boolean(page.hold_action || page.double_tap_action), [
+        { name: "page_actions_help", type: "constant", value: "" },
+        { name: "hold_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } },
+        { name: "double_tap_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } },
+      ]),
     );
     return schema;
   }
@@ -1046,140 +1071,82 @@ export class PinboardCardEditor extends HTMLElement {
     const t = (key: string) => translate(this._lang, key);
     const options = (values: readonly string[], prefix: string) =>
       values.map((value) => ({ value, label: t(`${prefix}_${value}`) }));
+    const grid = (name: string, inner: FormSchema[]): FormSchema => ({ name, type: "grid", flatten: true, schema: inner });
+    const section = (name: string, icon: string, title: string, expanded: boolean, inner: FormSchema[]): FormSchema => ({
+      name,
+      type: "expandable",
+      flatten: true,
+      icon,
+      title,
+      expanded,
+      schema: inner,
+    });
     return [
       { name: "title", selector: { text: {} } },
-      {
-        name: "appearance",
-        type: "expandable",
-        flatten: true,
-        icon: "mdi:palette-outline",
-        title: t("editor_appearance"),
-        expanded: true,
-        schema: [
+      section("appearance", "mdi:palette-outline", t("editor_appearance"), true, [
+        grid("appearance_layout", [
+          { name: "layout", selector: { select: { mode: "dropdown", options: options(LAYOUTS, "layout") } } },
+          { name: "columns", selector: { number: { min: 0, max: 8, step: 1, mode: "box" } } },
+        ]),
+        grid("appearance_grid", [
+          { name: "transition", selector: { select: { mode: "dropdown", options: options(TRANSITIONS, "transition") } } },
+          { name: "direction", selector: { select: { mode: "dropdown", options: options(DIRECTIONS, "direction") } } },
+          { name: "default_side", selector: { select: { mode: "dropdown", options: options(SIDES, "side") } } },
           {
-            name: "appearance_grid",
-            type: "grid",
-            flatten: true,
-            schema: [
-              { name: "transition", selector: { select: { mode: "dropdown", options: options(TRANSITIONS, "transition") } } },
-              { name: "direction", selector: { select: { mode: "dropdown", options: options(DIRECTIONS, "direction") } } },
-              { name: "default_side", selector: { select: { mode: "dropdown", options: options(SIDES, "side") } } },
-              {
-                name: "aspect_ratio",
-                selector: {
-                  select: {
-                    mode: "dropdown",
-                    custom_value: true,
-                    options: ASPECT_RATIOS.map((value) => ({
-                      value,
-                      label: value === "auto" ? t("ratio_auto") : value,
-                    })),
-                  },
-                },
+            name: "aspect_ratio",
+            selector: {
+              select: {
+                mode: "dropdown",
+                custom_value: true,
+                options: ASPECT_RATIOS.map((value) => ({ value, label: value === "auto" ? t("ratio_auto") : value })),
               },
-              { name: "image_fit", selector: { select: { mode: "dropdown", options: options(IMAGE_FITS, "fit") } } },
-              {
-                name: "duration",
-                selector: { number: { min: 0, max: 5000, step: 50, mode: "box", unit_of_measurement: "ms" } },
-              },
-            ],
+            },
           },
-          {
-            name: "appearance_layout",
-            type: "grid",
-            flatten: true,
-            schema: [
-              { name: "layout", selector: { select: { mode: "dropdown", options: options(LAYOUTS, "layout") } } },
-              {
-                name: "columns",
-                selector: { number: { min: 0, max: 8, step: 1, mode: "box" } },
-              },
-            ],
-          },
-          {
-            name: "appearance_toggles",
-            type: "grid",
-            flatten: true,
-            schema: [
-              { name: "show_title", selector: { boolean: {} } },
-              { name: "show_hint", selector: { boolean: {} } },
-              { name: "show_updated", selector: { boolean: {} } },
-              { name: "show_navigation", selector: { boolean: {} } },
-              { name: "ken_burns", selector: { boolean: {} } },
-            ],
-          },
-          {
-            name: "appearance_notes",
-            type: "grid",
-            flatten: true,
-            schema: [
-              { name: "note_style", selector: { select: { mode: "dropdown", options: options(NOTE_STYLES, "note_style") } } },
-              { name: "expired_slides", selector: { select: { mode: "dropdown", options: options(EXPIRED_MODES, "expired") } } },
-            ],
-          },
-        ],
-      },
-      {
-        name: "upload_settings",
-        type: "expandable",
-        flatten: true,
-        icon: "mdi:folder-image",
-        title: t("editor_upload_settings"),
-        schema: [
-          {
-            name: "upload_target",
-            selector: { select: { mode: "dropdown", options: options(UPLOAD_TARGETS, "upload_target") } },
-          },
-          { name: "upload_folder", selector: { text: {} } },
-          {
-            name: "upload_max_size",
-            selector: { number: { min: 0, max: 8000, step: 10, mode: "box", unit_of_measurement: "px" } },
-          },
+          { name: "image_fit", selector: { select: { mode: "dropdown", options: options(IMAGE_FITS, "fit") } } },
+          { name: "duration", selector: { number: { min: 0, max: 5000, step: 50, mode: "box", unit_of_measurement: "ms" } } },
+        ]),
+        grid("appearance_toggles", [
+          { name: "show_title", selector: { boolean: {} } },
+          { name: "show_hint", selector: { boolean: {} } },
+          { name: "show_updated", selector: { boolean: {} } },
+          { name: "ken_burns", selector: { boolean: {} } },
+        ]),
+        grid("appearance_notes", [
+          { name: "note_style", selector: { select: { mode: "dropdown", options: options(NOTE_STYLES, "note_style") } } },
+          { name: "expired_slides", selector: { select: { mode: "dropdown", options: options(EXPIRED_MODES, "expired") } } },
+        ]),
+      ]),
+      section("navigation", "mdi:swap-horizontal", t("editor_section_navigation"), false, [
+        grid("navigation_grid", [
+          { name: "auto_flip", selector: { number: { min: 0, max: 3600, step: 1, mode: "box", unit_of_measurement: "s" } } },
+          { name: "show_navigation", selector: { boolean: {} } },
+          { name: "swipe", selector: { boolean: {} } },
+          { name: "hover_flip", selector: { boolean: {} } },
+        ]),
+      ]),
+      section("notes", "mdi:format-list-checks", t("editor_section_notes"), false, [
+        grid("notes_grid", [
+          { name: "checklist", selector: { boolean: {} } },
+          { name: "checklist_writeback", selector: { boolean: {} } },
+          { name: "todo_add", selector: { boolean: {} } },
+          { name: "todo_show_completed", selector: { boolean: {} } },
+        ]),
+      ]),
+      section("upload_settings", "mdi:folder-image", t("editor_upload_settings"), false, [
+        { name: "upload_target", selector: { select: { mode: "dropdown", options: options(UPLOAD_TARGETS, "upload_target") } } },
+        { name: "upload_folder", selector: { text: {} } },
+        grid("upload_grid", [
+          { name: "upload_max_size", selector: { number: { min: 0, max: 8000, step: 10, mode: "box", unit_of_measurement: "px" } } },
           { name: "upload_crop", selector: { boolean: {} } },
-        ],
-      },
-      {
-        name: "behaviour",
-        type: "expandable",
-        flatten: true,
-        icon: "mdi:gesture-tap",
-        title: t("editor_behaviour"),
-        schema: [
-          {
-            name: "behaviour_grid",
-            type: "grid",
-            flatten: true,
-            schema: [
-              {
-                name: "auto_flip",
-                selector: { number: { min: 0, max: 3600, step: 1, mode: "box", unit_of_measurement: "s" } },
-              },
-              {
-                name: "auto_advance",
-                selector: { number: { min: 0, max: 3600, step: 1, mode: "box", unit_of_measurement: "s" } },
-              },
-              { name: "hover_flip", selector: { boolean: {} } },
-              { name: "swipe", selector: { boolean: {} } },
-            ],
-          },
-          {
-            name: "behaviour_checklist",
-            type: "grid",
-            flatten: true,
-            schema: [
-              { name: "checklist", selector: { boolean: {} } },
-              { name: "checklist_writeback", selector: { boolean: {} } },
-              { name: "todo_add", selector: { boolean: {} } },
-              { name: "todo_show_completed", selector: { boolean: {} } },
-              { name: "show_camera", selector: { boolean: {} } },
-              { name: "show_record", selector: { boolean: {} } },
-            ],
-          },
-          { name: "actions_help", type: "constant", value: "" },
-          { name: "hold_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } },
-          { name: "double_tap_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } },
-        ],
-      },
+          { name: "show_camera", selector: { boolean: {} } },
+          { name: "show_record", selector: { boolean: {} } },
+        ]),
+      ]),
+      section("actions", "mdi:gesture-tap", t("editor_section_actions"), false, [
+        { name: "actions_help", type: "constant", value: "" },
+        { name: "hold_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } },
+        { name: "double_tap_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } },
+      ]),
     ];
   }
 
@@ -1199,6 +1166,10 @@ export class PinboardCardEditor extends HTMLElement {
       color: page.color ?? "",
       audio: typeof page.audio === "object" && page.audio !== null ? page.audio.media_content_id : page.audio ?? "",
       audio_entity: page.audio_entity ?? "",
+      visible_entity: firstCondition(page)?.entity ?? "",
+      visible_state: stateText(firstCondition(page)?.state),
+      hold_action: page.hold_action ?? { action: "none" },
+      double_tap_action: page.double_tap_action ?? { action: "none" },
     };
   }
 
@@ -1218,12 +1189,25 @@ export class PinboardCardEditor extends HTMLElement {
     const value = ev.detail.value ?? {};
     const page: PageConfig = { ...this._page() };
     for (const [key, raw] of Object.entries(value)) {
+      if (key === "visible_entity" || key === "visible_state") continue;
       const target = key === "page_title" ? "title" : key;
       if (!(PAGE_KEYS as string[]).includes(target) || target === "kind" || target === "markers") continue;
-      if (raw === undefined || raw === null || raw === "") {
+      const isNoneAction = (target === "hold_action" || target === "double_tap_action") && (raw as { action?: string })?.action === "none";
+      if (raw === undefined || raw === null || raw === "" || isNoneAction) {
         delete page[target as keyof PageConfig];
       } else {
         (page as Record<string, unknown>)[target] = raw;
+      }
+    }
+    if ("visible_entity" in value || "visible_state" in value) {
+      const entity = String(value.visible_entity ?? firstCondition(page)?.entity ?? "").trim();
+      const state = String(value.visible_state ?? stateText(firstCondition(page)?.state)).trim();
+      if (!entity) {
+        delete page.visible;
+      } else {
+        const condition: VisibilityCondition = { entity };
+        if (state) condition.state = state.includes(",") ? state.split(",").map((s) => s.trim()).filter(Boolean) : state;
+        page.visible = condition;
       }
     }
     // The kind marker is only needed while an entry has no content of its own.
@@ -1487,6 +1471,15 @@ export class PinboardCardEditor extends HTMLElement {
       .then((result) => apply(result.url))
       .catch(() => apply(""));
   }
+}
+
+function firstCondition(page: PageConfig): VisibilityCondition | undefined {
+  const value = page.visible;
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function stateText(state: string | string[] | undefined): string {
+  return Array.isArray(state) ? state.join(", ") : (state ?? "");
 }
 
 function cleanPage(page: PageConfig): PageConfig {
