@@ -131,7 +131,7 @@ interface ResolvedImage {
 
 const FACE_TEMPLATE = `
   <div class="layer layer-image">
-    <img alt="" draggable="false" />
+    <img alt="" draggable="false" decoding="async" />
     <div class="placeholder">
       <ha-icon icon="mdi:image-plus-outline"></ha-icon>
       <strong></strong>
