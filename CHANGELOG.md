@@ -5,6 +5,8 @@ All notable changes to Pinboard are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-18
+
 ### Added
 
 - To-do lists as pages: `todo_entity` shows a `todo.*` list as a checklist,

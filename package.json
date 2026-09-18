@@ -1,6 +1,6 @@
 {
   "name": "pinboard-card",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Home Assistant dashboard card that pairs a picture with a note and flips between them.",
   "type": "module",
   "private": true,
