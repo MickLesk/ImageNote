@@ -1,13 +1,17 @@
 import {
   CARD_TYPE,
+  DOUBLE_TAP_WINDOW_MS,
   EDITOR_TYPE,
+  HOLD_DELAY_MS,
   MEDIA_EXPIRES_SECONDS,
   MEDIA_REFRESH_MS,
   MEDIA_SOURCE_PREFIX,
   NOTE_ENTITY_DOMAINS,
   SAMPLE_IMAGE,
 } from "./const";
+import { GestureDetector, runAction, type ActionKind } from "./actions";
 import { normalizeConfig, parseAspectRatio, validateConfig } from "./config";
+import { formatRelativeTime } from "./time";
 import { resolveLanguage, translate } from "./i18n";
 import { CARD_STYLES } from "./styles";
 import type {
@@ -40,6 +44,7 @@ interface Elements {
   noteTitle: HTMLElement;
   editButton: HTMLButtonElement;
   noteBody: HTMLElement;
+  noteMeta: HTMLElement;
   noteEditor: HTMLElement;
   textarea: HTMLTextAreaElement;
   errorText: HTMLElement;
@@ -54,6 +59,7 @@ interface NoteSource {
   error: string;
   max: number | null;
   domain: string;
+  changed: string;
 }
 
 const TEMPLATE = `
@@ -78,6 +84,7 @@ const TEMPLATE = `
           <button class="icon-button edit" type="button"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
         </div>
         <div class="note-body"></div>
+        <div class="note-meta"></div>
         <div class="note-editor">
           <textarea rows="4" spellcheck="true"></textarea>
           <div class="error-text"></div>
@@ -129,6 +136,8 @@ export class ImageNoteCard extends HTMLElement {
   private readonly _hoverQuery = window.matchMedia("(hover: hover)");
   private _lastNote?: NoteSource;
   private _lastImageSrc?: string;
+  private _gestures?: GestureDetector;
+  private _metaTimer?: number;
   private _markdownReady = customElements.get("ha-markdown") !== undefined;
 
   constructor() {
@@ -143,6 +152,7 @@ export class ImageNoteCard extends HTMLElement {
     this._motionQuery.addEventListener("change", this._onMotionChange);
     this._observeResize();
     this._startAutoFlip();
+    this._startMetaTimer();
   }
 
   disconnectedCallback(): void {
@@ -151,6 +161,8 @@ export class ImageNoteCard extends HTMLElement {
     this._resizeObserver = undefined;
     this._stopAutoFlip();
     window.clearTimeout(this._refreshTimer);
+    window.clearInterval(this._metaTimer);
+    this._metaTimer = undefined;
   }
 
   setConfig(config: ImageNoteCardConfig): void {
@@ -231,6 +243,7 @@ export class ImageNoteCard extends HTMLElement {
       noteTitle: q(".note-header .title"),
       editButton: q(".edit"),
       noteBody: q(".note-body"),
+      noteMeta: q(".note-meta"),
       noteEditor: q(".note-editor"),
       textarea: q("textarea"),
       errorText: q(".error-text"),
@@ -240,7 +253,13 @@ export class ImageNoteCard extends HTMLElement {
     };
     const els = this._els;
 
-    els.stage.addEventListener("click", this._onStageClick);
+    this._gestures?.destroy();
+    this._gestures = new GestureDetector(els.stage, (kind) => void this._handleGesture(kind), {
+      holdDelay: HOLD_DELAY_MS,
+      doubleTapWindow: DOUBLE_TAP_WINDOW_MS,
+      hasDoubleTap: () => this._config?.double_tap_action.action !== "none",
+      enabled: (ev) => this._gestureAllowed(ev),
+    });
     els.stage.addEventListener("keydown", this._onStageKeydown);
     els.stage.addEventListener("mouseenter", this._onMouseEnter);
     els.stage.addEventListener("mouseleave", this._onMouseLeave);
@@ -476,7 +495,7 @@ export class ImageNoteCard extends HTMLElement {
 
   private _noteSource(): NoteSource {
     const config = this._config;
-    const empty: NoteSource = { text: "", editable: false, error: "", max: null, domain: "" };
+    const empty: NoteSource = { text: "", editable: false, error: "", max: null, domain: "", changed: "" };
     if (!config) return empty;
     if (!config.note_entity) {
       return { ...empty, text: config.note };
@@ -506,6 +525,7 @@ export class ImageNoteCard extends HTMLElement {
       error: "",
       max,
       domain,
+      changed: config.show_updated ? entity.last_changed ?? "" : "",
     };
   }
 
@@ -528,7 +548,8 @@ export class ImageNoteCard extends HTMLElement {
       last.text === source.text &&
       last.editable === source.editable &&
       last.error === source.error &&
-      last.max === source.max
+      last.max === source.max &&
+      last.changed === source.changed
     ) {
       return;
     }
@@ -537,6 +558,26 @@ export class ImageNoteCard extends HTMLElement {
     if (!this._editing) {
       this._renderNote(source);
     }
+    this._renderMeta();
+  }
+
+  private _renderMeta(): void {
+    const els = this._els;
+    if (!els) return;
+    const changed = this._lastNote?.changed;
+    if (!changed || this._editing) {
+      els.noteMeta.textContent = "";
+      els.noteMeta.classList.add("hidden");
+      return;
+    }
+    const relative = formatRelativeTime(new Date(changed), this._lang);
+    els.noteMeta.textContent = translate(this._lang, "updated", { time: relative });
+    els.noteMeta.classList.remove("hidden");
+  }
+
+  private _startMetaTimer(): void {
+    window.clearInterval(this._metaTimer);
+    this._metaTimer = window.setInterval(() => this._renderMeta(), 30_000);
   }
 
   private _renderNote(source: NoteSource): void {
@@ -611,6 +652,7 @@ export class ImageNoteCard extends HTMLElement {
     els.noteBody.style.display = "none";
     els.editButton.classList.add("hidden");
     els.noteEditor.classList.add("visible");
+    els.noteMeta.classList.add("hidden");
     els.errorText.textContent = "";
     els.textarea.value = source.text;
     if (source.max) {
@@ -638,6 +680,7 @@ export class ImageNoteCard extends HTMLElement {
     this._lastNote = source;
     els.editButton.classList.toggle("hidden", !source.editable);
     this._renderNote(source);
+    this._renderMeta();
     this._startAutoFlip();
     els.stage.focus({ preventScroll: true });
   }
@@ -696,25 +739,39 @@ export class ImageNoteCard extends HTMLElement {
 
   // ---------------------------------------------------------------- interaction
 
-  private readonly _onStageClick = (ev: MouseEvent): void => {
-    if (this._editing) return;
-    const path = ev.composedPath();
-    for (const node of path) {
-      if (node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement) return;
-      if (node === this._els?.noteEditor) return;
+  private _gestureAllowed(ev: PointerEvent): boolean {
+    if (this._editing) return false;
+    for (const node of ev.composedPath()) {
+      if (node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement) return false;
+      if (node === this._els?.noteEditor) return false;
     }
-    const root = this._root as ShadowRoot & { getSelection?: () => Selection | null };
-    const selection = root.getSelection ? root.getSelection() : window.getSelection();
-    if (selection && selection.toString().length > 0) return;
-    this.flip();
-  };
+    return true;
+  }
+
+  private async _handleGesture(kind: ActionKind): Promise<void> {
+    const config = this._config;
+    if (!config || this._editing) return;
+    if (kind === "tap") {
+      const root = this._root as ShadowRoot & { getSelection?: () => Selection | null };
+      const selection = root.getSelection ? root.getSelection() : window.getSelection();
+      if (selection && selection.toString().length > 0) return;
+    }
+    const action =
+      kind === "hold" ? config.hold_action : kind === "double_tap" ? config.double_tap_action : config.tap_action;
+    try {
+      const shouldFlip = await runAction(this, this._hass, config, action, translate(this._lang, "confirm"));
+      if (shouldFlip) this.flip();
+    } catch (err) {
+      console.warn("ImageNote: action failed", err);
+    }
+  }
 
   private readonly _onStageKeydown = (ev: KeyboardEvent): void => {
     if (this._editing) return;
     if (ev.target !== this._els?.stage) return;
     if (ev.key === "Enter" || ev.key === " ") {
       ev.preventDefault();
-      this.flip();
+      void this._handleGesture("tap");
     }
   };
 

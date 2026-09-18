@@ -3,6 +3,30 @@ export type Direction = "horizontal" | "vertical";
 export type Side = "image" | "note";
 export type ImageFit = "cover" | "contain";
 
+export type ActionName =
+  | "flip"
+  | "none"
+  | "more-info"
+  | "navigate"
+  | "url"
+  | "toggle"
+  | "perform-action"
+  | "call-service";
+
+export interface ActionConfig {
+  action: ActionName | string;
+  entity?: string;
+  navigation_path?: string;
+  navigation_replace?: boolean;
+  url_path?: string;
+  perform_action?: string;
+  service?: string;
+  data?: Record<string, unknown>;
+  service_data?: Record<string, unknown>;
+  target?: Record<string, unknown>;
+  confirmation?: boolean | { text?: string };
+}
+
 export interface MediaValue {
   media_content_id: string;
   media_content_type?: string;
@@ -26,6 +50,10 @@ export interface ImageNoteCardConfig {
   hover_flip?: boolean;
   show_hint?: boolean;
   show_title?: boolean;
+  show_updated?: boolean;
+  tap_action?: ActionConfig;
+  hold_action?: ActionConfig;
+  double_tap_action?: ActionConfig;
 }
 
 export interface NormalizedConfig {
@@ -46,12 +74,18 @@ export interface NormalizedConfig {
   hover_flip: boolean;
   show_hint: boolean;
   show_title: boolean;
+  show_updated: boolean;
+  tap_action: ActionConfig;
+  hold_action: ActionConfig;
+  double_tap_action: ActionConfig;
 }
 
 export interface HassEntity {
   entity_id: string;
   state: string;
   attributes: Record<string, unknown>;
+  last_changed?: string;
+  last_updated?: string;
 }
 
 export interface HomeAssistant {

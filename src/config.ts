@@ -1,5 +1,5 @@
 import { DEFAULTS, DIRECTIONS, IMAGE_FITS, SIDES, TRANSITIONS } from "./const";
-import type { ImageNoteCardConfig, NormalizedConfig } from "./types";
+import type { ActionConfig, ImageNoteCardConfig, NormalizedConfig } from "./types";
 
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === "string" && (allowed as readonly string[]).includes(value)
@@ -22,6 +22,14 @@ function bool(value: unknown, fallback: boolean): boolean {
   if (typeof value === "boolean") return value;
   if (value === "true") return true;
   if (value === "false") return false;
+  return fallback;
+}
+
+function action(value: unknown, fallback: ActionConfig): ActionConfig {
+  if (typeof value === "string") return { action: value };
+  if (value && typeof value === "object" && typeof (value as ActionConfig).action === "string") {
+    return value as ActionConfig;
+  }
   return fallback;
 }
 
@@ -74,6 +82,10 @@ export function normalizeConfig(config: ImageNoteCardConfig): NormalizedConfig {
     hover_flip: bool(config.hover_flip, DEFAULTS.hover_flip),
     show_hint: bool(config.show_hint, DEFAULTS.show_hint),
     show_title: bool(config.show_title, DEFAULTS.show_title),
+    show_updated: bool(config.show_updated, DEFAULTS.show_updated),
+    tap_action: action(config.tap_action, DEFAULTS.tap_action),
+    hold_action: action(config.hold_action, DEFAULTS.hold_action),
+    double_tap_action: action(config.double_tap_action, DEFAULTS.double_tap_action),
   };
 }
 

@@ -245,6 +245,20 @@ ha-card {
   margin-top: 0;
 }
 
+.note-meta {
+  padding: 0 16px 10px;
+  font-size: 0.75em;
+  color: var(--secondary-text-color);
+  max-width: calc(100% - 110px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-meta.hidden,
+.note-meta:empty {
+  display: none;
+}
+
 .icon-button {
   appearance: none;
   border: none;

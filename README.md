@@ -114,6 +114,47 @@ direction: vertical
 | `hover_flip` | `false` | Show the note while the pointer hovers over the card (mouse devices only). |
 | `show_hint` | `true` | Show the small “Note” / “Photo” badge in the corner. |
 | `show_title` | `true` | Show the title overlay on the picture. |
+| `show_updated` | `true` | With `note_entity`: show when the note was last changed. |
+| `tap_action` | `flip` | Action for a tap. See [Actions](#actions). |
+| `hold_action` | `none` | Action for a long press. |
+| `double_tap_action` | `none` | Action for a double tap. |
+
+## Actions
+
+Tap, hold and double tap take the same action objects as Home Assistant's own
+cards, plus `flip`:
+
+| `action` | Effect |
+| --- | --- |
+| `flip` | Turn the card over. Default for `tap_action`. |
+| `more-info` | Open the more-info dialog. `entity` defaults to `note_entity`, then `image_entity`. |
+| `toggle` | Toggle `entity` (same default). |
+| `navigate` | Go to `navigation_path`. |
+| `url` | Open `url_path` in a new tab. |
+| `perform-action` | Run `perform_action` with `data` and `target`. `call-service` / `service` still work. |
+| `none` | Nothing. |
+
+`confirmation: true` or `confirmation: { text: "…" }` asks before running an
+action. A double tap is only detected when `double_tap_action` is set, so a
+single tap stays instant otherwise.
+
+```yaml
+type: custom:imagenote-card
+title: Fridge
+image: /local/pictures/fridge.jpg
+note_entity: input_text.fridge_note
+hold_action:
+  action: more-info
+double_tap_action:
+  action: perform-action
+  perform_action: input_text.set_value
+  target:
+    entity_id: input_text.fridge_note
+  data:
+    value: ""
+  confirmation:
+    text: Clear the note?
+```
 
 ## Styling
 
@@ -142,6 +183,7 @@ npm ci
 npm run build        # bundles src/ into dist/imagenote-card.js
 npm run typecheck    # tsc --noEmit
 npm run verify       # sanity checks on the bundle
+npm test             # Playwright smoke tests against the demo page (needs Chromium: npx playwright install chromium)
 npm run demo         # http://localhost:8765/demo/ — local preview with stubbed HA elements
 ```
 

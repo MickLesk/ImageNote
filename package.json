@@ -9,11 +9,13 @@
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc --noEmit",
     "verify": "node --check dist/imagenote-card.js && node scripts/verify_bundle.mjs",
-    "validate": "npm run typecheck && npm run build && npm run verify",
-    "demo": "node scripts/serve_demo.mjs"
+    "validate": "npm run typecheck && npm run build && npm run verify && npm test",
+    "demo": "node scripts/serve_demo.mjs",
+    "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "playwright": "1.56.1"
   }
 }

@@ -121,7 +121,7 @@
 
     // ---- Fake hass --------------------------------------------------------------
     const states = {
-      "input_text.fridge_note": { entity_id: "input_text.fridge_note", state: "Milk is running low – buy 2 litres on Friday.", attributes: { max: 255, friendly_name: "Fridge note" } },
+      "input_text.fridge_note": { entity_id: "input_text.fridge_note", state: "Milk is running low – buy 2 litres on Friday.", attributes: { max: 255, friendly_name: "Fridge note" }, last_changed: new Date(Date.now() - 7 * 60000).toISOString() },
     };
     let language = "en";
     const listeners = new Set();
@@ -132,7 +132,7 @@
       async callService(domain, service, data) {
         await new Promise((r) => setTimeout(r, 400));
         if (service === "set_value") {
-          states[data.entity_id] = { ...states[data.entity_id], state: data.value };
+          states[data.entity_id] = { ...states[data.entity_id], state: data.value, last_changed: new Date().toISOString() };
           listeners.forEach((f) => f());
         }
       },
@@ -153,7 +153,11 @@
       { label: "Empty states", config: { type: "custom:imagenote-card", title: "Nothing yet" } },
       { label: "Broken picture + missing entity", config: { type: "custom:imagenote-card", title: "Broken", image: "./does-not-exist.jpg", note_entity: "input_text.missing" } },
       { label: "Natural size, hover flip", config: { type: "custom:imagenote-card", title: "Natural", image: "./sample-3.svg", aspect_ratio: "auto", hover_flip: true, note: "Hover me on a desktop." } },
+      { label: "Hold → more-info, double tap → URL", config: { type: "custom:imagenote-card", title: "Actions", image: "./sample-2.svg", note_entity: "input_text.fridge_note", hold_action: { action: "more-info" }, double_tap_action: { action: "url", url_path: "https://example.com" } } },
     ];
+    window.__events = [];
+    document.addEventListener("hass-more-info", (ev) => window.__events.push({ type: "hass-more-info", detail: ev.detail }));
+    window.open = (url) => { window.__events.push({ type: "open", url }); return null; };
 
     const grid = document.getElementById("grid");
     const cards = [];

@@ -48,6 +48,12 @@ jobs:
       - name: Verify bundle
         run: npm run verify
 
+      - name: Install Chromium for the browser tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser smoke tests
+        run: npm test
+
       - name: Verify committed bundle is current
         run: |
           if ! diff -u "$RUNNER_TEMP/committed.js" dist/imagenote-card.js > "$RUNNER_TEMP/bundle.diff"; then

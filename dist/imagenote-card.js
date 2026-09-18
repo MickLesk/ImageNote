@@ -16,6 +16,10 @@ var NOTE_ENTITY_DOMAINS = ["input_text", "text"];
 var MEDIA_SOURCE_PREFIX = "media-source://";
 var MEDIA_EXPIRES_SECONDS = 24 * 60 * 60;
 var MEDIA_REFRESH_MS = (MEDIA_EXPIRES_SECONDS - 10 * 60) * 1e3;
+var FLIP_ACTION = { action: "flip" };
+var NONE_ACTION = { action: "none" };
+var HOLD_DELAY_MS = 500;
+var DOUBLE_TAP_WINDOW_MS = 250;
 var DEFAULTS = {
   title: "",
   image_entity: "",
@@ -31,11 +35,163 @@ var DEFAULTS = {
   auto_flip: 0,
   hover_flip: false,
   show_hint: true,
-  show_title: true
+  show_title: true,
+  show_updated: true,
+  tap_action: FLIP_ACTION,
+  hold_action: NONE_ACTION,
+  double_tap_action: NONE_ACTION
 };
 var SAMPLE_IMAGE = "data:image/svg+xml;utf8," + encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2c5364"/><stop offset=".5" stop-color="#203a43"/><stop offset="1" stop-color="#0f2027"/></linearGradient></defs><rect width="640" height="360" fill="url(#g)"/><circle cx="500" cy="90" r="46" fill="#ffd166" opacity=".9"/><path d="M0 300 L120 210 L210 270 L330 170 L430 250 L520 200 L640 280 L640 360 L0 360 Z" fill="#06d6a0" opacity=".75"/><path d="M0 330 L90 280 L180 320 L300 250 L420 310 L560 260 L640 320 L640 360 L0 360 Z" fill="#118ab2" opacity=".85"/></svg>`
 );
+
+// src/actions.ts
+function fireEvent(node, type, detail) {
+  node.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
+}
+function confirmAction(config, fallback) {
+  if (!config.confirmation) return true;
+  const text = typeof config.confirmation === "object" && config.confirmation.text ? config.confirmation.text : fallback;
+  return window.confirm(text);
+}
+async function runAction(node, hass, card, config, confirmText) {
+  const defaultEntity = card.note_entity || card.image_entity || void 0;
+  switch (config.action) {
+    case "flip":
+      return true;
+    case "none":
+    case void 0:
+      return false;
+    case "more-info": {
+      const entityId = config.entity ?? defaultEntity;
+      if (entityId) fireEvent(node, "hass-more-info", { entityId });
+      return false;
+    }
+    case "navigate": {
+      if (!config.navigation_path) return false;
+      if (!confirmAction(config, confirmText)) return false;
+      if (config.navigation_replace) {
+        window.history.replaceState(null, "", config.navigation_path);
+      } else {
+        window.history.pushState(null, "", config.navigation_path);
+      }
+      fireEvent(node, "location-changed", { replace: Boolean(config.navigation_replace) });
+      return false;
+    }
+    case "url": {
+      if (!config.url_path) return false;
+      if (!confirmAction(config, confirmText)) return false;
+      window.open(config.url_path, "_blank", "noopener");
+      return false;
+    }
+    case "toggle": {
+      const entityId = config.entity ?? defaultEntity;
+      if (!entityId || !hass) return false;
+      if (!confirmAction(config, confirmText)) return false;
+      await hass.callService("homeassistant", "toggle", { entity_id: entityId });
+      return false;
+    }
+    case "perform-action":
+    case "call-service": {
+      const service = config.perform_action ?? config.service;
+      if (!service || !hass) return false;
+      const [domain, name] = service.split(".", 2);
+      if (!domain || !name) return false;
+      if (!confirmAction(config, confirmText)) return false;
+      const data = { ...config.service_data ?? config.data ?? {} };
+      if (config.target) {
+        Object.assign(data, config.target);
+      }
+      await hass.callService(domain, name, data);
+      return false;
+    }
+    default:
+      return false;
+  }
+}
+var GestureDetector = class {
+  constructor(_target, _onAction, _options) {
+    this._target = _target;
+    this._onAction = _onAction;
+    this._options = _options;
+    _target.addEventListener("pointerdown", this._onPointerDown);
+    _target.addEventListener("pointerup", this._onPointerUp);
+    _target.addEventListener("pointercancel", this._onPointerCancel);
+    _target.addEventListener("pointermove", this._onPointerMove);
+    _target.addEventListener("contextmenu", this._onContextMenu);
+  }
+  _target;
+  _onAction;
+  _options;
+  _holdTimer;
+  _tapTimer;
+  _held = false;
+  _startX = 0;
+  _startY = 0;
+  _cancelled = false;
+  destroy() {
+    window.clearTimeout(this._holdTimer);
+    window.clearTimeout(this._tapTimer);
+    this._target.removeEventListener("pointerdown", this._onPointerDown);
+    this._target.removeEventListener("pointerup", this._onPointerUp);
+    this._target.removeEventListener("pointercancel", this._onPointerCancel);
+    this._target.removeEventListener("pointermove", this._onPointerMove);
+    this._target.removeEventListener("contextmenu", this._onContextMenu);
+  }
+  _onPointerDown = (ev) => {
+    if (!this._options.enabled(ev) || ev.button !== 0) return;
+    this._cancelled = false;
+    this._held = false;
+    this._startX = ev.clientX;
+    this._startY = ev.clientY;
+    window.clearTimeout(this._holdTimer);
+    this._holdTimer = window.setTimeout(() => {
+      this._held = true;
+      this._onAction("hold");
+    }, this._options.holdDelay);
+  };
+  _onPointerMove = (ev) => {
+    if (this._holdTimer === void 0) return;
+    if (Math.abs(ev.clientX - this._startX) > 10 || Math.abs(ev.clientY - this._startY) > 10) {
+      this._cancel();
+    }
+  };
+  _onPointerCancel = () => {
+    this._cancel();
+  };
+  _onContextMenu = (ev) => {
+    if (this._holdTimer !== void 0 || this._held) ev.preventDefault();
+  };
+  _onPointerUp = (ev) => {
+    if (this._holdTimer === void 0 && !this._held) return;
+    if (ev.button !== 0) return;
+    window.clearTimeout(this._holdTimer);
+    this._holdTimer = void 0;
+    if (this._cancelled || this._held) {
+      this._held = false;
+      return;
+    }
+    if (!this._options.hasDoubleTap()) {
+      this._onAction("tap");
+      return;
+    }
+    if (this._tapTimer !== void 0) {
+      window.clearTimeout(this._tapTimer);
+      this._tapTimer = void 0;
+      this._onAction("double_tap");
+      return;
+    }
+    this._tapTimer = window.setTimeout(() => {
+      this._tapTimer = void 0;
+      this._onAction("tap");
+    }, this._options.doubleTapWindow);
+  };
+  _cancel() {
+    window.clearTimeout(this._holdTimer);
+    this._holdTimer = void 0;
+    this._cancelled = true;
+  }
+};
 
 // src/config.ts
 function pick(value, allowed, fallback) {
@@ -54,6 +210,13 @@ function bool(value, fallback) {
   if (typeof value === "boolean") return value;
   if (value === "true") return true;
   if (value === "false") return false;
+  return fallback;
+}
+function action(value, fallback) {
+  if (typeof value === "string") return { action: value };
+  if (value && typeof value === "object" && typeof value.action === "string") {
+    return value;
+  }
   return fallback;
 }
 function validateConfig(config) {
@@ -98,7 +261,11 @@ function normalizeConfig(config) {
     auto_flip: num(config.auto_flip, DEFAULTS.auto_flip, 0, 86400),
     hover_flip: bool(config.hover_flip, DEFAULTS.hover_flip),
     show_hint: bool(config.show_hint, DEFAULTS.show_hint),
-    show_title: bool(config.show_title, DEFAULTS.show_title)
+    show_title: bool(config.show_title, DEFAULTS.show_title),
+    show_updated: bool(config.show_updated, DEFAULTS.show_updated),
+    tap_action: action(config.tap_action, DEFAULTS.tap_action),
+    hold_action: action(config.hold_action, DEFAULTS.hold_action),
+    double_tap_action: action(config.double_tap_action, DEFAULTS.double_tap_action)
   };
 }
 function parseAspectRatio(value) {
@@ -110,6 +277,28 @@ function parseAspectRatio(value) {
   }
   const single = Number(text);
   return Number.isFinite(single) && single > 0 ? single : null;
+}
+
+// src/time.ts
+var UNITS = [
+  ["year", 365 * 24 * 3600],
+  ["month", 30 * 24 * 3600],
+  ["week", 7 * 24 * 3600],
+  ["day", 24 * 3600],
+  ["hour", 3600],
+  ["minute", 60]
+];
+function formatRelativeTime(date, language, now = /* @__PURE__ */ new Date()) {
+  const seconds = Math.round((date.getTime() - now.getTime()) / 1e3);
+  if (!Number.isFinite(seconds)) return "";
+  const formatter = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
+  const abs = Math.abs(seconds);
+  for (const [unit, size] of UNITS) {
+    if (abs >= size) {
+      return formatter.format(Math.round(seconds / size), unit);
+    }
+  }
+  return formatter.format(0, "second");
 }
 
 // src/i18n.ts
@@ -131,6 +320,8 @@ var en = {
   entityMissing: "Entity {entity} not found",
   imageError: "The picture could not be loaded",
   charsLeft: "{count} characters left",
+  updated: "Updated {time}",
+  confirm: "Are you sure?",
   editor_title: "Title",
   editor_title_help: "Shown on the picture and above the note. Optional.",
   editor_image: "Picture URL",
@@ -161,6 +352,10 @@ var en = {
   editor_auto_flip: "Auto flip every",
   editor_auto_flip_help: "0 disables automatic flipping.",
   editor_hover_flip: "Flip on hover (desktop)",
+  editor_show_updated: "Show when the note was last changed",
+  editor_hold_action: "Hold action",
+  editor_double_tap_action: "Double tap action",
+  editor_actions_help: "Tapping flips the card. Hold and double tap can open more info, navigate, open a URL, toggle an entity or perform an action.",
   editor_show_hint: "Show flip hint",
   editor_show_title: "Show title",
   transition_flip: "3D flip",
@@ -194,6 +389,8 @@ var de = {
   entityMissing: "Entität {entity} nicht gefunden",
   imageError: "Das Bild konnte nicht geladen werden",
   charsLeft: "{count} Zeichen übrig",
+  updated: "Geändert {time}",
+  confirm: "Bist du sicher?",
   editor_title: "Titel",
   editor_title_help: "Wird auf dem Bild und über der Notiz angezeigt. Optional.",
   editor_image: "Bild-URL",
@@ -224,6 +421,10 @@ var de = {
   editor_auto_flip: "Automatisch umdrehen alle",
   editor_auto_flip_help: "0 deaktiviert das automatische Umdrehen.",
   editor_hover_flip: "Beim Überfahren umdrehen (Desktop)",
+  editor_show_updated: "Anzeigen, wann die Notiz zuletzt geändert wurde",
+  editor_hold_action: "Aktion bei langem Drücken",
+  editor_double_tap_action: "Aktion bei Doppeltipp",
+  editor_actions_help: "Tippen dreht die Karte um. Langes Drücken und Doppeltipp können „Mehr Infos“ öffnen, navigieren, eine URL öffnen, eine Entität umschalten oder eine Aktion ausführen.",
   editor_show_hint: "Hinweis zum Umdrehen anzeigen",
   editor_show_title: "Titel anzeigen",
   transition_flip: "3D-Flip",
@@ -504,6 +705,20 @@ ha-card {
   margin-top: 0;
 }
 
+.note-meta {
+  padding: 0 16px 10px;
+  font-size: 0.75em;
+  color: var(--secondary-text-color);
+  max-width: calc(100% - 110px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-meta.hidden,
+.note-meta:empty {
+  display: none;
+}
+
 .icon-button {
   appearance: none;
   border: none;
@@ -691,6 +906,7 @@ var TEMPLATE = `
           <button class="icon-button edit" type="button"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
         </div>
         <div class="note-body"></div>
+        <div class="note-meta"></div>
         <div class="note-editor">
           <textarea rows="4" spellcheck="true"></textarea>
           <div class="error-text"></div>
@@ -738,6 +954,8 @@ var ImageNoteCard = class extends HTMLElement {
   _hoverQuery = window.matchMedia("(hover: hover)");
   _lastNote;
   _lastImageSrc;
+  _gestures;
+  _metaTimer;
   _markdownReady = customElements.get("ha-markdown") !== void 0;
   constructor() {
     super();
@@ -749,6 +967,7 @@ var ImageNoteCard = class extends HTMLElement {
     this._motionQuery.addEventListener("change", this._onMotionChange);
     this._observeResize();
     this._startAutoFlip();
+    this._startMetaTimer();
   }
   disconnectedCallback() {
     this._motionQuery.removeEventListener("change", this._onMotionChange);
@@ -756,6 +975,8 @@ var ImageNoteCard = class extends HTMLElement {
     this._resizeObserver = void 0;
     this._stopAutoFlip();
     window.clearTimeout(this._refreshTimer);
+    window.clearInterval(this._metaTimer);
+    this._metaTimer = void 0;
   }
   setConfig(config) {
     validateConfig(config);
@@ -828,6 +1049,7 @@ var ImageNoteCard = class extends HTMLElement {
       noteTitle: q(".note-header .title"),
       editButton: q(".edit"),
       noteBody: q(".note-body"),
+      noteMeta: q(".note-meta"),
       noteEditor: q(".note-editor"),
       textarea: q("textarea"),
       errorText: q(".error-text"),
@@ -836,7 +1058,13 @@ var ImageNoteCard = class extends HTMLElement {
       cancelButton: q(".cancel")
     };
     const els = this._els;
-    els.stage.addEventListener("click", this._onStageClick);
+    this._gestures?.destroy();
+    this._gestures = new GestureDetector(els.stage, (kind) => void this._handleGesture(kind), {
+      holdDelay: HOLD_DELAY_MS,
+      doubleTapWindow: DOUBLE_TAP_WINDOW_MS,
+      hasDoubleTap: () => this._config?.double_tap_action.action !== "none",
+      enabled: (ev) => this._gestureAllowed(ev)
+    });
     els.stage.addEventListener("keydown", this._onStageKeydown);
     els.stage.addEventListener("mouseenter", this._onMouseEnter);
     els.stage.addEventListener("mouseleave", this._onMouseLeave);
@@ -1043,7 +1271,7 @@ var ImageNoteCard = class extends HTMLElement {
   // ---------------------------------------------------------------- note
   _noteSource() {
     const config = this._config;
-    const empty = { text: "", editable: false, error: "", max: null, domain: "" };
+    const empty = { text: "", editable: false, error: "", max: null, domain: "", changed: "" };
     if (!config) return empty;
     if (!config.note_entity) {
       return { ...empty, text: config.note };
@@ -1070,7 +1298,8 @@ var ImageNoteCard = class extends HTMLElement {
       editable: !attr && NOTE_ENTITY_DOMAINS.includes(domain),
       error: "",
       max,
-      domain
+      domain,
+      changed: config.show_updated ? entity.last_changed ?? "" : ""
     };
   }
   _applyHass() {
@@ -1085,7 +1314,7 @@ var ImageNoteCard = class extends HTMLElement {
     }
     const source = this._noteSource();
     const last = this._lastNote;
-    if (last && last.text === source.text && last.editable === source.editable && last.error === source.error && last.max === source.max) {
+    if (last && last.text === source.text && last.editable === source.editable && last.error === source.error && last.max === source.max && last.changed === source.changed) {
       return;
     }
     this._lastNote = source;
@@ -1093,6 +1322,24 @@ var ImageNoteCard = class extends HTMLElement {
     if (!this._editing) {
       this._renderNote(source);
     }
+    this._renderMeta();
+  }
+  _renderMeta() {
+    const els = this._els;
+    if (!els) return;
+    const changed = this._lastNote?.changed;
+    if (!changed || this._editing) {
+      els.noteMeta.textContent = "";
+      els.noteMeta.classList.add("hidden");
+      return;
+    }
+    const relative = formatRelativeTime(new Date(changed), this._lang);
+    els.noteMeta.textContent = translate(this._lang, "updated", { time: relative });
+    els.noteMeta.classList.remove("hidden");
+  }
+  _startMetaTimer() {
+    window.clearInterval(this._metaTimer);
+    this._metaTimer = window.setInterval(() => this._renderMeta(), 3e4);
   }
   _renderNote(source) {
     const els = this._els;
@@ -1155,6 +1402,7 @@ var ImageNoteCard = class extends HTMLElement {
     els.noteBody.style.display = "none";
     els.editButton.classList.add("hidden");
     els.noteEditor.classList.add("visible");
+    els.noteMeta.classList.add("hidden");
     els.errorText.textContent = "";
     els.textarea.value = source.text;
     if (source.max) {
@@ -1181,6 +1429,7 @@ var ImageNoteCard = class extends HTMLElement {
     this._lastNote = source;
     els.editButton.classList.toggle("hidden", !source.editable);
     this._renderNote(source);
+    this._renderMeta();
     this._startAutoFlip();
     els.stage.focus({ preventScroll: true });
   }
@@ -1233,24 +1482,36 @@ var ImageNoteCard = class extends HTMLElement {
     els.counter.classList.toggle("over", left < 0);
   }
   // ---------------------------------------------------------------- interaction
-  _onStageClick = (ev) => {
-    if (this._editing) return;
-    const path = ev.composedPath();
-    for (const node of path) {
-      if (node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement) return;
-      if (node === this._els?.noteEditor) return;
+  _gestureAllowed(ev) {
+    if (this._editing) return false;
+    for (const node of ev.composedPath()) {
+      if (node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement) return false;
+      if (node === this._els?.noteEditor) return false;
     }
-    const root = this._root;
-    const selection = root.getSelection ? root.getSelection() : window.getSelection();
-    if (selection && selection.toString().length > 0) return;
-    this.flip();
-  };
+    return true;
+  }
+  async _handleGesture(kind) {
+    const config = this._config;
+    if (!config || this._editing) return;
+    if (kind === "tap") {
+      const root = this._root;
+      const selection = root.getSelection ? root.getSelection() : window.getSelection();
+      if (selection && selection.toString().length > 0) return;
+    }
+    const action2 = kind === "hold" ? config.hold_action : kind === "double_tap" ? config.double_tap_action : config.tap_action;
+    try {
+      const shouldFlip = await runAction(this, this._hass, config, action2, translate(this._lang, "confirm"));
+      if (shouldFlip) this.flip();
+    } catch (err) {
+      console.warn("ImageNote: action failed", err);
+    }
+  }
   _onStageKeydown = (ev) => {
     if (this._editing) return;
     if (ev.target !== this._els?.stage) return;
     if (ev.key === "Enter" || ev.key === " ") {
       ev.preventDefault();
-      this.flip();
+      void this._handleGesture("tap");
     }
   };
   _onMouseEnter = () => {
@@ -1305,6 +1566,7 @@ var ImageNoteCard = class extends HTMLElement {
 };
 
 // src/editor.ts
+var UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
 var PICTURE_TEMPLATE = `
 <div class="picture">
   <div class="preview"><img alt="" draggable="false" /><ha-icon icon="mdi:image-outline"></ha-icon></div>
@@ -1460,7 +1722,16 @@ var ImageNoteCardEditor = class extends HTMLElement {
     return this._hass;
   }
   // ---------------------------------------------------------------- rendering
+  _ensureForm() {
+    if (customElements.get("ha-form")) return;
+    window.loadCardHelpers?.().then((helpers) => {
+      const card = helpers.createCardElement({ type: "entities", entities: [] });
+      const ctor = card.constructor;
+      ctor.getConfigElement?.();
+    }).catch(() => void 0);
+  }
   _build() {
+    this._ensureForm();
     this._root.innerHTML = `<style>${EDITOR_STYLES}${PICTURE_STYLES}</style>${PICTURE_TEMPLATE}<ha-form></ha-form><div class="version">ImageNote ${VERSION}</div>`;
     this._form = this._root.querySelector("ha-form") ?? void 0;
     this._preview = this._root.querySelector(".preview") ?? void 0;
@@ -1501,7 +1772,7 @@ var ImageNoteCardEditor = class extends HTMLElement {
     form.hass = this._hass;
     form.schema = this._schema();
     form.data = this._formData();
-    form.computeLabel = (schema) => t(`editor_${schema.name}`);
+    form.computeLabel = (schema) => schema.name === "actions_help" ? t("editor_actions_help") : t(`editor_${schema.name}`);
     form.computeHelper = (schema) => {
       const key = `editor_${schema.name}_help`;
       const text = t(key);
@@ -1535,7 +1806,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
             name: "note_attribute",
             selector: { attribute: {} },
             context: { filter_entity: "note_entity" }
-          }
+          },
+          { name: "show_updated", selector: { boolean: {} } }
         ]
       },
       {
@@ -1603,7 +1875,10 @@ var ImageNoteCardEditor = class extends HTMLElement {
               },
               { name: "hover_flip", selector: { boolean: {} } }
             ]
-          }
+          },
+          { name: "actions_help", type: "constant", value: "" },
+          { name: "hold_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } },
+          { name: "double_tap_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } }
         ]
       }
     ];
@@ -1625,7 +1900,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
     const next = { ...this._config };
     for (const [key, raw] of Object.entries(value)) {
       if (key === "type") continue;
-      const isDefault = key in DEFAULTS && raw === DEFAULTS[key];
+      const fallback = DEFAULTS[key];
+      const isDefault = key in DEFAULTS && (raw === fallback || typeof raw === "object" && raw !== null && JSON.stringify(raw) === JSON.stringify(fallback));
       if (raw === void 0 || raw === null || raw === "" || isDefault) {
         delete next[key];
       } else {

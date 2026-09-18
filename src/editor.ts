@@ -5,6 +5,8 @@ import type { HomeAssistant, ImageNoteCardConfig, ResolvedMedia } from "./types"
 
 type FormSchema = Record<string, unknown> & { name: string };
 
+const UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
+
 interface HaFormElement extends HTMLElement {
   hass?: HomeAssistant;
   data?: Record<string, unknown>;
@@ -176,7 +178,21 @@ export class ImageNoteCardEditor extends HTMLElement {
 
   // ---------------------------------------------------------------- rendering
 
+  private _ensureForm(): void {
+    if (customElements.get("ha-form")) return;
+    // ha-form and the selectors are lazy; the entities card editor pulls them all in.
+    window
+      .loadCardHelpers?.()
+      .then((helpers) => {
+        const card = helpers.createCardElement({ type: "entities", entities: [] });
+        const ctor = card.constructor as { getConfigElement?: () => unknown };
+        ctor.getConfigElement?.();
+      })
+      .catch(() => undefined);
+  }
+
   private _build(): void {
+    this._ensureForm();
     this._root.innerHTML = `<style>${EDITOR_STYLES}${PICTURE_STYLES}</style>${PICTURE_TEMPLATE}<ha-form></ha-form><div class="version">ImageNote ${VERSION}</div>`;
     this._form = this._root.querySelector<HaFormElement>("ha-form") ?? undefined;
     this._preview = this._root.querySelector<HTMLElement>(".preview") ?? undefined;
@@ -221,7 +237,8 @@ export class ImageNoteCardEditor extends HTMLElement {
     form.hass = this._hass;
     form.schema = this._schema();
     form.data = this._formData();
-    form.computeLabel = (schema) => t(`editor_${schema.name}`);
+    form.computeLabel = (schema) =>
+      schema.name === "actions_help" ? t("editor_actions_help") : t(`editor_${schema.name}`);
     form.computeHelper = (schema) => {
       const key = `editor_${schema.name}_help`;
       const text = t(key);
@@ -258,6 +275,7 @@ export class ImageNoteCardEditor extends HTMLElement {
             selector: { attribute: {} },
             context: { filter_entity: "note_entity" },
           },
+          { name: "show_updated", selector: { boolean: {} } },
         ],
       },
       {
@@ -326,6 +344,9 @@ export class ImageNoteCardEditor extends HTMLElement {
               { name: "hover_flip", selector: { boolean: {} } },
             ],
           },
+          { name: "actions_help", type: "constant", value: "" },
+          { name: "hold_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } },
+          { name: "double_tap_action", selector: { ui_action: { actions: UI_ACTIONS, default_action: "none" } } },
         ],
       },
     ];
@@ -353,7 +374,11 @@ export class ImageNoteCardEditor extends HTMLElement {
     const next: Record<string, unknown> = { ...this._config };
     for (const [key, raw] of Object.entries(value)) {
       if (key === "type") continue;
-      const isDefault = key in DEFAULTS && raw === (DEFAULTS as Record<string, unknown>)[key];
+      const fallback = (DEFAULTS as Record<string, unknown>)[key];
+      const isDefault =
+        key in DEFAULTS &&
+        (raw === fallback ||
+          (typeof raw === "object" && raw !== null && JSON.stringify(raw) === JSON.stringify(fallback)));
       if (raw === undefined || raw === null || raw === "" || isDefault) {
         delete next[key];
       } else {

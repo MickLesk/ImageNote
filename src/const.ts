@@ -1,4 +1,4 @@
-import type { NormalizedConfig, Transition, Direction, Side, ImageFit } from "./types";
+import type { ActionConfig, NormalizedConfig, Transition, Direction, Side, ImageFit } from "./types";
 
 export const CARD_TYPE = "imagenote-card";
 export const EDITOR_TYPE = "imagenote-card-editor";
@@ -22,6 +22,11 @@ export const MEDIA_EXPIRES_SECONDS = 24 * 60 * 60;
 /** Re-resolve a signed URL a little before it expires. */
 export const MEDIA_REFRESH_MS = (MEDIA_EXPIRES_SECONDS - 10 * 60) * 1000;
 
+export const FLIP_ACTION: ActionConfig = { action: "flip" };
+export const NONE_ACTION: ActionConfig = { action: "none" };
+export const HOLD_DELAY_MS = 500;
+export const DOUBLE_TAP_WINDOW_MS = 250;
+
 export const DEFAULTS: Omit<NormalizedConfig, "type" | "image"> = {
   title: "",
   image_entity: "",
@@ -38,6 +43,10 @@ export const DEFAULTS: Omit<NormalizedConfig, "type" | "image"> = {
   hover_flip: false,
   show_hint: true,
   show_title: true,
+  show_updated: true,
+  tap_action: FLIP_ACTION,
+  hold_action: NONE_ACTION,
+  double_tap_action: NONE_ACTION,
 };
 
 /** Inline SVG shown by the card picker preview so the stub config has a picture. */

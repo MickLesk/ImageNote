@@ -18,3 +18,8 @@ All notable changes to ImageNote are documented here. The format follows
 - Visual editor with picture upload, live preview and all options.
 - Auto flip, hover flip, keyboard support, reduced-motion fallback,
   English and German UI.
+- `tap_action`, `hold_action` and `double_tap_action` with the standard
+  Home Assistant actions (more-info, toggle, navigate, url, perform-action)
+  plus `flip`.
+- "Updated … ago" line on the note side when the note comes from an entity.
+- Browser smoke tests with Playwright, run in CI.
