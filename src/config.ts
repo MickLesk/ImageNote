@@ -1,5 +1,13 @@
-import { DEFAULTS, DIRECTIONS, IMAGE_FITS, LAYOUTS, SIDES, TRANSITIONS } from "./const";
-import type { ActionConfig, ImageNoteCardConfig, MediaValue, NormalizedConfig, NormalizedPage, PageConfig } from "./types";
+import { DEFAULTS, DIRECTIONS, IMAGE_FITS, LAYOUTS, MAX_SLIDES, SIDES, TRANSITIONS } from "./const";
+import type {
+  ActionConfig,
+  ImageNoteCardConfig,
+  MediaValue,
+  NormalizedConfig,
+  NormalizedPage,
+  PageConfig,
+  Slide,
+} from "./types";
 
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === "string" && (allowed as readonly string[]).includes(value)
@@ -48,17 +56,23 @@ export function validateConfig(config: unknown): asserts config is ImageNoteCard
     throw new Error(`ImageNote: unknown default_side "${String(c.default_side)}" (use ${SIDES.join(", ")})`);
   }
   validatePage(c, "");
-  if (c.images !== undefined) {
-    if (!Array.isArray(c.images)) {
-      throw new Error("ImageNote: images must be a list");
+  for (const key of ["slides", "images"] as const) {
+    const list = c[key];
+    if (list === undefined) continue;
+    if (!Array.isArray(list)) {
+      throw new Error(`ImageNote: ${key} must be a list`);
     }
-    c.images.forEach((entry, index) => {
+    list.forEach((entry, index) => {
       if (typeof entry === "string") return;
       if (!entry || typeof entry !== "object") {
-        throw new Error(`ImageNote: images[${index}] must be a URL or an object`);
+        throw new Error(`ImageNote: ${key}[${index}] must be a URL or an object`);
       }
-      validatePage(entry as Record<string, unknown>, `images[${index}].`);
+      validatePage(entry as Record<string, unknown>, `${key}[${index}].`);
     });
+  }
+  const total = expandSlides(configPages(config as ImageNoteCardConfig).map(normalizePage)).length;
+  if (total > MAX_SLIDES) {
+    throw new Error(`ImageNote: at most ${MAX_SLIDES} slides per card (this card has ${total})`);
   }
 }
 
@@ -79,8 +93,9 @@ function validatePage(c: Record<string, unknown>, prefix: string): void {
   }
 }
 
-function normalizePage(page: PageConfig): NormalizedPage {
+export function normalizePage(page: PageConfig): NormalizedPage {
   return {
+    kind: page.kind === "note" || page.kind === "image" ? page.kind : undefined,
     title: str(page.title).trim(),
     image: page.image === null || page.image === "" ? undefined : (page.image as string | MediaValue | undefined),
     image_entity: str(page.image_entity).trim(),
@@ -90,10 +105,11 @@ function normalizePage(page: PageConfig): NormalizedPage {
   };
 }
 
-/** The pages of a card: `images` when given, otherwise the top-level picture fields as one page. */
+/** The config entries of a card: `slides` (or the older `images`) when given, otherwise the top-level fields as one entry. */
 export function configPages(config: ImageNoteCardConfig): PageConfig[] {
-  if (Array.isArray(config.images) && config.images.length > 0) {
-    return config.images.map((entry) => (typeof entry === "string" ? { image: entry } : entry));
+  const list = Array.isArray(config.slides) && config.slides.length > 0 ? config.slides : config.images;
+  if (Array.isArray(list) && list.length > 0) {
+    return list.map((entry) => (typeof entry === "string" ? { image: entry } : entry));
   }
   return [
     {
@@ -106,11 +122,37 @@ export function configPages(config: ImageNoteCardConfig): PageConfig[] {
   ];
 }
 
+export function hasPicture(page: PageConfig | NormalizedPage): boolean {
+  return Boolean(page.image) || Boolean(page.image_entity);
+}
+
+export function hasNote(page: PageConfig | NormalizedPage): boolean {
+  return Boolean(page.note) || Boolean(page.note_entity);
+}
+
+/** An entry with a picture and a note becomes two slides; an empty entry is an empty picture slide. */
+export function expandSlides(entries: NormalizedPage[]): Slide[] {
+  const slides: Slide[] = [];
+  entries.forEach((entry, index) => {
+    const picture = hasPicture(entry) || entry.kind === "image";
+    const note = hasNote(entry) || entry.kind === "note";
+    if (picture || !note) {
+      slides.push({ ...entry, kind: "image", entry: index, note: "", note_entity: "", note_attribute: "" });
+    }
+    if (note) {
+      slides.push({ ...entry, kind: "note", entry: index, image: undefined, image_entity: "" });
+    }
+  });
+  return slides;
+}
+
 export function normalizeConfig(config: ImageNoteCardConfig): NormalizedConfig {
+  const entries = configPages(config).map(normalizePage);
   return {
     type: config.type,
     title: str(config.title).trim(),
-    pages: configPages(config).map(normalizePage),
+    entries,
+    slides: expandSlides(entries),
     layout: pick(config.layout, LAYOUTS, DEFAULTS.layout),
     columns: Math.round(num(config.columns, DEFAULTS.columns, 0, 8)),
     image_fit: pick(config.image_fit, IMAGE_FITS, DEFAULTS.image_fit),
@@ -120,6 +162,7 @@ export function normalizeConfig(config: ImageNoteCardConfig): NormalizedConfig {
     default_side: pick(config.default_side, SIDES, DEFAULTS.default_side),
     duration: num(config.duration, DEFAULTS.duration, 0, 10000),
     auto_flip: num(config.auto_flip, DEFAULTS.auto_flip, 0, 86400),
+    // auto_advance is the older name; both advance to the next slide.
     auto_advance: num(config.auto_advance, DEFAULTS.auto_advance, 0, 86400),
     hover_flip: bool(config.hover_flip, DEFAULTS.hover_flip),
     show_hint: bool(config.show_hint, DEFAULTS.show_hint),

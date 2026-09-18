@@ -34,6 +34,8 @@ export interface MediaValue {
 }
 
 export interface PageConfig {
+  /** Forces the kind of an entry without content yet (the editor's "add note" creates such an entry). */
+  kind?: SlideKind;
   title?: string;
   image?: string | MediaValue;
   image_entity?: string;
@@ -43,6 +45,7 @@ export interface PageConfig {
 }
 
 export interface NormalizedPage {
+  kind?: SlideKind;
   title: string;
   image: string | MediaValue | undefined;
   image_entity: string;
@@ -51,8 +54,19 @@ export interface NormalizedPage {
   note_attribute: string;
 }
 
+export type SlideKind = "image" | "note";
+
+/** One screen of the card: either a picture or a note. */
+export interface Slide extends NormalizedPage {
+  kind: SlideKind;
+  /** Index of the config entry this slide came from (an entry with picture and note yields two slides). */
+  entry: number;
+}
+
 export interface ImageNoteCardConfig extends PageConfig {
   type: string;
+  /** Pictures and notes in free order. `images` is an older alias. */
+  slides?: Array<PageConfig | string>;
   images?: Array<PageConfig | string>;
   layout?: Layout;
   columns?: number;
@@ -79,7 +93,10 @@ export interface ImageNoteCardConfig extends PageConfig {
 export interface NormalizedConfig {
   type: string;
   title: string;
-  pages: NormalizedPage[];
+  /** The config entries (one per `slides` item, or one for the flat form). */
+  entries: NormalizedPage[];
+  /** All screens in order; an entry with picture and note becomes two slides. */
+  slides: Slide[];
   layout: Layout;
   columns: number;
   image_fit: ImageFit;

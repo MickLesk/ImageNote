@@ -14,6 +14,7 @@ export const SIDES: Side[] = ["image", "note"];
 export const IMAGE_FITS: ImageFit[] = ["cover", "contain"];
 export const LAYOUTS: Layout[] = ["stack", "grid"];
 export const TILE_MIN_WIDTH_PX = 150;
+export const MAX_SLIDES = 10;
 export const ASPECT_RATIOS = ["16:9", "4:3", "3:2", "1:1", "3:4", "9:16", "auto"];
 
 export const NOTE_ENTITY_DOMAINS = ["input_text", "text"];
@@ -31,7 +32,7 @@ export const DOUBLE_TAP_WINDOW_MS = 250;
 
 export const SWIPE_THRESHOLD_PX = 40;
 
-export const DEFAULTS: Omit<NormalizedConfig, "type" | "pages"> = {
+export const DEFAULTS: Omit<NormalizedConfig, "type" | "entries" | "slides"> = {
   title: "",
   layout: "stack",
   columns: 0,

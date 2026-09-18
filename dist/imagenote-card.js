@@ -13,6 +13,7 @@ var SIDES = ["image", "note"];
 var IMAGE_FITS = ["cover", "contain"];
 var LAYOUTS = ["stack", "grid"];
 var TILE_MIN_WIDTH_PX = 150;
+var MAX_SLIDES = 10;
 var ASPECT_RATIOS = ["16:9", "4:3", "3:2", "1:1", "3:4", "9:16", "auto"];
 var NOTE_ENTITY_DOMAINS = ["input_text", "text"];
 var MEDIA_SOURCE_PREFIX = "media-source://";
@@ -250,17 +251,23 @@ function validateConfig(config) {
     throw new Error(`ImageNote: unknown default_side "${String(c.default_side)}" (use ${SIDES.join(", ")})`);
   }
   validatePage(c, "");
-  if (c.images !== void 0) {
-    if (!Array.isArray(c.images)) {
-      throw new Error("ImageNote: images must be a list");
+  for (const key of ["slides", "images"]) {
+    const list = c[key];
+    if (list === void 0) continue;
+    if (!Array.isArray(list)) {
+      throw new Error(`ImageNote: ${key} must be a list`);
     }
-    c.images.forEach((entry, index) => {
+    list.forEach((entry, index) => {
       if (typeof entry === "string") return;
       if (!entry || typeof entry !== "object") {
-        throw new Error(`ImageNote: images[${index}] must be a URL or an object`);
+        throw new Error(`ImageNote: ${key}[${index}] must be a URL or an object`);
       }
-      validatePage(entry, `images[${index}].`);
+      validatePage(entry, `${key}[${index}].`);
     });
+  }
+  const total = expandSlides(configPages(config).map(normalizePage)).length;
+  if (total > MAX_SLIDES) {
+    throw new Error(`ImageNote: at most ${MAX_SLIDES} slides per card (this card has ${total})`);
   }
 }
 function validatePage(c, prefix) {
@@ -276,6 +283,7 @@ function validatePage(c, prefix) {
 }
 function normalizePage(page) {
   return {
+    kind: page.kind === "note" || page.kind === "image" ? page.kind : void 0,
     title: str(page.title).trim(),
     image: page.image === null || page.image === "" ? void 0 : page.image,
     image_entity: str(page.image_entity).trim(),
@@ -285,8 +293,9 @@ function normalizePage(page) {
   };
 }
 function configPages(config) {
-  if (Array.isArray(config.images) && config.images.length > 0) {
-    return config.images.map((entry) => typeof entry === "string" ? { image: entry } : entry);
+  const list = Array.isArray(config.slides) && config.slides.length > 0 ? config.slides : config.images;
+  if (Array.isArray(list) && list.length > 0) {
+    return list.map((entry) => typeof entry === "string" ? { image: entry } : entry);
   }
   return [
     {
@@ -298,11 +307,33 @@ function configPages(config) {
     }
   ];
 }
+function hasPicture(page) {
+  return Boolean(page.image) || Boolean(page.image_entity);
+}
+function hasNote(page) {
+  return Boolean(page.note) || Boolean(page.note_entity);
+}
+function expandSlides(entries) {
+  const slides = [];
+  entries.forEach((entry, index) => {
+    const picture = hasPicture(entry) || entry.kind === "image";
+    const note = hasNote(entry) || entry.kind === "note";
+    if (picture || !note) {
+      slides.push({ ...entry, kind: "image", entry: index, note: "", note_entity: "", note_attribute: "" });
+    }
+    if (note) {
+      slides.push({ ...entry, kind: "note", entry: index, image: void 0, image_entity: "" });
+    }
+  });
+  return slides;
+}
 function normalizeConfig(config) {
+  const entries = configPages(config).map(normalizePage);
   return {
     type: config.type,
     title: str(config.title).trim(),
-    pages: configPages(config).map(normalizePage),
+    entries,
+    slides: expandSlides(entries),
     layout: pick(config.layout, LAYOUTS, DEFAULTS.layout),
     columns: Math.round(num(config.columns, DEFAULTS.columns, 0, 8)),
     image_fit: pick(config.image_fit, IMAGE_FITS, DEFAULTS.image_fit),
@@ -312,6 +343,7 @@ function normalizeConfig(config) {
     default_side: pick(config.default_side, SIDES, DEFAULTS.default_side),
     duration: num(config.duration, DEFAULTS.duration, 0, 1e4),
     auto_flip: num(config.auto_flip, DEFAULTS.auto_flip, 0, 86400),
+    // auto_advance is the older name; both advance to the next slide.
     auto_advance: num(config.auto_advance, DEFAULTS.auto_advance, 0, 86400),
     hover_flip: bool(config.hover_flip, DEFAULTS.hover_flip),
     show_hint: bool(config.show_hint, DEFAULTS.show_hint),
@@ -355,6 +387,7 @@ var en = {
   charsLeft: "{count} characters left",
   updated: "Updated {time}",
   page: "Picture {index} of {total}",
+  slide: "Slide {index} of {total}",
   nextPicture: "Next picture",
   previousPicture: "Previous picture",
   confirm: "Are you sure?",
@@ -391,17 +424,22 @@ var en = {
   editor_show_updated: "Show when the note was last changed",
   editor_show_navigation: "Show arrows and dots for several pictures",
   editor_layout: "Several pictures",
-  layout_stack: "One at a time (swipe / arrows)",
+  layout_stack: "One after another (tap / swipe)",
   layout_grid: "Side by side as tiles",
   editor_columns: "Tiles per row",
   editor_columns_help: "0 fits as many tiles as the width allows.",
   editor_auto_advance: "Next picture every",
   editor_auto_advance_help: "0 disables the slideshow.",
-  editor_pages: "Pictures",
-  editor_pages_help: "Each picture carries its own note. Swipe or use the arrows on the card to move between them.",
-  editor_add_page: "Add picture",
-  editor_remove_page: "Remove this picture",
+  editor_pages: "Pictures and notes",
+  editor_pages_help: "Up to 10 in any order. A tap on the card shows the next one; swiping and the arrows work too. A picture with a note counts as two.",
+  editor_add_page: "Picture",
+  editor_add_note: "Note",
+  editor_remove_page: "Remove",
   editor_page_label: "Picture {index}",
+  editor_kind_image: "Picture",
+  editor_kind_note: "Note",
+  editor_kind_both: "Picture + note",
+  editor_max_slides: "The card holds at most 10 pictures and notes.",
   editor_page_title: "Title for this picture (optional)",
   editor_page_title_help: "Falls back to the card title.",
   editor_move_left: "Move left",
@@ -452,6 +490,7 @@ var de = {
   charsLeft: "{count} Zeichen übrig",
   updated: "Geändert {time}",
   page: "Bild {index} von {total}",
+  slide: "Seite {index} von {total}",
   nextPicture: "Nächstes Bild",
   previousPicture: "Vorheriges Bild",
   confirm: "Bist du sicher?",
@@ -488,17 +527,22 @@ var de = {
   editor_show_updated: "Anzeigen, wann die Notiz zuletzt geändert wurde",
   editor_show_navigation: "Pfeile und Punkte bei mehreren Bildern anzeigen",
   editor_layout: "Mehrere Bilder",
-  layout_stack: "Nacheinander (wischen / Pfeile)",
+  layout_stack: "Nacheinander (tippen / wischen)",
   layout_grid: "Nebeneinander als Kacheln",
   editor_columns: "Kacheln pro Zeile",
   editor_columns_help: "0 nimmt so viele Kacheln nebeneinander, wie die Breite erlaubt.",
   editor_auto_advance: "Nächstes Bild alle",
   editor_auto_advance_help: "0 deaktiviert die Diashow.",
-  editor_pages: "Bilder",
-  editor_pages_help: "Jedes Bild hat seine eigene Notiz. Auf der Karte wischen oder die Pfeile nutzen, um zwischen den Bildern zu wechseln.",
-  editor_add_page: "Bild hinzufügen",
-  editor_remove_page: "Dieses Bild entfernen",
+  editor_pages: "Bilder und Notizen",
+  editor_pages_help: "Bis zu 10 in beliebiger Reihenfolge. Ein Tipp auf die Karte zeigt die nächste Seite, Wischen und Pfeile gehen auch. Ein Bild mit Notiz zählt als zwei.",
+  editor_add_page: "Bild",
+  editor_add_note: "Notiz",
+  editor_remove_page: "Entfernen",
   editor_page_label: "Bild {index}",
+  editor_kind_image: "Bild",
+  editor_kind_note: "Notiz",
+  editor_kind_both: "Bild + Notiz",
+  editor_max_slides: "Die Karte fasst höchstens 10 Bilder und Notizen.",
   editor_page_title: "Titel für dieses Bild (optional)",
   editor_page_title_help: "Sonst gilt der Kartentitel.",
   editor_move_left: "Nach links",
@@ -568,6 +612,11 @@ ha-card {
   border-radius: var(--imagenote-radius);
 }
 
+.hidden {
+  display: none !important;
+}
+
+/* ---------- stage & scene ---------- */
 .stage {
   position: relative;
   width: 100%;
@@ -593,7 +642,7 @@ ha-card {
   border-radius: inherit;
   box-shadow: inset 0 0 0 2px var(--primary-color);
   pointer-events: none;
-  z-index: 5;
+  z-index: 6;
 }
 
 .scene {
@@ -603,6 +652,7 @@ ha-card {
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  transition: transform var(--imagenote-duration) var(--imagenote-easing);
 }
 .stage.natural .scene {
   position: relative;
@@ -610,6 +660,10 @@ ha-card {
 }
 .scene.editing {
   cursor: default;
+}
+.scene.no-transition,
+.scene.no-transition .face {
+  transition: none !important;
 }
 
 .face {
@@ -620,163 +674,49 @@ ha-card {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   background: var(--imagenote-note-background);
-  transform: translateZ(0);
 }
-.stage.natural .face.front {
+.face.hidden-face {
+  visibility: hidden;
+}
+.stage.natural .face.current {
+  position: relative;
+  inset: auto;
+}
+.scene.mode-fade .face {
+  transition: opacity var(--imagenote-duration) ease;
+}
+.scene.mode-slide .face {
+  transition: transform var(--imagenote-duration) var(--imagenote-easing);
+}
+
+/* ---------- layers ---------- */
+.layer {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+.face.kind-image .layer-image {
+  display: block;
+}
+.face.kind-note .layer-note {
+  display: flex;
+  flex-direction: column;
+  color: var(--primary-text-color);
+}
+.stage.natural .face.current.kind-image .layer-image {
   position: relative;
   inset: auto;
 }
 
-/* ---------- transitions ---------- */
-.scene.flip,
-.scene.cube {
-  transition: transform var(--imagenote-duration) var(--imagenote-easing);
-}
-.scene.flip.horizontal .back { transform: rotateY(180deg); }
-.scene.flip.horizontal.flipped { transform: rotateY(180deg); }
-.scene.flip.vertical .back { transform: rotateX(-180deg); }
-.scene.flip.vertical.flipped { transform: rotateX(180deg); }
-
-.scene.fade .face {
-  transition:
-    opacity var(--imagenote-duration) ease,
-    visibility 0s linear var(--imagenote-duration);
-}
-.scene.fade .back { opacity: 0; visibility: hidden; }
-.scene.fade.flipped .back { opacity: 1; visibility: visible; transition-delay: 0s, 0s; }
-.scene.fade.flipped .front { opacity: 0; visibility: hidden; }
-
-.scene.slide .face {
-  transition: transform var(--imagenote-duration) var(--imagenote-easing);
-}
-.scene.slide.horizontal .back { transform: translateX(100%); }
-.scene.slide.horizontal.flipped .front { transform: translateX(-100%); }
-.scene.slide.horizontal.flipped .back { transform: translateX(0); }
-.scene.slide.vertical .back { transform: translateY(100%); }
-.scene.slide.vertical.flipped .front { transform: translateY(-100%); }
-.scene.slide.vertical.flipped .back { transform: translateY(0); }
-
-.scene.cube { transform: translateZ(calc(-1 * var(--imagenote-depth, 150px))); }
-.scene.cube .front { transform: translateZ(var(--imagenote-depth, 150px)); }
-.scene.cube.horizontal .back { transform: rotateY(90deg) translateZ(var(--imagenote-depth, 150px)); }
-.scene.cube.horizontal.flipped { transform: translateZ(calc(-1 * var(--imagenote-depth, 150px))) rotateY(-90deg); }
-.scene.cube.vertical .back { transform: rotateX(-90deg) translateZ(var(--imagenote-depth, 150px)); }
-.scene.cube.vertical.flipped { transform: translateZ(calc(-1 * var(--imagenote-depth, 150px))) rotateX(90deg); }
-
-.scene.none .back { visibility: hidden; }
-.scene.none.flipped .back { visibility: visible; }
-.scene.none.flipped .front { visibility: hidden; }
-
-/* ---------- picture side ---------- */
-.front img {
+.layer-image img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: var(--imagenote-fit, cover);
   background: var(--imagenote-placeholder-background);
-  transition: opacity 350ms ease;
 }
-.front img.layer-b {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-}
-.front img.layer-b.active {
-  opacity: 1;
-}
-.front img.layer-a.inactive {
-  opacity: 0;
-}
-.stage.natural .front img.layer-a {
+.stage.natural .face.current .layer-image img {
   height: auto;
-}
-.front img.hidden {
-  display: none;
-}
-
-.nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 200ms ease, background-color 150ms ease;
-  z-index: 3;
-  padding: 0;
-}
-.nav.prev { left: 8px; }
-.nav.next { right: 8px; }
-.nav:hover,
-.nav:focus-visible {
-  background: rgba(0, 0, 0, 0.55);
-  outline: none;
-}
-.scene:hover .nav,
-.stage:focus-within .nav {
-  opacity: 1;
-}
-@media (hover: none) {
-  .nav { opacity: 0.8; }
-}
-.nav.hidden {
-  display: none !important;
-}
-.back .nav {
-  color: var(--primary-text-color);
-  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
-}
-
-.dots {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 10px;
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  z-index: 3;
-  pointer-events: none;
-}
-.dots.hidden {
-  display: none;
-}
-.dots button {
-  appearance: none;
-  border: none;
-  padding: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.55);
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
-  cursor: pointer;
-  pointer-events: auto;
-  transition: transform 150ms ease, background-color 150ms ease;
-}
-.dots button.active {
-  background: #fff;
-  transform: scale(1.3);
-}
-.back .dots button {
-  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.25);
-  box-shadow: none;
-}
-.back .dots button.active {
-  background: var(--primary-color);
-}
-.title-overlay.with-dots {
-  padding-bottom: 26px;
 }
 .placeholder {
   position: absolute;
@@ -810,9 +750,6 @@ ha-card {
   font-size: 0.85em;
   max-width: 28em;
 }
-.placeholder.hidden {
-  display: none;
-}
 
 .title-overlay {
   position: absolute;
@@ -831,16 +768,11 @@ ha-card {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.title-overlay.hidden {
-  display: none;
+.stage.with-dots .title-overlay {
+  padding-bottom: 26px;
 }
 
-/* ---------- note side ---------- */
-.back {
-  display: flex;
-  flex-direction: column;
-  color: var(--primary-text-color);
-}
+/* ---------- note layer ---------- */
 .note-header {
   display: flex;
   align-items: center;
@@ -893,17 +825,12 @@ ha-card {
 .note-body ha-markdown p:first-child {
   margin-top: 0;
 }
-
 .note-footer {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 10px 10px 16px;
-  min-height: 24px;
-}
-.note-footer.hidden {
-  display: none;
+  padding: 4px 16px 10px;
+  min-height: 26px;
 }
 .note-footer::before {
   content: "";
@@ -917,32 +844,19 @@ ha-card {
   opacity: 0;
   transition: opacity 150ms ease;
 }
-.back.scrollable:not(.at-end) .note-footer::before {
+.layer-note.scrollable:not(.at-end) .note-footer::before {
   opacity: 1;
 }
 .note-meta {
-  flex: 1;
-  min-width: 0;
+  max-width: 55%;
   font-size: 0.75em;
   color: var(--secondary-text-color);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.note-meta.hidden,
 .note-meta:empty {
   display: none;
-}
-.note-footer .spacer {
-  flex: 1;
-}
-.back .dots {
-  position: static;
-  flex: none;
-}
-.back .badge {
-  position: static;
-  flex: none;
 }
 
 .icon-button {
@@ -966,9 +880,6 @@ ha-card {
   background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
   color: var(--primary-color);
   outline: none;
-}
-.icon-button.hidden {
-  display: none;
 }
 
 .note-editor {
@@ -1038,7 +949,6 @@ ha-card {
   color: var(--text-primary-color, #fff);
 }
 .btn.primary:hover:not(:disabled) {
-  background: var(--primary-color);
   filter: brightness(1.08);
 }
 .btn:disabled {
@@ -1053,7 +963,89 @@ ha-card {
   display: none;
 }
 
-/* ---------- flip hint badge ---------- */
+/* ---------- overlay: arrows, dots, hint badge ---------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+.nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 200ms ease, background-color 150ms ease;
+  padding: 0;
+  pointer-events: auto;
+}
+.nav.prev { left: 8px; }
+.nav.next { right: 8px; }
+.nav:hover,
+.nav:focus-visible {
+  background: rgba(0, 0, 0, 0.55);
+  outline: none;
+}
+.stage:hover .nav,
+.stage:focus-within .nav {
+  opacity: 1;
+}
+@media (hover: none) {
+  .nav { opacity: 0.8; }
+}
+.stage.kind-note .nav {
+  color: var(--primary-text-color);
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
+}
+.stage.editing .nav {
+  display: none;
+}
+
+.dots {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+.dots button {
+  appearance: none;
+  border: none;
+  padding: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 150ms ease, background-color 150ms ease;
+}
+.dots button.active {
+  background: #fff;
+  transform: scale(1.3);
+}
+.stage.kind-note .dots button {
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.25);
+  box-shadow: none;
+}
+.stage.kind-note .dots button.active {
+  background: var(--primary-color);
+}
+
 .badge {
   position: absolute;
   right: 10px;
@@ -1072,27 +1064,24 @@ ha-card {
   -webkit-backdrop-filter: blur(6px);
   opacity: 0.85;
   transition: opacity 200ms ease, transform 200ms ease;
-  pointer-events: none;
-  z-index: 2;
 }
 .badge ha-icon {
   --mdc-icon-size: 16px;
 }
-.back .badge {
+.stage.kind-note .badge {
   color: var(--primary-text-color);
   background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
 }
-.scene:hover .badge {
+.stage:hover .badge {
   opacity: 1;
   transform: translateY(-2px);
 }
-.badge.hidden,
-.scene.editing .badge {
+.stage.editing .badge,
+.stage.editing .dots {
   display: none;
 }
-
 @media (hover: hover) {
-  .scene.hover-flip:not(.editing):hover .badge {
+  .stage.hover-flip:not(.editing):hover .badge {
     opacity: 0;
   }
 }
@@ -1134,12 +1123,12 @@ ha-card {
   .badge span { display: none; }
   .badge { padding: 5px; gap: 0; }
   .title-overlay { font-size: 1em; padding: 24px 12px 10px; }
-  .title-overlay.with-dots { padding-bottom: 22px; }
+  .stage.with-dots .title-overlay { padding-bottom: 22px; }
   .note-header { padding: 8px 8px 4px 12px; gap: 8px; }
   .note-header .title { font-size: 1em; }
   .note-header ha-icon { --mdc-icon-size: 20px; }
   .note-body { padding: 0 12px 6px; font-size: 0.92em; line-height: 1.4; }
-  .note-footer { padding: 2px 8px 8px 12px; }
+  .note-footer { padding: 2px 12px 8px; }
   .nav { width: 28px; height: 28px; }
   .nav ha-icon { --mdc-icon-size: 20px; }
   .placeholder small { display: none; }
@@ -1148,7 +1137,7 @@ ha-card {
   .note-meta { display: none; }
   .note-header { padding-top: 6px; padding-bottom: 2px; }
   .note-body { padding-bottom: 4px; }
-  .note-footer { padding-top: 0; padding-bottom: 6px; }
+  .note-footer { padding-top: 0; padding-bottom: 6px; min-height: 22px; }
   .title-overlay { padding-top: 20px; }
   .placeholder ha-icon { display: none; }
 }
@@ -1188,54 +1177,47 @@ function formatRelativeTime(date, language, now = /* @__PURE__ */ new Date()) {
 }
 
 // src/card.ts
-var CHEVRON_LEFT = "mdi:chevron-left";
-var CHEVRON_RIGHT = "mdi:chevron-right";
-var NAV_TEMPLATE = `
-  <button class="nav prev" type="button"><ha-icon icon="${CHEVRON_LEFT}"></ha-icon></button>
-  <button class="nav next" type="button"><ha-icon icon="${CHEVRON_RIGHT}"></ha-icon></button>
-  <div class="dots"></div>`;
+var FACE_TEMPLATE = `
+  <div class="layer layer-image">
+    <img alt="" draggable="false" />
+    <div class="placeholder">
+      <ha-icon icon="mdi:image-plus-outline"></ha-icon>
+      <strong></strong>
+      <small></small>
+    </div>
+    <div class="title-overlay"></div>
+  </div>
+  <div class="layer layer-note">
+    <div class="note-header">
+      <ha-icon icon="mdi:note-text-outline"></ha-icon>
+      <span class="title"></span>
+      <button class="icon-button edit" type="button"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
+    </div>
+    <div class="note-body"></div>
+    <div class="note-editor">
+      <textarea rows="4" spellcheck="true"></textarea>
+      <div class="error-text"></div>
+      <div class="actions">
+        <span class="counter"></span>
+        <button class="btn cancel" type="button"></button>
+        <button class="btn primary save" type="button"></button>
+      </div>
+    </div>
+    <div class="note-footer"><div class="note-meta"></div></div>
+  </div>`;
 var TEMPLATE = `
 <style>${CARD_STYLES}</style>
 <ha-card>
-  <div class="stage" tabindex="0" role="button" aria-pressed="false">
+  <div class="stage" tabindex="0" role="button">
     <div class="scene">
-      <div class="face front">
-        <img class="layer-a" alt="" draggable="false" />
-        <img class="layer-b" alt="" draggable="false" />
-        <div class="placeholder">
-          <ha-icon icon="mdi:image-plus-outline"></ha-icon>
-          <strong></strong>
-          <small></small>
-        </div>
-        <div class="title-overlay"></div>
-        ${NAV_TEMPLATE}
-        <div class="badge front-badge"><ha-icon icon="mdi:note-text-outline"></ha-icon><span></span></div>
-      </div>
-      <div class="face back">
-        <div class="note-header">
-          <ha-icon icon="mdi:note-text-outline"></ha-icon>
-          <span class="title"></span>
-          <button class="icon-button edit" type="button"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
-        </div>
-        <div class="note-body"></div>
-        <div class="note-editor">
-          <textarea rows="4" spellcheck="true"></textarea>
-          <div class="error-text"></div>
-          <div class="actions">
-            <span class="counter"></span>
-            <button class="btn cancel" type="button"></button>
-            <button class="btn primary save" type="button"></button>
-          </div>
-        </div>
-        <div class="note-footer">
-          <div class="note-meta"></div>
-          <div class="spacer"></div>
-          <div class="dots"></div>
-          <div class="badge back-badge"><ha-icon icon="mdi:image-outline"></ha-icon><span></span></div>
-        </div>
-        <button class="nav prev" type="button"><ha-icon icon="${CHEVRON_LEFT}"></ha-icon></button>
-        <button class="nav next" type="button"><ha-icon icon="${CHEVRON_RIGHT}"></ha-icon></button>
-      </div>
+      <div class="face face-a current">${FACE_TEMPLATE}</div>
+      <div class="face face-b hidden-face">${FACE_TEMPLATE}</div>
+    </div>
+    <div class="overlay">
+      <button class="nav prev hidden" type="button"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+      <button class="nav next hidden" type="button"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
+      <div class="dots hidden"></div>
+      <div class="badge hidden"><ha-icon></ha-icon><span></span></div>
     </div>
   </div>
 </ha-card>`;
@@ -1258,27 +1240,26 @@ var ImageNoteCard = class extends HTMLElement {
   _config;
   _hass;
   _lang = "en";
-  _side = "image";
   _index = 0;
+  _current = 0;
+  _angle = 0;
+  _faceAngle = [0, 0];
+  _animTimer;
   _editing = false;
   _saving = false;
   _els;
-  _activeLayer = "a";
+  _tiles;
   _resolved = /* @__PURE__ */ new Map();
-  _resolveToken = 0;
   _mediaPending = false;
   _refreshTimer;
-  _autoFlipTimer;
-  _autoAdvanceTimer;
+  _autoTimer;
+  _metaTimer;
   _resizeObserver;
+  _gestures;
   _motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   _hoverQuery = window.matchMedia("(hover: hover)");
   _lastNote;
-  _lastImageSrc;
-  _gestures;
-  _metaTimer;
   _markdownReady = customElements.get("ha-markdown") !== void 0;
-  _tiles;
   constructor() {
     super();
     this._root = this.attachShadow({ mode: "open" });
@@ -1289,7 +1270,8 @@ var ImageNoteCard = class extends HTMLElement {
     this._motionQuery.addEventListener("change", this._onMotionChange);
     this._observeResize();
     this._startTimers();
-    this._startMetaTimer();
+    window.clearInterval(this._metaTimer);
+    this._metaTimer = window.setInterval(() => this._renderMeta(), 3e4);
   }
   disconnectedCallback() {
     this._motionQuery.removeEventListener("change", this._onMotionChange);
@@ -1297,6 +1279,7 @@ var ImageNoteCard = class extends HTMLElement {
     this._resizeObserver = void 0;
     this._stopTimers();
     window.clearTimeout(this._refreshTimer);
+    window.clearTimeout(this._animTimer);
     window.clearInterval(this._metaTimer);
     this._metaTimer = void 0;
   }
@@ -1304,25 +1287,26 @@ var ImageNoteCard = class extends HTMLElement {
     validateConfig(config);
     this._config = normalizeConfig(config);
     this._stopTimers();
+    window.clearTimeout(this._animTimer);
     this._gestures?.destroy();
     this._gestures = void 0;
     this._els = void 0;
     this._tiles = void 0;
-    if (this._config.layout === "grid" && this._config.pages.length > 1) {
-      this._buildTiles(config);
-      return;
-    }
-    this._side = this._config.default_side;
-    this._index = 0;
     this._editing = false;
     this._saving = false;
     this._lastNote = void 0;
-    this._lastImageSrc = void 0;
     this._resolved.clear();
-    this._activeLayer = "a";
+    if (this._config.layout === "grid" && this._config.entries.length > 1) {
+      this._buildTiles(config);
+      return;
+    }
     this._build();
     this._applyConfig();
-    this._showPage(0, true);
+    this._index = this._startIndex();
+    this._current = 0;
+    this._resetPositions();
+    this._renderSlide(this._els.faces[0], this._slide);
+    this._afterSlideChange(false);
     this._observeResize();
     this._startTimers();
   }
@@ -1337,8 +1321,8 @@ var ImageNoteCard = class extends HTMLElement {
       for (const tile of this._tiles) tile.hass = hass;
       return;
     }
-    if (this._mediaPending) {
-      this._resolveImage();
+    if (this._mediaPending && this._els) {
+      this._applyImage(this._currentFace, this._slide);
     }
     this._applyHass();
   }
@@ -1356,35 +1340,62 @@ var ImageNoteCard = class extends HTMLElement {
     }
     return { columns: 6, rows: 4, min_columns: 4, min_rows: 2 };
   }
-  /** Public helper so automations / other cards can flip the card programmatically. */
+  /** Next slide, or the first slide of the given kind. Also used by automations via the element. */
   flip(side) {
     if (this._tiles) {
       for (const tile of this._tiles) tile.flip(side);
       return;
     }
-    if (this._editing) return;
-    this._setSide(side ?? (this._side === "image" ? "note" : "image"));
-    this._restartTimers();
+    if (!this._config || this._editing) return;
+    if (side) {
+      const target = this._config.slides.findIndex((slide) => slide.kind === side);
+      if (target >= 0 && target !== this._index) this._go(target, target > this._index ? 1 : -1, true);
+      return;
+    }
+    this.goTo("next");
   }
-  /** Go to a picture by index (wraps around), or one step with "next" / "prev". */
+  /** Go to a slide by index (wraps around), or one step with "next" / "prev". */
   goTo(target) {
     const config = this._config;
-    if (!config || this._editing) return;
-    const total = config.pages.length;
+    if (!config || this._editing || this._tiles) return;
+    const total = config.slides.length;
     if (total < 2) return;
     let index;
-    if (target === "next") index = (this._index + 1) % total;
-    else if (target === "prev") index = (this._index - 1 + total) % total;
-    else index = (Math.trunc(target) % total + total) % total;
+    let dir = 1;
+    if (target === "next") {
+      index = (this._index + 1) % total;
+    } else if (target === "prev") {
+      index = (this._index - 1 + total) % total;
+      dir = -1;
+    } else {
+      index = (Math.trunc(target) % total + total) % total;
+      dir = index >= this._index ? 1 : -1;
+    }
     if (index === this._index) return;
-    this._showPage(index);
+    this._go(index, dir, true);
     this._restartTimers();
   }
-  get page() {
-    return this._config?.pages[this._index];
+  get slide() {
+    return this._slide;
+  }
+  get _slide() {
+    const slides = this._config?.slides ?? [];
+    return slides[Math.min(this._index, slides.length - 1)];
+  }
+  get _currentFace() {
+    return this._els.faces[this._current];
+  }
+  _startIndex() {
+    const config = this._config;
+    if (!config) return 0;
+    if (config.default_side === "note") {
+      const first = config.slides.findIndex((slide) => slide.kind === "note");
+      if (first >= 0) return first;
+    }
+    return 0;
   }
   // ---------------------------------------------------------------- tiles
-  /** layout: grid — every picture becomes its own tile, each a full card of its own. */
+  /** layout: grid — every config entry becomes its own tile, each a complete card of its own. */
   _buildTiles(raw) {
     const config = this._config;
     if (!config) return;
@@ -1402,69 +1413,73 @@ var ImageNoteCard = class extends HTMLElement {
       grid.style.setProperty("--imagenote-columns", String(config.columns));
     }
     const shared = { ...raw };
-    for (const key of ["images", "image", "image_entity", "note", "note_entity", "note_attribute", "title", "layout", "columns"]) {
+    for (const key of ["slides", "images", "image", "image_entity", "note", "note_entity", "note_attribute", "title", "layout", "columns"]) {
       delete shared[key];
     }
-    this._tiles = config.pages.map((page) => {
+    this._tiles = config.entries.map((entry) => {
       const tile = document.createElement(CARD_TYPE);
       tile.setConfig({
         ...shared,
         type: raw.type,
         layout: "stack",
-        title: page.title,
-        image: page.image,
-        image_entity: page.image_entity,
-        note: page.note,
-        note_entity: page.note_entity,
-        note_attribute: page.note_attribute
+        title: entry.title,
+        image: entry.image,
+        image_entity: entry.image_entity,
+        note: entry.note,
+        note_entity: entry.note_entity,
+        note_attribute: entry.note_attribute
       });
       if (this._hass) tile.hass = this._hass;
       grid.append(tile);
       return tile;
     });
   }
-  // ---------------------------------------------------------------- rendering
+  // ---------------------------------------------------------------- building
   _build() {
     this._root.innerHTML = TEMPLATE;
-    const q = (selector) => {
-      const el = this._root.querySelector(selector);
+    const q = (root, selector) => {
+      const el = root.querySelector(selector);
       if (!el) throw new Error(`ImageNote: missing element ${selector}`);
       return el;
     };
+    const face = (el) => ({
+      el,
+      img: q(el, "img"),
+      placeholder: q(el, ".placeholder"),
+      placeholderTitle: q(el, ".placeholder strong"),
+      placeholderHelp: q(el, ".placeholder small"),
+      placeholderIcon: q(el, ".placeholder ha-icon"),
+      titleOverlay: q(el, ".title-overlay"),
+      noteLayer: q(el, ".layer-note"),
+      noteHeader: q(el, ".note-header"),
+      noteTitle: q(el, ".note-header .title"),
+      editButton: q(el, ".edit"),
+      noteBody: q(el, ".note-body"),
+      noteFooter: q(el, ".note-footer"),
+      noteMeta: q(el, ".note-meta"),
+      noteEditor: q(el, ".note-editor"),
+      textarea: q(el, "textarea"),
+      errorText: q(el, ".error-text"),
+      counter: q(el, ".counter"),
+      saveButton: q(el, ".save"),
+      cancelButton: q(el, ".cancel"),
+      src: "",
+      failed: false,
+      resolveToken: 0
+    });
     this._els = {
-      card: q("ha-card"),
-      stage: q(".stage"),
-      scene: q(".scene"),
-      front: q(".front"),
-      back: q(".back"),
-      imgA: q("img.layer-a"),
-      imgB: q("img.layer-b"),
-      placeholder: q(".placeholder"),
-      placeholderTitle: q(".placeholder strong"),
-      placeholderHelp: q(".placeholder small"),
-      placeholderIcon: q(".placeholder ha-icon"),
-      titleOverlay: q(".title-overlay"),
-      frontBadge: q(".front-badge"),
-      frontBadgeLabel: q(".front-badge span"),
-      backBadge: q(".back-badge"),
-      backBadgeLabel: q(".back-badge span"),
-      noteHeader: q(".note-header"),
-      noteTitle: q(".note-header .title"),
-      editButton: q(".edit"),
-      noteBody: q(".note-body"),
-      noteMeta: q(".note-meta"),
-      noteFooter: q(".note-footer"),
-      noteEditor: q(".note-editor"),
-      textarea: q("textarea"),
-      errorText: q(".error-text"),
-      counter: q(".counter"),
-      saveButton: q(".save"),
-      cancelButton: q(".cancel"),
-      navButtons: Array.from(this._root.querySelectorAll(".nav")),
-      dots: Array.from(this._root.querySelectorAll(".dots"))
+      card: q(this._root, "ha-card"),
+      stage: q(this._root, ".stage"),
+      scene: q(this._root, ".scene"),
+      faces: [face(q(this._root, ".face-a")), face(q(this._root, ".face-b"))],
+      prev: q(this._root, ".nav.prev"),
+      next: q(this._root, ".nav.next"),
+      dots: q(this._root, ".dots"),
+      badge: q(this._root, ".badge"),
+      badgeIcon: q(this._root, ".badge ha-icon"),
+      badgeLabel: q(this._root, ".badge span")
     };
     const els = this._els;
-    this._gestures?.destroy();
     this._gestures = new GestureDetector(els.stage, (kind) => void this._handleGesture(kind), {
       holdDelay: HOLD_DELAY_MS,
       doubleTapWindow: DOUBLE_TAP_WINDOW_MS,
@@ -1476,35 +1491,37 @@ var ImageNoteCard = class extends HTMLElement {
     els.stage.addEventListener("keydown", this._onStageKeydown);
     els.stage.addEventListener("mouseenter", this._onMouseEnter);
     els.stage.addEventListener("mouseleave", this._onMouseLeave);
-    for (const img of [els.imgA, els.imgB]) {
-      img.addEventListener("error", () => this._onImageError(img));
-      img.addEventListener("load", () => this._onImageLoad(img));
-    }
-    els.editButton.addEventListener("click", (ev) => {
+    els.prev.addEventListener("click", (ev) => {
       ev.stopPropagation();
-      this._startEdit();
+      this.goTo("prev");
     });
-    for (const button of els.navButtons) {
-      button.addEventListener("click", (ev) => {
+    els.next.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.goTo("next");
+    });
+    for (const view of els.faces) {
+      view.img.addEventListener("error", () => this._onImageError(view));
+      view.img.addEventListener("load", () => this._onImageLoad(view));
+      view.editButton.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        this.goTo(button.classList.contains("next") ? "next" : "prev");
+        if (view === this._currentFace) this._startEdit();
       });
+      view.noteEditor.addEventListener("click", (ev) => ev.stopPropagation());
+      view.noteEditor.addEventListener("keydown", (ev) => ev.stopPropagation());
+      view.textarea.addEventListener("input", () => this._updateCounter());
+      view.textarea.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          this._cancelEdit();
+        } else if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
+          ev.preventDefault();
+          void this._saveEdit();
+        }
+      });
+      view.cancelButton.addEventListener("click", () => this._cancelEdit());
+      view.saveButton.addEventListener("click", () => void this._saveEdit());
+      view.noteBody.addEventListener("scroll", () => this._updateScrollState(view), { passive: true });
     }
-    els.noteEditor.addEventListener("click", (ev) => ev.stopPropagation());
-    els.noteEditor.addEventListener("keydown", (ev) => ev.stopPropagation());
-    els.textarea.addEventListener("input", () => this._updateCounter());
-    els.textarea.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape") {
-        ev.preventDefault();
-        this._cancelEdit();
-      } else if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
-        ev.preventDefault();
-        void this._saveEdit();
-      }
-    });
-    els.cancelButton.addEventListener("click", () => this._cancelEdit());
-    els.saveButton.addEventListener("click", () => void this._saveEdit());
-    els.noteBody.addEventListener("scroll", () => this._updateScrollState(), { passive: true });
     this._buildDots();
     this._applyStrings();
   }
@@ -1512,27 +1529,23 @@ var ImageNoteCard = class extends HTMLElement {
     const els = this._els;
     const config = this._config;
     if (!els || !config) return;
-    const total = config.pages.length;
-    const show = total > 1 && config.show_navigation;
-    for (const container of els.dots) {
-      container.replaceChildren();
-      container.classList.toggle("hidden", !show);
-      if (!show) continue;
-      for (let i = 0; i < total; i++) {
-        const dot = document.createElement("button");
-        dot.type = "button";
-        dot.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          this.goTo(i);
-        });
-        container.append(dot);
-      }
+    const total = config.slides.length;
+    const show = total > 2 && config.show_navigation;
+    els.dots.replaceChildren();
+    els.dots.classList.toggle("hidden", !show);
+    els.prev.classList.toggle("hidden", !show);
+    els.next.classList.toggle("hidden", !show);
+    els.stage.classList.toggle("with-dots", show);
+    if (!show) return;
+    for (let i = 0; i < total; i++) {
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.goTo(i);
+      });
+      els.dots.append(dot);
     }
-    for (const button of els.navButtons) {
-      button.classList.toggle("hidden", !show);
-    }
-    els.titleOverlay.classList.toggle("with-dots", show);
-    this._updateFooter();
   }
   _applyConfig() {
     const els = this._els;
@@ -1547,174 +1560,250 @@ var ImageNoteCard = class extends HTMLElement {
       els.stage.style.removeProperty("--imagenote-aspect");
     }
     this.style.setProperty("--imagenote-fit", config.image_fit);
-    this._applyTransition();
-    els.scene.classList.toggle("hover-flip", config.hover_flip);
-    els.frontBadge.classList.toggle("hidden", !config.show_hint);
-    els.backBadge.classList.toggle("hidden", !config.show_hint);
-    this._applySide();
-    this._updateFooter();
+    els.stage.classList.toggle("hover-flip", config.hover_flip);
+    els.badge.classList.toggle("hidden", !config.show_hint || config.slides.length < 2);
+    this._applyMode();
   }
-  _updateFooter() {
-    const els = this._els;
+  _mode() {
     const config = this._config;
-    if (!els || !config) return;
-    const hasMeta = !els.noteMeta.classList.contains("hidden") && els.noteMeta.textContent !== "";
-    const hasDots = config.pages.length > 1 && config.show_navigation;
-    els.noteFooter.classList.toggle("hidden", this._editing || !hasMeta && !hasDots && !config.show_hint);
-    this._updateScrollState();
+    if (!config) return "flip";
+    return this._motionQuery.matches && config.transition !== "none" ? "fade" : config.transition;
   }
-  /** Marks the note side as scrollable so the footer can fade the text out above it. */
-  _updateScrollState() {
-    const els = this._els;
-    if (!els) return;
-    const body = els.noteBody;
-    const scrollable = body.scrollHeight > body.clientHeight + 1;
-    const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
-    els.back.classList.toggle("scrollable", scrollable);
-    els.back.classList.toggle("at-end", atEnd);
-  }
-  _applyTitles() {
-    const els = this._els;
-    const config = this._config;
-    if (!els || !config) return;
-    const title = this.page?.title || config.title;
-    const showTitle = config.show_title && title !== "";
-    els.titleOverlay.textContent = title;
-    els.titleOverlay.classList.toggle("hidden", !showTitle);
-    els.noteTitle.textContent = title || translate(this._lang, "note");
-    els.noteHeader.classList.toggle("no-title", title === "");
-  }
-  _applyTransition() {
+  _applyMode() {
     const els = this._els;
     const config = this._config;
     if (!els || !config) return;
     const reduced = this._motionQuery.matches;
-    const transition = reduced && config.transition !== "none" ? "fade" : config.transition;
     const duration = reduced ? Math.min(config.duration, 200) : config.duration;
-    els.scene.classList.remove("flip", "fade", "slide", "cube", "none", "horizontal", "vertical");
-    els.scene.classList.add(transition, config.direction);
     this.style.setProperty("--imagenote-duration", `${duration}ms`);
-    this._updateDepth();
+    els.scene.classList.remove("mode-flip", "mode-fade", "mode-slide", "mode-cube", "mode-none");
+    els.scene.classList.add(`mode-${this._mode()}`);
+    this._resetPositions();
   }
   _applyStrings() {
     const els = this._els;
     if (!els) return;
     const t = (key) => translate(this._lang, key);
-    els.frontBadgeLabel.textContent = t("note");
-    els.backBadgeLabel.textContent = t("photo");
-    els.editButton.title = t("editNote");
-    els.editButton.setAttribute("aria-label", t("editNote"));
-    els.cancelButton.textContent = t("cancel");
-    els.saveButton.textContent = this._saving ? t("saving") : t("save");
-    for (const button of els.navButtons) {
-      const label = t(button.classList.contains("next") ? "nextPicture" : "previousPicture");
-      button.title = label;
-      button.setAttribute("aria-label", label);
+    for (const view of els.faces) {
+      view.editButton.title = t("editNote");
+      view.editButton.setAttribute("aria-label", t("editNote"));
+      view.cancelButton.textContent = t("cancel");
+      view.saveButton.textContent = this._saving ? t("saving") : t("save");
     }
-    this._applyTitles();
-    this._updatePlaceholder();
-    this._applySide();
-    this._lastNote = void 0;
-    this._applyHass();
+    els.prev.title = t("previousPicture");
+    els.prev.setAttribute("aria-label", t("previousPicture"));
+    els.next.title = t("nextPicture");
+    els.next.setAttribute("aria-label", t("nextPicture"));
+    if (this._config) {
+      this._lastNote = void 0;
+      this._renderSlide(this._currentFace, this._slide);
+      this._afterSlideChange(false);
+    }
   }
-  _applySide() {
+  // ---------------------------------------------------------------- slide engine
+  _rot() {
+    return this._config?.direction === "vertical" ? "rotateX" : "rotateY";
+  }
+  _depth() {
+    const els = this._els;
+    if (!els) return 150;
+    const rect = els.stage.getBoundingClientRect();
+    const size = this._config?.direction === "vertical" ? rect.height : rect.width;
+    return size > 0 ? size / 2 : 150;
+  }
+  /** Where a face sits for a given angle, per transition mode. */
+  _faceTransform(angle) {
+    const mode = this._mode();
+    const sign = this._config?.direction === "vertical" ? -1 : 1;
+    if (mode === "flip") return `${this._rot()}(${sign * angle}deg)`;
+    if (mode === "cube") return `${this._rot()}(${sign * angle}deg) translateZ(${this._depth()}px)`;
+    return "";
+  }
+  _sceneTransform(angle) {
+    const mode = this._mode();
+    const sign = this._config?.direction === "vertical" ? -1 : 1;
+    if (mode === "flip") return `${this._rot()}(${-sign * angle}deg)`;
+    if (mode === "cube") return `translateZ(${-this._depth()}px) ${this._rot()}(${-sign * angle}deg)`;
+    return "";
+  }
+  /** Puts the current face in front without animation and parks the other one. */
+  _resetPositions() {
+    const els = this._els;
+    if (!els) return;
+    window.clearTimeout(this._animTimer);
+    this._angle = 0;
+    this._faceAngle = [0, 0];
+    els.scene.classList.add("no-transition");
+    els.scene.style.transform = this._sceneTransform(0);
+    els.faces.forEach((view, i) => {
+      view.el.style.transform = this._faceTransform(0);
+      view.el.style.opacity = "";
+      const isCurrent = i === this._current;
+      view.el.classList.toggle("current", isCurrent);
+      view.el.classList.toggle("hidden-face", !isCurrent);
+    });
+    void els.scene.offsetWidth;
+    els.scene.classList.remove("no-transition");
+  }
+  _go(index, dir, animate) {
     const els = this._els;
     const config = this._config;
-    if (!els || !config) return;
-    const flipped = this._side === "note";
-    els.scene.classList.toggle("flipped", flipped);
-    els.stage.setAttribute("aria-pressed", String(flipped));
-    const title = this.page?.title || config.title;
-    const parts = [];
-    if (title) parts.push(title);
-    if (config.pages.length > 1) {
-      parts.push(translate(this._lang, "page", { index: this._index + 1, total: config.pages.length }));
-    }
-    parts.push(translate(this._lang, flipped ? "showPhoto" : "showNote"));
-    els.stage.setAttribute("aria-label", parts.join(" – "));
-  }
-  _setSide(side) {
-    if (side === this._side) return;
-    this._side = side;
-    this._applySide();
-    this.dispatchEvent(
-      new CustomEvent("imagenote-flip", { detail: { side, index: this._index }, bubbles: true, composed: true })
-    );
-  }
-  // ---------------------------------------------------------------- pages
-  _showPage(index, initial = false) {
-    const els = this._els;
-    const config = this._config;
-    if (!els || !config) return;
+    if (!els || !config || this._editing) return;
+    const slide = config.slides[index];
+    if (!slide) return;
+    const fromIndex = this._current;
+    const toIndex = fromIndex === 0 ? 1 : 0;
+    const from = els.faces[fromIndex];
+    const to = els.faces[toIndex];
+    const mode = animate ? this._mode() : "none";
+    const duration = Number.parseFloat(getComputedStyle(this).getPropertyValue("--imagenote-duration")) || 0;
+    window.clearTimeout(this._animTimer);
     this._index = index;
-    for (const container of els.dots) {
-      Array.from(container.children).forEach((dot, i) => dot.classList.toggle("active", i === index));
-    }
-    this._applyTitles();
-    this._applySide();
     this._lastNote = void 0;
-    this._lastImageSrc = void 0;
-    this._resolveImage();
-    this._applyHass();
-    if (!initial) {
-      this.dispatchEvent(
-        new CustomEvent("imagenote-page", { detail: { index }, bubbles: true, composed: true })
-      );
+    this._renderSlide(to, slide);
+    to.el.classList.remove("hidden-face");
+    to.el.classList.add("current");
+    from.el.classList.remove("current");
+    const axis = config.direction === "vertical" ? "translateY" : "translateX";
+    switch (mode) {
+      case "flip":
+      case "cube": {
+        this._angle += dir * (mode === "flip" ? 180 : 90);
+        this._faceAngle[toIndex] = this._angle;
+        to.el.style.transform = this._faceTransform(this._angle);
+        els.scene.style.transform = this._sceneTransform(this._angle);
+        break;
+      }
+      case "slide": {
+        els.scene.classList.add("no-transition");
+        to.el.style.transform = `${axis}(${dir * 100}%)`;
+        from.el.style.transform = `${axis}(0)`;
+        void els.scene.offsetWidth;
+        els.scene.classList.remove("no-transition");
+        to.el.style.transform = `${axis}(0)`;
+        from.el.style.transform = `${axis}(${-dir * 100}%)`;
+        break;
+      }
+      case "fade": {
+        els.scene.classList.add("no-transition");
+        to.el.style.opacity = "0";
+        from.el.style.opacity = "1";
+        void els.scene.offsetWidth;
+        els.scene.classList.remove("no-transition");
+        to.el.style.opacity = "1";
+        from.el.style.opacity = "0";
+        break;
+      }
+      default: {
+        this._current = toIndex;
+        this._resetPositions();
+        break;
+      }
+    }
+    this._current = toIndex;
+    this._lastNote = slide.kind === "note" ? this._noteSource(slide) : void 0;
+    if (mode !== "none") {
+      this._animTimer = window.setTimeout(() => {
+        from.el.classList.add("hidden-face");
+        this._updateScrollState(to);
+      }, duration);
+    }
+    this._afterSlideChange(true);
+  }
+  /** Dots, badge, aria and events after the visible slide changed. */
+  _afterSlideChange(emit) {
+    const els = this._els;
+    const config = this._config;
+    if (!els || !config) return;
+    const slide = this._slide;
+    const total = config.slides.length;
+    els.stage.classList.toggle("kind-note", slide.kind === "note");
+    Array.from(els.dots.children).forEach((dot, i) => dot.classList.toggle("active", i === this._index));
+    const next = config.slides[(this._index + 1) % total];
+    const t = (key, vars) => translate(this._lang, key, vars);
+    if (next && total > 1) {
+      els.badgeIcon.setAttribute("icon", next.kind === "note" ? "mdi:note-text-outline" : "mdi:image-outline");
+      els.badgeLabel.textContent = t(next.kind === "note" ? "note" : "photo");
+    }
+    const parts = [];
+    const title = slide.title || config.title;
+    if (title) parts.push(title);
+    if (total > 1) parts.push(t("slide", { index: this._index + 1, total }));
+    if (next && total > 1) parts.push(t(next.kind === "note" ? "showNote" : "showPhoto"));
+    els.stage.setAttribute("aria-label", parts.join(" – "));
+    els.stage.setAttribute("aria-pressed", String(slide.kind === "note"));
+    this._updateScrollState(this._currentFace);
+    if (emit) {
+      const detail = { index: this._index, kind: slide.kind, side: slide.kind };
+      this.dispatchEvent(new CustomEvent("imagenote-slide", { detail, bubbles: true, composed: true }));
+      this.dispatchEvent(new CustomEvent("imagenote-flip", { detail, bubbles: true, composed: true }));
     }
   }
   _onSwipe(direction) {
-    if (!this._config || this._config.pages.length < 2 || this._editing) return;
+    if (!this._config || this._config.slides.length < 2 || this._editing) return;
     this.goTo(direction === "left" ? "next" : "prev");
   }
+  // ---------------------------------------------------------------- rendering a slide into a face
+  _renderSlide(view, slide) {
+    const config = this._config;
+    if (!config) return;
+    view.el.classList.toggle("kind-image", slide.kind === "image");
+    view.el.classList.toggle("kind-note", slide.kind === "note");
+    const title = slide.title || config.title;
+    if (slide.kind === "image") {
+      view.titleOverlay.textContent = title;
+      view.titleOverlay.classList.toggle("hidden", !(config.show_title && title));
+      this._applyImage(view, slide);
+    } else {
+      view.noteTitle.textContent = title || translate(this._lang, "note");
+      view.noteHeader.classList.toggle("no-title", !title);
+      const source = this._noteSource(slide);
+      if (view === this._currentFace) this._lastNote = source;
+      view.editButton.classList.toggle("hidden", !source.editable);
+      this._renderNote(view, source);
+      this._renderMetaFor(view, source);
+    }
+  }
   // ---------------------------------------------------------------- picture
-  _imageSourceFromEntity(page) {
-    if (!page.image_entity || !this._hass) return void 0;
-    const entity = this._hass.states[page.image_entity];
+  _imageSourceFromEntity(slide) {
+    if (!slide.image_entity || !this._hass) return void 0;
+    const entity = this._hass.states[slide.image_entity];
     if (!entity) return void 0;
     const picture = entity.attributes.entity_picture;
     if (typeof picture !== "string" || !picture) return void 0;
-    const domain = page.image_entity.split(".")[0];
+    const domain = slide.image_entity.split(".")[0];
     if (domain === "image" || domain === "camera") {
       const join = picture.includes("?") ? "&" : "?";
       return `${picture}${join}state=${encodeURIComponent(entity.state)}`;
     }
     return picture;
   }
-  _resolveImage() {
-    const page = this.page;
-    if (!page) return;
-    const index = this._index;
-    const token = ++this._resolveToken;
-    window.clearTimeout(this._refreshTimer);
+  _applyImage(view, slide) {
+    const token = ++view.resolveToken;
     this._mediaPending = false;
-    if (page.image_entity) {
-      this._setImage(this._imageSourceFromEntity(page) ?? "", false);
+    if (slide.image_entity) {
+      this._setImage(view, this._imageSourceFromEntity(slide) ?? "", false);
       return;
     }
-    const image = page.image;
+    const image = slide.image;
     if (!image) {
-      this._setImage("", false);
+      this._setImage(view, "", false);
       return;
     }
-    let mediaId;
-    if (typeof image === "string") {
-      if (!isMediaSourceId(image)) {
-        this._setImage(image, false);
-        return;
-      }
-      mediaId = image;
-    } else {
-      mediaId = image.media_content_id;
+    const mediaId = typeof image === "string" ? isMediaSourceId(image) ? image : void 0 : image.media_content_id;
+    if (!mediaId) {
+      this._setImage(view, image, false);
+      return;
     }
-    const cached = this._resolved.get(index);
+    const cached = this._resolved.get(mediaId);
     if (cached && !cached.failed && cached.expiresAt > Date.now()) {
-      this._setImage(cached.url, false);
+      this._setImage(view, cached.url, false);
       this._scheduleRefresh(cached.expiresAt);
       return;
     }
     if (!this._hass) {
       this._mediaPending = true;
-      this._setImage("", false);
+      this._setImage(view, "", false);
       return;
     }
     void this._hass.callWS({
@@ -1723,119 +1812,80 @@ var ImageNoteCard = class extends HTMLElement {
       expires: MEDIA_EXPIRES_SECONDS
     }).then((result) => {
       const expiresAt = Date.now() + MEDIA_REFRESH_MS;
-      this._resolved.set(index, { url: result.url, failed: false, expiresAt });
-      if (token !== this._resolveToken) return;
-      this._setImage(result.url, false);
+      this._resolved.set(mediaId, { url: result.url, failed: false, expiresAt });
+      if (token !== view.resolveToken) return;
+      this._setImage(view, result.url, false);
       this._scheduleRefresh(expiresAt);
     }).catch(() => {
-      this._resolved.set(index, { url: "", failed: true, expiresAt: 0 });
-      if (token !== this._resolveToken) return;
-      this._setImage("", true);
+      this._resolved.set(mediaId, { url: "", failed: true, expiresAt: 0 });
+      if (token !== view.resolveToken) return;
+      this._setImage(view, "", true);
     });
   }
   _scheduleRefresh(expiresAt) {
     window.clearTimeout(this._refreshTimer);
     const delay = Math.max(1e3, expiresAt - Date.now());
-    this._refreshTimer = window.setTimeout(() => this._resolveImage(), delay);
+    this._refreshTimer = window.setTimeout(() => {
+      if (this._els && this._slide.kind === "image") this._applyImage(this._currentFace, this._slide);
+    }, delay);
   }
-  _setImage(src, failed) {
-    const els = this._els;
-    if (!els) return;
-    if (src === this._lastImageSrc && !failed) {
+  _setImage(view, src, failed) {
+    if (src === view.src && failed === view.failed) {
+      this._updatePlaceholder(view);
       return;
     }
-    this._lastImageSrc = src;
-    const previous = this._activeLayer === "a" ? els.imgA : els.imgB;
-    if (!src) {
-      previous.removeAttribute("src");
-      previous.classList.add("hidden");
-      this._updatePlaceholder(failed);
-      return;
+    view.src = src;
+    view.failed = failed;
+    if (src) {
+      view.img.src = src;
+    } else {
+      view.img.removeAttribute("src");
     }
-    const nextLayer = this._activeLayer === "a" ? "b" : "a";
-    const next = nextLayer === "a" ? els.imgA : els.imgB;
-    if (!previous.getAttribute("src")) {
-      previous.classList.remove("hidden");
-      previous.src = src;
-      this._updatePlaceholder(false, true);
-      return;
-    }
-    next.classList.remove("hidden");
-    next.dataset.pending = "1";
-    next.src = src;
-    this._updatePlaceholder(false, true);
+    this._updatePlaceholder(view);
   }
-  _swapLayers(loaded) {
-    const els = this._els;
-    if (!els) return;
-    const layer = loaded === els.imgA ? "a" : "b";
-    this._activeLayer = layer;
-    els.imgA.classList.toggle("inactive", layer !== "a");
-    els.imgB.classList.toggle("active", layer === "b");
-    const other = layer === "a" ? els.imgB : els.imgA;
-    window.setTimeout(() => {
-      if (this._activeLayer === layer) {
-        other.removeAttribute("src");
-        other.classList.add("hidden");
-      }
-    }, 400);
-  }
-  _updatePlaceholder(failed = false, loading = false) {
-    const els = this._els;
-    if (!els) return;
-    const hasImage = Boolean(this._lastImageSrc) && !failed;
-    els.placeholder.classList.toggle("hidden", hasImage);
-    if (!hasImage) {
-      els.imgA.classList.add("hidden");
-      els.imgB.classList.add("hidden");
-    }
+  _updatePlaceholder(view) {
+    const hasImage = Boolean(view.src) && !view.failed;
+    view.placeholder.classList.toggle("hidden", hasImage);
+    view.img.classList.toggle("hidden", !hasImage);
     const t = (key) => translate(this._lang, key);
-    if (failed) {
-      els.placeholderIcon.setAttribute("icon", "mdi:image-broken-variant");
-      els.placeholderTitle.textContent = t("imageError");
-      els.placeholderHelp.textContent = "";
-    } else if (!loading) {
-      els.placeholderIcon.setAttribute("icon", "mdi:image-plus-outline");
-      els.placeholderTitle.textContent = t("noImage");
-      els.placeholderHelp.textContent = t("noImageHelp");
+    if (view.failed) {
+      view.placeholderIcon.setAttribute("icon", "mdi:image-broken-variant");
+      view.placeholderTitle.textContent = t("imageError");
+      view.placeholderHelp.textContent = "";
+    } else {
+      view.placeholderIcon.setAttribute("icon", "mdi:image-plus-outline");
+      view.placeholderTitle.textContent = t("noImage");
+      view.placeholderHelp.textContent = t("noImageHelp");
     }
   }
-  _onImageError(img) {
-    if (!img.getAttribute("src")) return;
-    if (img.dataset.pending) {
-      delete img.dataset.pending;
-      img.removeAttribute("src");
-      img.classList.add("hidden");
-    }
-    this._updatePlaceholder(true);
+  _onImageError(view) {
+    if (!view.img.getAttribute("src")) return;
+    view.failed = true;
+    this._updatePlaceholder(view);
   }
-  _onImageLoad(img) {
-    if (img.dataset.pending) {
-      delete img.dataset.pending;
-      this._swapLayers(img);
-    }
-    this._updatePlaceholder(false);
+  _onImageLoad(view) {
+    view.failed = false;
+    this._updatePlaceholder(view);
     this._updateDepth();
   }
   // ---------------------------------------------------------------- note
-  _noteSource() {
+  _noteSource(slide) {
     const config = this._config;
-    const page = this.page;
     const empty = { text: "", editable: false, error: "", max: null, domain: "", changed: "", entityId: "" };
-    if (!config || !page) return empty;
-    if (!page.note_entity) {
-      return { ...empty, text: page.note };
+    if (!config) return empty;
+    if (!slide.note_entity) {
+      return { ...empty, text: slide.note };
     }
-    const entity = this._hass?.states[page.note_entity];
+    const entity = this._hass?.states[slide.note_entity];
     if (!entity) {
       return {
         ...empty,
-        entityId: page.note_entity,
-        error: this._hass ? translate(this._lang, "entityMissing", { entity: page.note_entity }) : ""
+        entityId: slide.note_entity,
+        error: this._hass ? translate(this._lang, "entityMissing", { entity: slide.note_entity }) : ""
       };
     }
-    const domain = page.note_entity.split(".")[0];
-    const attr = page.note_attribute;
+    const domain = slide.note_entity.split(".")[0];
+    const attr = slide.note_attribute;
     let text;
     if (attr) {
       const raw = entity.attributes[attr];
@@ -1851,55 +1901,56 @@ var ImageNoteCard = class extends HTMLElement {
       max,
       domain,
       changed: config.show_updated ? entity.last_changed ?? "" : "",
-      entityId: page.note_entity
+      entityId: slide.note_entity
     };
   }
+  /** Reacts to state changes for the slide currently shown. */
   _applyHass() {
     const els = this._els;
-    const page = this.page;
-    if (!els || !this._config || !page) return;
-    if (page.image_entity) {
-      const src = this._imageSourceFromEntity(page) ?? "";
-      if (src !== this._lastImageSrc) {
-        this._setImage(src, false);
+    if (!els || !this._config) return;
+    const slide = this._slide;
+    const view = this._currentFace;
+    if (slide.kind === "image") {
+      if (slide.image_entity) {
+        const src = this._imageSourceFromEntity(slide) ?? "";
+        if (src !== view.src) this._setImage(view, src, false);
       }
+      return;
     }
-    const source = this._noteSource();
+    const source = this._noteSource(slide);
     const last = this._lastNote;
     if (last && last.text === source.text && last.editable === source.editable && last.error === source.error && last.max === source.max && last.changed === source.changed && last.entityId === source.entityId) {
       return;
     }
     this._lastNote = source;
-    els.editButton.classList.toggle("hidden", !source.editable || this._editing);
+    view.editButton.classList.toggle("hidden", !source.editable || this._editing);
     if (!this._editing) {
-      this._renderNote(source);
+      this._renderNote(view, source);
     }
-    this._renderMeta();
-    requestAnimationFrame(() => this._updateScrollState());
+    this._renderMetaFor(view, source);
+    requestAnimationFrame(() => this._updateScrollState(view));
   }
   _renderMeta() {
-    const els = this._els;
-    if (!els) return;
-    const changed = this._lastNote?.changed;
-    if (!changed || this._editing) {
-      els.noteMeta.textContent = "";
-      els.noteMeta.classList.add("hidden");
-      this._updateFooter();
+    if (!this._els || !this._lastNote || this._slide.kind !== "note") return;
+    this._renderMetaFor(this._currentFace, this._lastNote);
+  }
+  _renderMetaFor(view, source) {
+    if (!source.changed || this._editing) {
+      view.noteMeta.textContent = "";
       return;
     }
-    const relative = formatRelativeTime(new Date(changed), this._lang);
-    els.noteMeta.textContent = translate(this._lang, "updated", { time: relative });
-    els.noteMeta.classList.remove("hidden");
-    this._updateFooter();
+    const relative = formatRelativeTime(new Date(source.changed), this._lang);
+    view.noteMeta.textContent = translate(this._lang, "updated", { time: relative });
   }
-  _startMetaTimer() {
-    window.clearInterval(this._metaTimer);
-    this._metaTimer = window.setInterval(() => this._renderMeta(), 3e4);
+  _updateScrollState(view) {
+    const body = view.noteBody;
+    const scrollable = body.scrollHeight > body.clientHeight + 1;
+    const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
+    view.noteLayer.classList.toggle("scrollable", scrollable);
+    view.noteLayer.classList.toggle("at-end", atEnd);
   }
-  _renderNote(source) {
-    const els = this._els;
-    if (!els) return;
-    const body = els.noteBody;
+  _renderNote(view, source) {
+    const body = view.noteBody;
     body.replaceChildren();
     const t = (key) => translate(this._lang, key);
     if (source.error) {
@@ -1940,51 +1991,57 @@ var ImageNoteCard = class extends HTMLElement {
     }).catch(() => void 0);
     void customElements.whenDefined("ha-markdown").then(() => {
       this._markdownReady = true;
-      if (this._lastNote && !this._editing) {
-        this._renderNote(this._lastNote);
+      if (this._els && this._lastNote && !this._editing && this._slide.kind === "note") {
+        this._renderNote(this._currentFace, this._lastNote);
       }
     });
   }
   // ---------------------------------------------------------------- editing
   _startEdit() {
     const els = this._els;
-    const source = this._lastNote ?? this._noteSource();
-    if (!els || !source.editable || !this._hass) return;
+    if (!els || this._slide.kind !== "note" || !this._hass) return;
+    const view = this._currentFace;
+    const source = this._lastNote ?? this._noteSource(this._slide);
+    if (!source.editable) return;
     this._editing = true;
     this._stopTimers();
-    this._setSide("note");
     els.scene.classList.add("editing");
-    els.noteBody.style.display = "none";
-    els.editButton.classList.add("hidden");
-    els.noteEditor.classList.add("visible");
-    els.noteFooter.classList.add("hidden");
-    els.errorText.textContent = "";
-    els.textarea.value = source.text;
+    els.stage.classList.add("editing");
+    view.noteBody.style.display = "none";
+    view.noteFooter.style.display = "none";
+    view.editButton.classList.add("hidden");
+    view.noteEditor.classList.add("visible");
+    view.errorText.textContent = "";
+    view.textarea.value = source.text;
     if (source.max) {
-      els.textarea.maxLength = source.max;
+      view.textarea.maxLength = source.max;
     } else {
-      els.textarea.removeAttribute("maxlength");
+      view.textarea.removeAttribute("maxlength");
     }
     this._updateCounter();
-    els.textarea.focus();
-    els.textarea.setSelectionRange(els.textarea.value.length, els.textarea.value.length);
+    view.textarea.focus();
+    view.textarea.setSelectionRange(view.textarea.value.length, view.textarea.value.length);
   }
   _finishEdit() {
     const els = this._els;
     if (!els) return;
+    const view = this._currentFace;
     this._editing = false;
     this._saving = false;
     els.scene.classList.remove("editing");
-    els.noteBody.style.display = "";
-    els.noteEditor.classList.remove("visible");
-    els.saveButton.disabled = false;
-    els.cancelButton.disabled = false;
-    els.saveButton.textContent = translate(this._lang, "save");
-    const source = this._noteSource();
+    els.stage.classList.remove("editing");
+    view.noteBody.style.display = "";
+    view.noteFooter.style.display = "";
+    view.noteEditor.classList.remove("visible");
+    view.saveButton.disabled = false;
+    view.cancelButton.disabled = false;
+    view.saveButton.textContent = translate(this._lang, "save");
+    const source = this._noteSource(this._slide);
     this._lastNote = source;
-    els.editButton.classList.toggle("hidden", !source.editable);
-    this._renderNote(source);
-    this._renderMeta();
+    view.editButton.classList.toggle("hidden", !source.editable);
+    this._renderNote(view, source);
+    this._renderMetaFor(view, source);
+    this._updateScrollState(view);
     this._startTimers();
     els.stage.focus({ preventScroll: true });
   }
@@ -1995,81 +2052,79 @@ var ImageNoteCard = class extends HTMLElement {
   async _saveEdit() {
     const els = this._els;
     if (!els || !this._hass || !this._editing || this._saving) return;
-    const source = this._lastNote ?? this._noteSource();
-    const value = els.textarea.value;
+    const view = this._currentFace;
+    const source = this._lastNote ?? this._noteSource(this._slide);
+    const value = view.textarea.value;
     if (value === source.text) {
       this._finishEdit();
       return;
     }
     this._saving = true;
-    els.saveButton.disabled = true;
-    els.cancelButton.disabled = true;
-    els.saveButton.textContent = translate(this._lang, "saving");
-    els.errorText.textContent = "";
+    view.saveButton.disabled = true;
+    view.cancelButton.disabled = true;
+    view.saveButton.textContent = translate(this._lang, "saving");
+    view.errorText.textContent = "";
     try {
-      await this._hass.callService(source.domain, "set_value", {
-        entity_id: source.entityId,
-        value
-      });
+      await this._hass.callService(source.domain, "set_value", { entity_id: source.entityId, value });
       this._lastNote = { ...source, text: value };
       this._finishEdit();
-      this._renderNote(this._lastNote);
+      this._renderNote(view, this._lastNote);
     } catch (err) {
       this._saving = false;
-      els.saveButton.disabled = false;
-      els.cancelButton.disabled = false;
-      els.saveButton.textContent = translate(this._lang, "save");
+      view.saveButton.disabled = false;
+      view.cancelButton.disabled = false;
+      view.saveButton.textContent = translate(this._lang, "save");
       const message = err instanceof Error ? err.message : err?.message;
-      els.errorText.textContent = `${translate(this._lang, "saveFailed")}${message ? `: ${message}` : ""}`;
+      view.errorText.textContent = `${translate(this._lang, "saveFailed")}${message ? `: ${message}` : ""}`;
     }
   }
   _updateCounter() {
-    const els = this._els;
-    if (!els) return;
-    const max = this._lastNote?.max ?? null;
+    if (!this._els) return;
+    const view = this._currentFace;
+    const max = (this._lastNote ?? this._noteSource(this._slide)).max;
     if (!max) {
-      els.counter.textContent = "";
+      view.counter.textContent = "";
       return;
     }
-    const left = max - els.textarea.value.length;
-    els.counter.textContent = translate(this._lang, "charsLeft", { count: left });
-    els.counter.classList.toggle("over", left < 0);
+    const left = max - view.textarea.value.length;
+    view.counter.textContent = translate(this._lang, "charsLeft", { count: left });
+    view.counter.classList.toggle("over", left < 0);
   }
   // ---------------------------------------------------------------- interaction
   _gestureAllowed(ev) {
     if (this._editing) return false;
     for (const node of ev.composedPath()) {
       if (node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement) return false;
-      if (node === this._els?.noteEditor) return false;
+      if (node instanceof HTMLElement && node.classList.contains("note-editor")) return false;
     }
     return true;
   }
   async _handleGesture(kind) {
     const config = this._config;
-    const page = this.page;
-    if (!config || !page || this._editing) return;
+    if (!config || this._editing) return;
     if (kind === "tap") {
       const root = this._root;
       const selection = root.getSelection ? root.getSelection() : window.getSelection();
       if (selection && selection.toString().length > 0) return;
     }
+    const slide = this._slide;
+    const entry = config.entries[slide.entry] ?? slide;
     const action2 = kind === "hold" ? config.hold_action : kind === "double_tap" ? config.double_tap_action : config.tap_action;
     try {
       const shouldFlip = await runAction(
         this,
         this._hass,
-        { note_entity: page.note_entity, image_entity: page.image_entity },
+        { note_entity: entry.note_entity, image_entity: entry.image_entity },
         action2,
         translate(this._lang, "confirm")
       );
-      if (shouldFlip) this.flip();
+      if (shouldFlip) this.goTo("next");
     } catch (err) {
       console.warn("ImageNote: action failed", err);
     }
   }
   _onStageKeydown = (ev) => {
-    if (this._editing) return;
-    if (ev.target !== this._els?.stage) return;
+    if (this._editing || ev.target !== this._els?.stage) return;
     if (ev.key === "Enter" || ev.key === " ") {
       ev.preventDefault();
       void this._handleGesture("tap");
@@ -2083,63 +2138,55 @@ var ImageNoteCard = class extends HTMLElement {
   };
   _onMouseEnter = () => {
     if (!this._config?.hover_flip || !this._hoverQuery.matches || this._editing) return;
-    this._setSide("note");
+    this.goTo("next");
   };
   _onMouseLeave = () => {
     if (!this._config?.hover_flip || !this._hoverQuery.matches || this._editing) return;
-    this._setSide(this._config.default_side);
+    const start = this._startIndex();
+    if (start !== this._index) this._go(start, -1, true);
   };
   _onMotionChange = () => {
-    this._applyTransition();
+    this._applyMode();
   };
   // ---------------------------------------------------------------- timers & layout
   _startTimers() {
     this._stopTimers();
     const config = this._config;
-    if (!this.isConnected || !config || this._tiles) return;
-    if (config.auto_flip > 0) {
-      this._autoFlipTimer = window.setInterval(() => {
-        if (this._editing) return;
-        this._setSide(this._side === "image" ? "note" : "image");
-      }, config.auto_flip * 1e3);
-    }
-    if (config.auto_advance > 0 && config.pages.length > 1) {
-      this._autoAdvanceTimer = window.setInterval(() => {
-        if (this._editing) return;
-        this._showPage((this._index + 1) % config.pages.length);
-      }, config.auto_advance * 1e3);
+    if (!this.isConnected || !config || this._tiles || !this._els) return;
+    const seconds = config.auto_flip || config.auto_advance;
+    if (seconds > 0 && config.slides.length > 1) {
+      this._autoTimer = window.setInterval(() => {
+        if (!this._editing) this.goTo("next");
+      }, seconds * 1e3);
     }
   }
   _stopTimers() {
-    window.clearInterval(this._autoFlipTimer);
-    window.clearInterval(this._autoAdvanceTimer);
-    this._autoFlipTimer = void 0;
-    this._autoAdvanceTimer = void 0;
+    window.clearInterval(this._autoTimer);
+    this._autoTimer = void 0;
   }
   _restartTimers() {
-    if (this._autoFlipTimer !== void 0 || this._autoAdvanceTimer !== void 0) {
-      this._startTimers();
-    }
+    if (this._autoTimer !== void 0) this._startTimers();
   }
   _observeResize() {
     if (!this._els || typeof ResizeObserver === "undefined") return;
     this._resizeObserver?.disconnect();
     this._resizeObserver = new ResizeObserver(() => {
       this._updateDepth();
-      this._updateScrollState();
+      if (this._els) this._updateScrollState(this._currentFace);
     });
     this._resizeObserver.observe(this._els.stage);
   }
-  /** The cube transition needs half the stage size as its rotation depth. */
+  /** The cube keeps its faces at half the stage size; re-place them when the card resizes. */
   _updateDepth() {
     const els = this._els;
-    const config = this._config;
-    if (!els || !config) return;
-    const rect = els.stage.getBoundingClientRect();
-    const size = config.direction === "vertical" ? rect.height : rect.width;
-    if (size > 0) {
-      els.scene.style.setProperty("--imagenote-depth", `${size / 2}px`);
-    }
+    if (!els || this._mode() !== "cube") return;
+    els.scene.classList.add("no-transition");
+    els.faces.forEach((view, i) => {
+      view.el.style.transform = this._faceTransform(this._faceAngle[i]);
+    });
+    els.scene.style.transform = this._sceneTransform(this._angle);
+    void els.scene.offsetWidth;
+    els.scene.classList.remove("no-transition");
   }
 };
 
@@ -2147,12 +2194,20 @@ var ImageNoteCard = class extends HTMLElement {
 var UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
 var UPLOAD_TARGETS = ["image", "media"];
 var EDITOR_DEFAULTS = { upload_target: "image", upload_folder: "imagenote" };
-var PAGE_KEYS = ["title", "image", "image_entity", "note", "note_entity", "note_attribute"];
+var PAGE_KEYS = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute"];
+var LIST_KEYS = ["slides", "images"];
 var TEMPLATE2 = `
 <div class="pages">
   <div class="pages-label"></div>
   <div class="pages-help"></div>
   <div class="chips"></div>
+  <div class="chips add-row"></div>
+  <div class="status max-note"></div>
+  <div class="buttons entry-actions">
+    <button class="btn move-left" type="button"><ha-icon icon="mdi:arrow-left"></ha-icon><span></span></button>
+    <button class="btn move-right" type="button"><ha-icon icon="mdi:arrow-right"></ha-icon><span></span></button>
+    <button class="btn remove-page" type="button"><ha-icon icon="mdi:delete-outline"></ha-icon><span></span></button>
+  </div>
 </div>
 <div class="picture">
   <div class="preview"><img alt="" draggable="false" /><ha-icon icon="mdi:image-outline"></ha-icon></div>
@@ -2162,9 +2217,6 @@ var TEMPLATE2 = `
     <div class="buttons">
       <button class="btn primary upload" type="button"><ha-icon icon="mdi:upload"></ha-icon><span></span></button>
       <button class="btn clear" type="button"><ha-icon icon="mdi:close"></ha-icon><span></span></button>
-      <button class="btn remove-page" type="button"><ha-icon icon="mdi:delete-outline"></ha-icon><span></span></button>
-      <button class="btn move-left" type="button"><ha-icon icon="mdi:arrow-left"></ha-icon><span></span></button>
-      <button class="btn move-right" type="button"><ha-icon icon="mdi:arrow-right"></ha-icon><span></span></button>
     </div>
     <div class="status"></div>
     <input class="file" type="file" accept="image/*" hidden />
@@ -2212,10 +2264,25 @@ var STYLES = `
 .chip ha-icon {
   --mdc-icon-size: 16px;
 }
+.add-row {
+  margin-top: 8px;
+}
+.entry-actions {
+  margin-top: 10px;
+}
+.entry-actions:not(:has(.btn:not(.hidden))) {
+  display: none;
+}
+.chip.add ha-icon {
+  --mdc-icon-size: 16px;
+}
 .chip.active {
   background: var(--primary-color);
   border-color: var(--primary-color);
   color: var(--text-primary-color, #fff);
+}
+.picture.hidden {
+  display: none;
 }
 .picture {
   display: flex;
@@ -2368,7 +2435,16 @@ var ImageNoteCardEditor = class extends HTMLElement {
   _page() {
     return this._pages()[this._pageIndex] ?? {};
   }
-  /** Writes a page back into the config: into `images` when there are several, flat otherwise. */
+  _kindOf(page) {
+    const picture = hasPicture(page) || page.kind === "image";
+    const note = hasNote(page) || page.kind === "note";
+    if (picture && note) return "both";
+    return note ? "note" : "image";
+  }
+  _slideCount(pages) {
+    return expandSlides(pages.map(normalizePage)).length;
+  }
+  /** Writes an entry back into the config: into `slides` when there are several, flat otherwise. */
   _withPage(index, page) {
     const config = { ...this._config ?? { type: "" } };
     const pages = this._pages().map((p) => ({ ...p }));
@@ -2380,8 +2456,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
     for (const key of PAGE_KEYS) {
       if (key !== "title") delete next[key];
     }
+    for (const key of LIST_KEYS) delete next[key];
     if (pages.length <= 1) {
-      delete next.images;
       const only = cleanPage(pages[0] ?? {});
       for (const key of PAGE_KEYS) {
         if (key === "title") {
@@ -2391,13 +2467,14 @@ var ImageNoteCardEditor = class extends HTMLElement {
         if (only[key] !== void 0) next[key] = only[key];
       }
     } else {
-      next.images = pages.map(cleanPage);
+      next.slides = pages.map(cleanPage);
     }
     return next;
   }
-  _addPage() {
+  _addPage(kind) {
     const pages = this._pages().map((p) => ({ ...p }));
-    pages.push({});
+    if (this._slideCount(pages) >= MAX_SLIDES) return;
+    pages.push(kind === "note" ? { kind: "note" } : {});
     this._pageIndex = pages.length - 1;
     this._emit(this._withPages(this._config ?? { type: "" }, pages));
   }
@@ -2483,24 +2560,42 @@ var ImageNoteCardEditor = class extends HTMLElement {
     setText(".move-left span", t("editor_move_left"));
     setText(".move-right span", t("editor_move_right"));
     const pages = this._pages();
+    const full = this._slideCount(pages) >= MAX_SLIDES;
     if (this._chips) {
       this._chips.replaceChildren();
-      pages.forEach((_, index) => {
+      pages.forEach((page, index) => {
+        const kind = this._kindOf(page);
         const chip = document.createElement("button");
         chip.type = "button";
         chip.className = `chip${index === this._pageIndex ? " active" : ""}`;
-        chip.textContent = t("editor_page_label", { index: index + 1 });
+        chip.dataset.kind = kind;
+        const icon = document.createElement("ha-icon");
+        icon.setAttribute("icon", kind === "note" ? "mdi:note-text-outline" : kind === "both" ? "mdi:image-text" : "mdi:image-outline");
+        const label = document.createElement("span");
+        label.textContent = `${index + 1} · ${t(`editor_kind_${kind}`)}`;
+        chip.append(icon, label);
         chip.addEventListener("click", () => this._selectPage(index));
         this._chips?.append(chip);
       });
-      const add = document.createElement("button");
-      add.type = "button";
-      add.className = "chip add";
-      add.innerHTML = `<ha-icon icon="mdi:plus"></ha-icon><span></span>`;
-      add.querySelector("span").textContent = t("editor_add_page");
-      add.addEventListener("click", () => this._addPage());
-      this._chips.append(add);
     }
+    const addRow = this._root.querySelector(".add-row");
+    if (addRow) {
+      addRow.replaceChildren();
+      for (const kind of ["image", "note"]) {
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = `chip add add-${kind}`;
+        add.innerHTML = `<ha-icon icon="mdi:plus"></ha-icon><span></span>`;
+        add.querySelector("span").textContent = t(kind === "note" ? "editor_add_note" : "editor_add_page");
+        add.disabled = full;
+        add.addEventListener("click", () => this._addPage(kind));
+        addRow.append(add);
+      }
+    }
+    const maxNote = this._root.querySelector(".max-note");
+    if (maxNote) maxNote.textContent = full ? t("editor_max_slides") : "";
+    const currentKind = this._kindOf(this._page());
+    this._root.querySelector(".picture")?.classList.toggle("hidden", currentKind === "note");
     this._removePageButton?.classList.toggle("hidden", pages.length <= 1);
     this._moveLeftButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex === 0);
     this._moveRightButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex >= pages.length - 1);
@@ -2529,17 +2624,22 @@ var ImageNoteCardEditor = class extends HTMLElement {
   _pageSchema(multiple) {
     const t = (key) => translate(this._lang, key);
     const schema = [];
+    const kind = this._kindOf(this._page());
     if (multiple) {
       schema.push({ name: "page_title", selector: { text: {} } });
     }
-    schema.push(
-      { name: "image", selector: { text: {} } },
-      {
-        name: "image_entity",
-        selector: {
-          entity: { filter: [{ domain: "image" }, { domain: "camera" }, { domain: "person" }] }
+    if (kind !== "note") {
+      schema.push(
+        { name: "image", selector: { text: {} } },
+        {
+          name: "image_entity",
+          selector: {
+            entity: { filter: [{ domain: "image" }, { domain: "camera" }, { domain: "person" }] }
+          }
         }
-      },
+      );
+    }
+    schema.push(
       { name: "note", selector: { text: { multiline: true } } },
       {
         name: "note_source",
@@ -2686,7 +2786,7 @@ var ImageNoteCardEditor = class extends HTMLElement {
     const config = this._config ?? { type: "" };
     const data = { ...DEFAULTS, ...EDITOR_DEFAULTS };
     for (const [key, value] of Object.entries(config)) {
-      if (key === "images" || PAGE_KEYS.includes(key) && key !== "title") continue;
+      if (LIST_KEYS.includes(key) || PAGE_KEYS.includes(key) && key !== "title") continue;
       data[key] = value;
     }
     return data;
@@ -2699,13 +2799,15 @@ var ImageNoteCardEditor = class extends HTMLElement {
     const page = { ...this._page() };
     for (const [key, raw] of Object.entries(value)) {
       const target = key === "page_title" ? "title" : key;
-      if (!PAGE_KEYS.includes(target)) continue;
+      if (!PAGE_KEYS.includes(target) || target === "kind") continue;
       if (raw === void 0 || raw === null || raw === "") {
         delete page[target];
       } else {
         page[target] = raw;
       }
     }
+    if (page.kind === "note" && hasNote(page)) delete page.kind;
+    if (page.kind === "image" && hasPicture(page)) delete page.kind;
     this._emit(this._withPage(this._pageIndex, page));
   };
   _onCardValueChanged = (ev) => {
@@ -2714,7 +2816,7 @@ var ImageNoteCardEditor = class extends HTMLElement {
     const value = ev.detail.value ?? {};
     const next = { ...this._config };
     for (const [key, raw] of Object.entries(value)) {
-      if (key === "type" || key === "images" || PAGE_KEYS.includes(key) && key !== "title") continue;
+      if (key === "type" || LIST_KEYS.includes(key) || PAGE_KEYS.includes(key) && key !== "title") continue;
       const fallback = key in DEFAULTS ? DEFAULTS[key] : EDITOR_DEFAULTS[key];
       const isDefault = (key in DEFAULTS || key in EDITOR_DEFAULTS) && (raw === fallback || typeof raw === "object" && raw !== null && JSON.stringify(raw) === JSON.stringify(fallback));
       if (raw === void 0 || raw === null || raw === "" || isDefault) {

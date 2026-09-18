@@ -87,6 +87,7 @@
       "mdi:chevron-right": "M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.42Z",
       "mdi:arrow-left": "M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z",
       "mdi:arrow-right": "M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z",
+      "mdi:image-text": "M22 13h-8v-2h8v2m0-6h-8v2h8V7m-8 10h8v-2h-8v2m-2-8v6c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V9c0-1.1.9-2 2-2h6c1.1 0 2 .9 2 2m-1.5 6-2.25-3-1.75 2.26-1.25-1.51L3.5 15h7Z",
       "mdi:plus": "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z",
       "mdi:delete-outline": "M9 3v1H4v2h1v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6h1V4h-5V3H9m0 5h2v9H9V8m4 0h2v9h-2V8Z",
       "mdi:close": "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z",
@@ -171,6 +172,13 @@
         { image: "./sample-2.svg", note: "Tyres: 2.5 bar front, 2.8 bar rear." },
         { image: "./sample-3.svg", title: "Tools", note_entity: "input_text.fridge_note" },
       ] } },
+      { label: "Free order: picture, note, note, picture, note (5 slides)", config: { type: "custom:imagenote-card", title: "Trip", slides: [
+        { image: "./sample-3.svg", title: "Arrival" },
+        { note: "Day 1: **arrived** late, hotel is fine." },
+        { note: "Day 2: hiking. Bring water." },
+        { image: "./sample-2.svg", title: "Lake" },
+        { note_entity: "input_text.fridge_note", title: "Shopping" },
+      ] } },
       { label: "Tiles: four pictures side by side, each flips on its own", config: { type: "custom:imagenote-card", title: "Garden", layout: "grid", columns: 2, images: [
         { image: "./sample-1.svg", title: "Tomatoes", note: "Water every second day." },
         { image: "./sample-2.svg", title: "Herbs", note: "Cut back the mint." },
@@ -199,7 +207,7 @@
     }
     const sectionConfigs = [
       { type: "custom:imagenote-card", title: "BildNote", image: "./sample-2.svg", default_side: "note", note: "**Hallo!** Klick auf das Bild um etwas mehr zu sehen, BLABLABLA\n\nMarkdown funktionieren hier problemlos: Dies ist ein Test für **André**." },
-      { type: "custom:imagenote-card", title: "Kitchen", image: "./sample-1.svg", note_entity: "input_text.fridge_note", images: [{ image: "./sample-1.svg" }, { image: "./sample-3.svg" }] },
+      { type: "custom:imagenote-card", title: "Kitchen", slides: [{ image: "./sample-1.svg" }, { note: "Note between" }, { image: "./sample-3.svg" }] },
       { type: "custom:imagenote-card", title: "Long note", image: "./sample-3.svg", default_side: "note", note_entity: "input_text.fridge_note", note: "" },
       { type: "custom:imagenote-card", layout: "grid", images: [{ image: "./sample-1.svg", title: "A", note: "Note A" }, { image: "./sample-2.svg", title: "B", note: "Note B" }] },
     ];

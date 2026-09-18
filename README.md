@@ -5,9 +5,11 @@
   A Home Assistant dashboard card, installable through HACS.
 </p>
 
-ImageNote pairs one picture with one note. The front shows the picture, the
-back shows the note, and a tap (or a key press, a hover, or a timer) turns the
-card over with a 3D flip, a crossfade, a slide or a cube rotation.
+ImageNote pairs pictures with notes. The simplest card shows a picture in
+front and a note on its back; a tap (or a key press, a hover, or a timer) turns
+it over with a 3D flip, a crossfade, a slide or a cube rotation. A card can
+also hold up to ten pictures and notes in any order, and every tap turns to the
+next one.
 
 Typical uses: the fridge with the shopping list on its back, the boiler with the
 last service date, a plant with its watering schedule, a family photo with a
@@ -28,9 +30,9 @@ message for the wall panel.
 - **Edit the note on the card** — link an `input_text` or `text` entity and a
   pencil appears on the note side. Changes are saved with `set_value`, so
   automations and other dashboards see them immediately.
-- **Several pictures per card** — each with its own note. Either one at a
-  time (swipe, arrows, dots, arrow keys, or an automatic slideshow) or side by
-  side as tiles that flip independently.
+- **Up to ten pictures and notes per card, in any order** — picture, note,
+  note, picture … Tap, swipe, arrows, dots, arrow keys or a timer move on to
+  the next one. Or show them side by side as tiles that flip independently.
 - **Five transitions** — `flip` (3D, default), `fade`, `slide`, `cube`, `none`;
   horizontal or vertical. Respects `prefers-reduced-motion`.
 - **Fits every layout** — fixed aspect ratios or the picture's natural size,
@@ -91,31 +93,33 @@ auto_flip: 20
 show_hint: false
 ```
 
-Several pictures, each with its own note:
+Pictures and notes in any order, up to ten. An entry with both a picture and a
+note counts as two:
 
 ```yaml
 type: custom:imagenote-card
-title: Garage
-images:
-  - image: /local/pictures/bike.jpg
-    title: Bike
-    note: Chain oiled in March.
-  - image: /local/pictures/car.jpg
-    note: "Tyres: 2.5 bar front, 2.8 bar rear."
-  - image: /local/pictures/tools.jpg
-    title: Tools
-    note_entity: input_text.garage_tools
-auto_advance: 15
+title: Holiday
+slides:
+  - image: /local/pictures/arrival.jpg
+    title: Arrival
+  - note: "Day 1: **arrived** late, the hotel is fine."
+  - note: "Day 2: hiking. Bring water."
+  - image: /local/pictures/lake.jpg
+    title: Lake
+  - note_entity: input_text.holiday_shopping
+    title: Shopping
+auto_flip: 15
 ```
 
-The same pictures side by side, every tile flips on its own:
+The same entries side by side as tiles; each tile turns between its own
+picture and note:
 
 ```yaml
 type: custom:imagenote-card
 title: Garage
 layout: grid
 columns: 3
-images:
+slides:
   - image: /local/pictures/bike.jpg
     title: Bike
     note: Chain oiled in March.
@@ -145,8 +149,8 @@ direction: vertical
 | --- | --- | --- |
 | `title` | – | Shown on the picture and above the note. |
 | `image` | – | Picture URL, `/local/` path, `/api/image/serve/…` URL or `media-source://` id. Uploads from the editor land here. |
-| `images` | – | A list of pictures, each an object with `image`, `image_entity`, `title`, `note`, `note_entity`, `note_attribute` (or just a URL string). When set, the top-level picture and note fields are ignored. A picture without `title` uses the card title. |
-| `layout` | `stack` | How several pictures are shown: `stack` (one at a time) or `grid` (tiles side by side, each with its own flip). |
+| `slides` | – | Pictures and notes in order, at most ten. Each entry is an object with `image` or `image_entity` (a picture), `note`, `note_entity` or `note_attribute` (a note), an optional `title`, or just a URL string. An entry with both picture and note becomes two slides. When set, the top-level picture and note fields are ignored. An entry without `title` uses the card title. `images` is accepted as an older name. |
+| `layout` | `stack` | How several entries are shown: `stack` (one after another) or `grid` (tiles side by side, each turning between its own picture and note). |
 | `columns` | `0` | With `layout: grid`: tiles per row. `0` fits as many as the width allows (about 150 px each). |
 | `image_entity` | – | Use the picture of an `image`, `camera` or `person` entity instead of `image`. |
 | `image_fit` | `cover` | `cover` fills the card and crops, `contain` shows the whole picture. |
@@ -157,10 +161,9 @@ direction: vertical
 | `transition` | `flip` | `flip`, `fade`, `slide`, `cube` or `none`. |
 | `direction` | `horizontal` | `horizontal` or `vertical`, for `flip`, `slide` and `cube`. |
 | `duration` | `700` | Animation length in milliseconds. |
-| `default_side` | `image` | Which side is shown first: `image` or `note`. |
-| `auto_flip` | `0` | Turn the card over automatically every *n* seconds. `0` disables it. |
-| `auto_advance` | `0` | With several pictures: show the next one every *n* seconds. `0` disables it. |
-| `show_navigation` | `true` | With several pictures: show the arrows and dots. Swiping and the arrow keys always work. |
+| `default_side` | `image` | Start on the first picture (`image`) or the first note (`note`). |
+| `auto_flip` | `0` | Move to the next slide automatically every *n* seconds. `0` disables it. `auto_advance` is an older name for the same thing. |
+| `show_navigation` | `true` | With more than two slides: show the arrows and dots. Swiping and the arrow keys always work. |
 | `upload_target` | `image` | Where the editor's upload button stores files: `image` (Home Assistant's image store) or `media` (the media folder). |
 | `upload_folder` | `imagenote` | With `upload_target: media`: the folder below `/media`. Created on the first upload. |
 | `hover_flip` | `false` | Show the note while the pointer hovers over the card (mouse devices only). |
@@ -178,7 +181,7 @@ cards, plus `flip`:
 
 | `action` | Effect |
 | --- | --- |
-| `flip` | Turn the card over. Default for `tap_action`. |
+| `flip` | Show the next slide. Default for `tap_action`. |
 | `more-info` | Open the more-info dialog. `entity` defaults to `note_entity`, then `image_entity`. |
 | `toggle` | Toggle `entity` (same default). |
 | `navigate` | Go to `navigation_path`. |

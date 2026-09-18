@@ -10,7 +10,8 @@ import {
   TRANSITIONS,
   VERSION,
 } from "./const";
-import { configPages } from "./config";
+import { MAX_SLIDES } from "./const";
+import { configPages, expandSlides, hasNote, hasPicture, normalizePage } from "./config";
 import { resolveLanguage, translate } from "./i18n";
 import { EDITOR_STYLES } from "./styles";
 import type { HomeAssistant, ImageNoteCardConfig, PageConfig, ResolvedMedia } from "./types";
@@ -28,13 +29,21 @@ interface HaFormElement extends HTMLElement {
 const UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
 const UPLOAD_TARGETS = ["image", "media"];
 const EDITOR_DEFAULTS: Record<string, unknown> = { upload_target: "image", upload_folder: "imagenote" };
-const PAGE_KEYS: Array<keyof PageConfig> = ["title", "image", "image_entity", "note", "note_entity", "note_attribute"];
+const PAGE_KEYS: Array<keyof PageConfig> = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute"];
+const LIST_KEYS = ["slides", "images"];
 
 const TEMPLATE = `
 <div class="pages">
   <div class="pages-label"></div>
   <div class="pages-help"></div>
   <div class="chips"></div>
+  <div class="chips add-row"></div>
+  <div class="status max-note"></div>
+  <div class="buttons entry-actions">
+    <button class="btn move-left" type="button"><ha-icon icon="mdi:arrow-left"></ha-icon><span></span></button>
+    <button class="btn move-right" type="button"><ha-icon icon="mdi:arrow-right"></ha-icon><span></span></button>
+    <button class="btn remove-page" type="button"><ha-icon icon="mdi:delete-outline"></ha-icon><span></span></button>
+  </div>
 </div>
 <div class="picture">
   <div class="preview"><img alt="" draggable="false" /><ha-icon icon="mdi:image-outline"></ha-icon></div>
@@ -44,9 +53,6 @@ const TEMPLATE = `
     <div class="buttons">
       <button class="btn primary upload" type="button"><ha-icon icon="mdi:upload"></ha-icon><span></span></button>
       <button class="btn clear" type="button"><ha-icon icon="mdi:close"></ha-icon><span></span></button>
-      <button class="btn remove-page" type="button"><ha-icon icon="mdi:delete-outline"></ha-icon><span></span></button>
-      <button class="btn move-left" type="button"><ha-icon icon="mdi:arrow-left"></ha-icon><span></span></button>
-      <button class="btn move-right" type="button"><ha-icon icon="mdi:arrow-right"></ha-icon><span></span></button>
     </div>
     <div class="status"></div>
     <input class="file" type="file" accept="image/*" hidden />
@@ -95,10 +101,25 @@ const STYLES = `
 .chip ha-icon {
   --mdc-icon-size: 16px;
 }
+.add-row {
+  margin-top: 8px;
+}
+.entry-actions {
+  margin-top: 10px;
+}
+.entry-actions:not(:has(.btn:not(.hidden))) {
+  display: none;
+}
+.chip.add ha-icon {
+  --mdc-icon-size: 16px;
+}
 .chip.active {
   background: var(--primary-color);
   border-color: var(--primary-color);
   color: var(--text-primary-color, #fff);
+}
+.picture.hidden {
+  display: none;
 }
 .picture {
   display: flex;
@@ -260,7 +281,18 @@ export class ImageNoteCardEditor extends HTMLElement {
     return this._pages()[this._pageIndex] ?? {};
   }
 
-  /** Writes a page back into the config: into `images` when there are several, flat otherwise. */
+  private _kindOf(page: PageConfig): "image" | "note" | "both" {
+    const picture = hasPicture(page) || page.kind === "image";
+    const note = hasNote(page) || page.kind === "note";
+    if (picture && note) return "both";
+    return note ? "note" : "image";
+  }
+
+  private _slideCount(pages: PageConfig[]): number {
+    return expandSlides(pages.map(normalizePage)).length;
+  }
+
+  /** Writes an entry back into the config: into `slides` when there are several, flat otherwise. */
   private _withPage(index: number, page: PageConfig): ImageNoteCardConfig {
     const config = { ...(this._config ?? { type: "" }) } as ImageNoteCardConfig;
     const pages = this._pages().map((p) => ({ ...p }));
@@ -273,8 +305,8 @@ export class ImageNoteCardEditor extends HTMLElement {
     for (const key of PAGE_KEYS) {
       if (key !== "title") delete next[key];
     }
+    for (const key of LIST_KEYS) delete next[key];
     if (pages.length <= 1) {
-      delete next.images;
       const only = cleanPage(pages[0] ?? {});
       for (const key of PAGE_KEYS) {
         if (key === "title") {
@@ -285,14 +317,15 @@ export class ImageNoteCardEditor extends HTMLElement {
         if (only[key] !== undefined) next[key] = only[key];
       }
     } else {
-      next.images = pages.map(cleanPage);
+      next.slides = pages.map(cleanPage);
     }
     return next as unknown as ImageNoteCardConfig;
   }
 
-  private _addPage(): void {
+  private _addPage(kind: "image" | "note"): void {
     const pages = this._pages().map((p) => ({ ...p }));
-    pages.push({});
+    if (this._slideCount(pages) >= MAX_SLIDES) return;
+    pages.push(kind === "note" ? { kind: "note" } : {});
     this._pageIndex = pages.length - 1;
     this._emit(this._withPages(this._config ?? { type: "" }, pages));
   }
@@ -391,24 +424,42 @@ export class ImageNoteCardEditor extends HTMLElement {
     setText(".move-right span", t("editor_move_right"));
 
     const pages = this._pages();
+    const full = this._slideCount(pages) >= MAX_SLIDES;
     if (this._chips) {
       this._chips.replaceChildren();
-      pages.forEach((_, index) => {
+      pages.forEach((page, index) => {
+        const kind = this._kindOf(page);
         const chip = document.createElement("button");
         chip.type = "button";
         chip.className = `chip${index === this._pageIndex ? " active" : ""}`;
-        chip.textContent = t("editor_page_label", { index: index + 1 });
+        chip.dataset.kind = kind;
+        const icon = document.createElement("ha-icon");
+        icon.setAttribute("icon", kind === "note" ? "mdi:note-text-outline" : kind === "both" ? "mdi:image-text" : "mdi:image-outline");
+        const label = document.createElement("span");
+        label.textContent = `${index + 1} · ${t(`editor_kind_${kind}`)}`;
+        chip.append(icon, label);
         chip.addEventListener("click", () => this._selectPage(index));
         this._chips?.append(chip);
       });
-      const add = document.createElement("button");
-      add.type = "button";
-      add.className = "chip add";
-      add.innerHTML = `<ha-icon icon="mdi:plus"></ha-icon><span></span>`;
-      add.querySelector("span")!.textContent = t("editor_add_page");
-      add.addEventListener("click", () => this._addPage());
-      this._chips.append(add);
     }
+    const addRow = this._root.querySelector<HTMLElement>(".add-row");
+    if (addRow) {
+      addRow.replaceChildren();
+      for (const kind of ["image", "note"] as const) {
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = `chip add add-${kind}`;
+        add.innerHTML = `<ha-icon icon="mdi:plus"></ha-icon><span></span>`;
+        add.querySelector("span")!.textContent = t(kind === "note" ? "editor_add_note" : "editor_add_page");
+        add.disabled = full;
+        add.addEventListener("click", () => this._addPage(kind));
+        addRow.append(add);
+      }
+    }
+    const maxNote = this._root.querySelector<HTMLElement>(".max-note");
+    if (maxNote) maxNote.textContent = full ? t("editor_max_slides") : "";
+    const currentKind = this._kindOf(this._page());
+    this._root.querySelector(".picture")?.classList.toggle("hidden", currentKind === "note");
     this._removePageButton?.classList.toggle("hidden", pages.length <= 1);
     this._moveLeftButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex === 0);
     this._moveRightButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex >= pages.length - 1);
@@ -441,17 +492,22 @@ export class ImageNoteCardEditor extends HTMLElement {
   private _pageSchema(multiple: boolean): FormSchema[] {
     const t = (key: string) => translate(this._lang, key);
     const schema: FormSchema[] = [];
+    const kind = this._kindOf(this._page());
     if (multiple) {
       schema.push({ name: "page_title", selector: { text: {} } });
     }
-    schema.push(
-      { name: "image", selector: { text: {} } },
-      {
-        name: "image_entity",
-        selector: {
-          entity: { filter: [{ domain: "image" }, { domain: "camera" }, { domain: "person" }] },
+    if (kind !== "note") {
+      schema.push(
+        { name: "image", selector: { text: {} } },
+        {
+          name: "image_entity",
+          selector: {
+            entity: { filter: [{ domain: "image" }, { domain: "camera" }, { domain: "person" }] },
+          },
         },
-      },
+      );
+    }
+    schema.push(
       { name: "note", selector: { text: { multiline: true } } },
       {
         name: "note_source",
@@ -603,7 +659,7 @@ export class ImageNoteCardEditor extends HTMLElement {
     const config = this._config ?? ({ type: "" } as ImageNoteCardConfig);
     const data: Record<string, unknown> = { ...DEFAULTS, ...EDITOR_DEFAULTS };
     for (const [key, value] of Object.entries(config)) {
-      if (key === "images" || (PAGE_KEYS as string[]).includes(key) && key !== "title") continue;
+      if (LIST_KEYS.includes(key) || ((PAGE_KEYS as string[]).includes(key) && key !== "title")) continue;
       data[key] = value;
     }
     return data;
@@ -618,13 +674,16 @@ export class ImageNoteCardEditor extends HTMLElement {
     const page: PageConfig = { ...this._page() };
     for (const [key, raw] of Object.entries(value)) {
       const target = key === "page_title" ? "title" : key;
-      if (!(PAGE_KEYS as string[]).includes(target)) continue;
+      if (!(PAGE_KEYS as string[]).includes(target) || target === "kind") continue;
       if (raw === undefined || raw === null || raw === "") {
         delete page[target as keyof PageConfig];
       } else {
         (page as Record<string, unknown>)[target] = raw;
       }
     }
+    // The kind marker is only needed while an entry has no content of its own.
+    if (page.kind === "note" && hasNote(page)) delete page.kind;
+    if (page.kind === "image" && hasPicture(page)) delete page.kind;
     this._emit(this._withPage(this._pageIndex, page));
   };
 
@@ -634,7 +693,7 @@ export class ImageNoteCardEditor extends HTMLElement {
     const value = ev.detail.value ?? {};
     const next: Record<string, unknown> = { ...this._config };
     for (const [key, raw] of Object.entries(value)) {
-      if (key === "type" || key === "images" || ((PAGE_KEYS as string[]).includes(key) && key !== "title")) continue;
+      if (key === "type" || LIST_KEYS.includes(key) || ((PAGE_KEYS as string[]).includes(key) && key !== "title")) continue;
       const fallback =
         key in DEFAULTS ? (DEFAULTS as Record<string, unknown>)[key] : EDITOR_DEFAULTS[key];
       const isDefault =

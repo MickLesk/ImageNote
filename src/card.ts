@@ -21,43 +21,51 @@ import type {
   HomeAssistant,
   ImageNoteCardConfig,
   NormalizedConfig,
-  NormalizedPage,
   ResolvedMedia,
   Side,
+  Slide,
   Transition,
 } from "./types";
 
-interface Elements {
-  card: HTMLElement;
-  stage: HTMLElement;
-  scene: HTMLElement;
-  front: HTMLElement;
-  back: HTMLElement;
-  imgA: HTMLImageElement;
-  imgB: HTMLImageElement;
+/** Everything one face of the card can show: a picture layer and a note layer. */
+interface FaceView {
+  el: HTMLElement;
+  img: HTMLImageElement;
   placeholder: HTMLElement;
   placeholderTitle: HTMLElement;
   placeholderHelp: HTMLElement;
   placeholderIcon: HTMLElement;
   titleOverlay: HTMLElement;
-  frontBadge: HTMLElement;
-  frontBadgeLabel: HTMLElement;
-  backBadge: HTMLElement;
-  backBadgeLabel: HTMLElement;
+  noteLayer: HTMLElement;
   noteHeader: HTMLElement;
   noteTitle: HTMLElement;
   editButton: HTMLButtonElement;
   noteBody: HTMLElement;
-  noteMeta: HTMLElement;
   noteFooter: HTMLElement;
+  noteMeta: HTMLElement;
   noteEditor: HTMLElement;
   textarea: HTMLTextAreaElement;
   errorText: HTMLElement;
   counter: HTMLElement;
   saveButton: HTMLButtonElement;
   cancelButton: HTMLButtonElement;
-  navButtons: HTMLButtonElement[];
-  dots: HTMLElement[];
+  /** What the picture layer currently shows. */
+  src: string;
+  failed: boolean;
+  resolveToken: number;
+}
+
+interface Elements {
+  card: HTMLElement;
+  stage: HTMLElement;
+  scene: HTMLElement;
+  faces: [FaceView, FaceView];
+  prev: HTMLButtonElement;
+  next: HTMLButtonElement;
+  dots: HTMLElement;
+  badge: HTMLElement;
+  badgeIcon: HTMLElement;
+  badgeLabel: HTMLElement;
 }
 
 interface NoteSource {
@@ -76,56 +84,48 @@ interface ResolvedImage {
   expiresAt: number;
 }
 
-const CHEVRON_LEFT = "mdi:chevron-left";
-const CHEVRON_RIGHT = "mdi:chevron-right";
-
-const NAV_TEMPLATE = `
-  <button class="nav prev" type="button"><ha-icon icon="${CHEVRON_LEFT}"></ha-icon></button>
-  <button class="nav next" type="button"><ha-icon icon="${CHEVRON_RIGHT}"></ha-icon></button>
-  <div class="dots"></div>`;
+const FACE_TEMPLATE = `
+  <div class="layer layer-image">
+    <img alt="" draggable="false" />
+    <div class="placeholder">
+      <ha-icon icon="mdi:image-plus-outline"></ha-icon>
+      <strong></strong>
+      <small></small>
+    </div>
+    <div class="title-overlay"></div>
+  </div>
+  <div class="layer layer-note">
+    <div class="note-header">
+      <ha-icon icon="mdi:note-text-outline"></ha-icon>
+      <span class="title"></span>
+      <button class="icon-button edit" type="button"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
+    </div>
+    <div class="note-body"></div>
+    <div class="note-editor">
+      <textarea rows="4" spellcheck="true"></textarea>
+      <div class="error-text"></div>
+      <div class="actions">
+        <span class="counter"></span>
+        <button class="btn cancel" type="button"></button>
+        <button class="btn primary save" type="button"></button>
+      </div>
+    </div>
+    <div class="note-footer"><div class="note-meta"></div></div>
+  </div>`;
 
 const TEMPLATE = `
 <style>${CARD_STYLES}</style>
 <ha-card>
-  <div class="stage" tabindex="0" role="button" aria-pressed="false">
+  <div class="stage" tabindex="0" role="button">
     <div class="scene">
-      <div class="face front">
-        <img class="layer-a" alt="" draggable="false" />
-        <img class="layer-b" alt="" draggable="false" />
-        <div class="placeholder">
-          <ha-icon icon="mdi:image-plus-outline"></ha-icon>
-          <strong></strong>
-          <small></small>
-        </div>
-        <div class="title-overlay"></div>
-        ${NAV_TEMPLATE}
-        <div class="badge front-badge"><ha-icon icon="mdi:note-text-outline"></ha-icon><span></span></div>
-      </div>
-      <div class="face back">
-        <div class="note-header">
-          <ha-icon icon="mdi:note-text-outline"></ha-icon>
-          <span class="title"></span>
-          <button class="icon-button edit" type="button"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
-        </div>
-        <div class="note-body"></div>
-        <div class="note-editor">
-          <textarea rows="4" spellcheck="true"></textarea>
-          <div class="error-text"></div>
-          <div class="actions">
-            <span class="counter"></span>
-            <button class="btn cancel" type="button"></button>
-            <button class="btn primary save" type="button"></button>
-          </div>
-        </div>
-        <div class="note-footer">
-          <div class="note-meta"></div>
-          <div class="spacer"></div>
-          <div class="dots"></div>
-          <div class="badge back-badge"><ha-icon icon="mdi:image-outline"></ha-icon><span></span></div>
-        </div>
-        <button class="nav prev" type="button"><ha-icon icon="${CHEVRON_LEFT}"></ha-icon></button>
-        <button class="nav next" type="button"><ha-icon icon="${CHEVRON_RIGHT}"></ha-icon></button>
-      </div>
+      <div class="face face-a current">${FACE_TEMPLATE}</div>
+      <div class="face face-b hidden-face">${FACE_TEMPLATE}</div>
+    </div>
+    <div class="overlay">
+      <button class="nav prev hidden" type="button"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+      <button class="nav next hidden" type="button"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
+      <div class="dots hidden"></div>
+      <div class="badge hidden"><ha-icon></ha-icon><span></span></div>
     </div>
   </div>
 </ha-card>`;
@@ -152,27 +152,26 @@ export class ImageNoteCard extends HTMLElement {
   private _config?: NormalizedConfig;
   private _hass?: HomeAssistant;
   private _lang = "en";
-  private _side: Side = "image";
   private _index = 0;
+  private _current: 0 | 1 = 0;
+  private _angle = 0;
+  private _faceAngle: [number, number] = [0, 0];
+  private _animTimer?: number;
   private _editing = false;
   private _saving = false;
   private _els?: Elements;
-  private _activeLayer: "a" | "b" = "a";
-  private _resolved = new Map<number, ResolvedImage>();
-  private _resolveToken = 0;
+  private _tiles?: ImageNoteCard[];
+  private _resolved = new Map<string, ResolvedImage>();
   private _mediaPending = false;
   private _refreshTimer?: number;
-  private _autoFlipTimer?: number;
-  private _autoAdvanceTimer?: number;
+  private _autoTimer?: number;
+  private _metaTimer?: number;
   private _resizeObserver?: ResizeObserver;
+  private _gestures?: GestureDetector;
   private readonly _motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   private readonly _hoverQuery = window.matchMedia("(hover: hover)");
   private _lastNote?: NoteSource;
-  private _lastImageSrc?: string;
-  private _gestures?: GestureDetector;
-  private _metaTimer?: number;
   private _markdownReady = customElements.get("ha-markdown") !== undefined;
-  private _tiles?: ImageNoteCard[];
 
   constructor() {
     super();
@@ -186,7 +185,8 @@ export class ImageNoteCard extends HTMLElement {
     this._motionQuery.addEventListener("change", this._onMotionChange);
     this._observeResize();
     this._startTimers();
-    this._startMetaTimer();
+    window.clearInterval(this._metaTimer);
+    this._metaTimer = window.setInterval(() => this._renderMeta(), 30_000);
   }
 
   disconnectedCallback(): void {
@@ -195,6 +195,7 @@ export class ImageNoteCard extends HTMLElement {
     this._resizeObserver = undefined;
     this._stopTimers();
     window.clearTimeout(this._refreshTimer);
+    window.clearTimeout(this._animTimer);
     window.clearInterval(this._metaTimer);
     this._metaTimer = undefined;
   }
@@ -203,25 +204,26 @@ export class ImageNoteCard extends HTMLElement {
     validateConfig(config);
     this._config = normalizeConfig(config);
     this._stopTimers();
+    window.clearTimeout(this._animTimer);
     this._gestures?.destroy();
     this._gestures = undefined;
     this._els = undefined;
     this._tiles = undefined;
-    if (this._config.layout === "grid" && this._config.pages.length > 1) {
-      this._buildTiles(config);
-      return;
-    }
-    this._side = this._config.default_side;
-    this._index = 0;
     this._editing = false;
     this._saving = false;
     this._lastNote = undefined;
-    this._lastImageSrc = undefined;
     this._resolved.clear();
-    this._activeLayer = "a";
+    if (this._config.layout === "grid" && this._config.entries.length > 1) {
+      this._buildTiles(config);
+      return;
+    }
     this._build();
     this._applyConfig();
-    this._showPage(0, true);
+    this._index = this._startIndex();
+    this._current = 0;
+    this._resetPositions();
+    this._renderSlide(this._els!.faces[0], this._slide);
+    this._afterSlideChange(false);
     this._observeResize();
     this._startTimers();
   }
@@ -237,8 +239,8 @@ export class ImageNoteCard extends HTMLElement {
       for (const tile of this._tiles) tile.hass = hass;
       return;
     }
-    if (this._mediaPending) {
-      this._resolveImage();
+    if (this._mediaPending && this._els) {
+      this._applyImage(this._currentFace, this._slide);
     }
     this._applyHass();
   }
@@ -260,39 +262,69 @@ export class ImageNoteCard extends HTMLElement {
     return { columns: 6, rows: 4, min_columns: 4, min_rows: 2 };
   }
 
-  /** Public helper so automations / other cards can flip the card programmatically. */
+  /** Next slide, or the first slide of the given kind. Also used by automations via the element. */
   flip(side?: Side): void {
     if (this._tiles) {
       for (const tile of this._tiles) tile.flip(side);
       return;
     }
-    if (this._editing) return;
-    this._setSide(side ?? (this._side === "image" ? "note" : "image"));
-    this._restartTimers();
+    if (!this._config || this._editing) return;
+    if (side) {
+      const target = this._config.slides.findIndex((slide) => slide.kind === side);
+      if (target >= 0 && target !== this._index) this._go(target, target > this._index ? 1 : -1, true);
+      return;
+    }
+    this.goTo("next");
   }
 
-  /** Go to a picture by index (wraps around), or one step with "next" / "prev". */
+  /** Go to a slide by index (wraps around), or one step with "next" / "prev". */
   goTo(target: number | "next" | "prev"): void {
     const config = this._config;
-    if (!config || this._editing) return;
-    const total = config.pages.length;
+    if (!config || this._editing || this._tiles) return;
+    const total = config.slides.length;
     if (total < 2) return;
     let index: number;
-    if (target === "next") index = (this._index + 1) % total;
-    else if (target === "prev") index = (this._index - 1 + total) % total;
-    else index = ((Math.trunc(target) % total) + total) % total;
+    let dir: 1 | -1 = 1;
+    if (target === "next") {
+      index = (this._index + 1) % total;
+    } else if (target === "prev") {
+      index = (this._index - 1 + total) % total;
+      dir = -1;
+    } else {
+      index = ((Math.trunc(target) % total) + total) % total;
+      dir = index >= this._index ? 1 : -1;
+    }
     if (index === this._index) return;
-    this._showPage(index);
+    this._go(index, dir, true);
     this._restartTimers();
   }
 
-  get page(): NormalizedPage | undefined {
-    return this._config?.pages[this._index];
+  get slide(): Slide | undefined {
+    return this._slide;
+  }
+
+  private get _slide(): Slide {
+    const slides = this._config?.slides ?? [];
+    return slides[Math.min(this._index, slides.length - 1)];
+  }
+
+  private get _currentFace(): FaceView {
+    return this._els!.faces[this._current];
+  }
+
+  private _startIndex(): number {
+    const config = this._config;
+    if (!config) return 0;
+    if (config.default_side === "note") {
+      const first = config.slides.findIndex((slide) => slide.kind === "note");
+      if (first >= 0) return first;
+    }
+    return 0;
   }
 
   // ---------------------------------------------------------------- tiles
 
-  /** layout: grid — every picture becomes its own tile, each a full card of its own. */
+  /** layout: grid — every config entry becomes its own tile, each a complete card of its own. */
   private _buildTiles(raw: ImageNoteCardConfig): void {
     const config = this._config;
     if (!config) return;
@@ -310,21 +342,21 @@ export class ImageNoteCard extends HTMLElement {
       grid.style.setProperty("--imagenote-columns", String(config.columns));
     }
     const shared: Partial<ImageNoteCardConfig> = { ...raw };
-    for (const key of ["images", "image", "image_entity", "note", "note_entity", "note_attribute", "title", "layout", "columns"] as const) {
+    for (const key of ["slides", "images", "image", "image_entity", "note", "note_entity", "note_attribute", "title", "layout", "columns"] as const) {
       delete shared[key];
     }
-    this._tiles = config.pages.map((page) => {
+    this._tiles = config.entries.map((entry) => {
       const tile = document.createElement(CARD_TYPE) as ImageNoteCard;
       tile.setConfig({
         ...shared,
         type: raw.type,
         layout: "stack",
-        title: page.title,
-        image: page.image,
-        image_entity: page.image_entity,
-        note: page.note,
-        note_entity: page.note_entity,
-        note_attribute: page.note_attribute,
+        title: entry.title,
+        image: entry.image,
+        image_entity: entry.image_entity,
+        note: entry.note,
+        note_entity: entry.note_entity,
+        note_attribute: entry.note_attribute,
       });
       if (this._hass) tile.hass = this._hass;
       grid.append(tile);
@@ -332,50 +364,54 @@ export class ImageNoteCard extends HTMLElement {
     });
   }
 
-  // ---------------------------------------------------------------- rendering
+  // ---------------------------------------------------------------- building
 
   private _build(): void {
     this._root.innerHTML = TEMPLATE;
-    const q = <T extends Element>(selector: string): T => {
-      const el = this._root.querySelector<T>(selector);
+    const q = <T extends Element>(root: ParentNode, selector: string): T => {
+      const el = root.querySelector<T>(selector);
       if (!el) throw new Error(`ImageNote: missing element ${selector}`);
       return el;
     };
+    const face = (el: HTMLElement): FaceView => ({
+      el,
+      img: q(el, "img"),
+      placeholder: q(el, ".placeholder"),
+      placeholderTitle: q(el, ".placeholder strong"),
+      placeholderHelp: q(el, ".placeholder small"),
+      placeholderIcon: q(el, ".placeholder ha-icon"),
+      titleOverlay: q(el, ".title-overlay"),
+      noteLayer: q(el, ".layer-note"),
+      noteHeader: q(el, ".note-header"),
+      noteTitle: q(el, ".note-header .title"),
+      editButton: q(el, ".edit"),
+      noteBody: q(el, ".note-body"),
+      noteFooter: q(el, ".note-footer"),
+      noteMeta: q(el, ".note-meta"),
+      noteEditor: q(el, ".note-editor"),
+      textarea: q(el, "textarea"),
+      errorText: q(el, ".error-text"),
+      counter: q(el, ".counter"),
+      saveButton: q(el, ".save"),
+      cancelButton: q(el, ".cancel"),
+      src: "",
+      failed: false,
+      resolveToken: 0,
+    });
     this._els = {
-      card: q("ha-card"),
-      stage: q(".stage"),
-      scene: q(".scene"),
-      front: q(".front"),
-      back: q(".back"),
-      imgA: q("img.layer-a"),
-      imgB: q("img.layer-b"),
-      placeholder: q(".placeholder"),
-      placeholderTitle: q(".placeholder strong"),
-      placeholderHelp: q(".placeholder small"),
-      placeholderIcon: q(".placeholder ha-icon"),
-      titleOverlay: q(".title-overlay"),
-      frontBadge: q(".front-badge"),
-      frontBadgeLabel: q(".front-badge span"),
-      backBadge: q(".back-badge"),
-      backBadgeLabel: q(".back-badge span"),
-      noteHeader: q(".note-header"),
-      noteTitle: q(".note-header .title"),
-      editButton: q(".edit"),
-      noteBody: q(".note-body"),
-      noteMeta: q(".note-meta"),
-      noteFooter: q(".note-footer"),
-      noteEditor: q(".note-editor"),
-      textarea: q("textarea"),
-      errorText: q(".error-text"),
-      counter: q(".counter"),
-      saveButton: q(".save"),
-      cancelButton: q(".cancel"),
-      navButtons: Array.from(this._root.querySelectorAll<HTMLButtonElement>(".nav")),
-      dots: Array.from(this._root.querySelectorAll<HTMLElement>(".dots")),
+      card: q(this._root, "ha-card"),
+      stage: q(this._root, ".stage"),
+      scene: q(this._root, ".scene"),
+      faces: [face(q(this._root, ".face-a")), face(q(this._root, ".face-b"))],
+      prev: q(this._root, ".nav.prev"),
+      next: q(this._root, ".nav.next"),
+      dots: q(this._root, ".dots"),
+      badge: q(this._root, ".badge"),
+      badgeIcon: q(this._root, ".badge ha-icon"),
+      badgeLabel: q(this._root, ".badge span"),
     };
     const els = this._els;
 
-    this._gestures?.destroy();
     this._gestures = new GestureDetector(els.stage, (kind) => void this._handleGesture(kind), {
       holdDelay: HOLD_DELAY_MS,
       doubleTapWindow: DOUBLE_TAP_WINDOW_MS,
@@ -387,35 +423,38 @@ export class ImageNoteCard extends HTMLElement {
     els.stage.addEventListener("keydown", this._onStageKeydown);
     els.stage.addEventListener("mouseenter", this._onMouseEnter);
     els.stage.addEventListener("mouseleave", this._onMouseLeave);
-    for (const img of [els.imgA, els.imgB]) {
-      img.addEventListener("error", () => this._onImageError(img));
-      img.addEventListener("load", () => this._onImageLoad(img));
-    }
-    els.editButton.addEventListener("click", (ev) => {
+    els.prev.addEventListener("click", (ev) => {
       ev.stopPropagation();
-      this._startEdit();
+      this.goTo("prev");
     });
-    for (const button of els.navButtons) {
-      button.addEventListener("click", (ev) => {
+    els.next.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      this.goTo("next");
+    });
+
+    for (const view of els.faces) {
+      view.img.addEventListener("error", () => this._onImageError(view));
+      view.img.addEventListener("load", () => this._onImageLoad(view));
+      view.editButton.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        this.goTo(button.classList.contains("next") ? "next" : "prev");
+        if (view === this._currentFace) this._startEdit();
       });
+      view.noteEditor.addEventListener("click", (ev) => ev.stopPropagation());
+      view.noteEditor.addEventListener("keydown", (ev) => ev.stopPropagation());
+      view.textarea.addEventListener("input", () => this._updateCounter());
+      view.textarea.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          this._cancelEdit();
+        } else if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
+          ev.preventDefault();
+          void this._saveEdit();
+        }
+      });
+      view.cancelButton.addEventListener("click", () => this._cancelEdit());
+      view.saveButton.addEventListener("click", () => void this._saveEdit());
+      view.noteBody.addEventListener("scroll", () => this._updateScrollState(view), { passive: true });
     }
-    els.noteEditor.addEventListener("click", (ev) => ev.stopPropagation());
-    els.noteEditor.addEventListener("keydown", (ev) => ev.stopPropagation());
-    els.textarea.addEventListener("input", () => this._updateCounter());
-    els.textarea.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape") {
-        ev.preventDefault();
-        this._cancelEdit();
-      } else if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
-        ev.preventDefault();
-        void this._saveEdit();
-      }
-    });
-    els.cancelButton.addEventListener("click", () => this._cancelEdit());
-    els.saveButton.addEventListener("click", () => void this._saveEdit());
-    els.noteBody.addEventListener("scroll", () => this._updateScrollState(), { passive: true });
 
     this._buildDots();
     this._applyStrings();
@@ -425,34 +464,29 @@ export class ImageNoteCard extends HTMLElement {
     const els = this._els;
     const config = this._config;
     if (!els || !config) return;
-    const total = config.pages.length;
-    const show = total > 1 && config.show_navigation;
-    for (const container of els.dots) {
-      container.replaceChildren();
-      container.classList.toggle("hidden", !show);
-      if (!show) continue;
-      for (let i = 0; i < total; i++) {
-        const dot = document.createElement("button");
-        dot.type = "button";
-        dot.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          this.goTo(i);
-        });
-        container.append(dot);
-      }
+    const total = config.slides.length;
+    const show = total > 2 && config.show_navigation;
+    els.dots.replaceChildren();
+    els.dots.classList.toggle("hidden", !show);
+    els.prev.classList.toggle("hidden", !show);
+    els.next.classList.toggle("hidden", !show);
+    els.stage.classList.toggle("with-dots", show);
+    if (!show) return;
+    for (let i = 0; i < total; i++) {
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.goTo(i);
+      });
+      els.dots.append(dot);
     }
-    for (const button of els.navButtons) {
-      button.classList.toggle("hidden", !show);
-    }
-    els.titleOverlay.classList.toggle("with-dots", show);
-    this._updateFooter();
   }
 
   private _applyConfig(): void {
     const els = this._els;
     const config = this._config;
     if (!els || !config) return;
-
     const ratio = parseAspectRatio(config.aspect_ratio);
     els.stage.classList.toggle("natural", ratio === null);
     els.stage.classList.toggle("ratio", ratio !== null);
@@ -462,198 +496,273 @@ export class ImageNoteCard extends HTMLElement {
       els.stage.style.removeProperty("--imagenote-aspect");
     }
     this.style.setProperty("--imagenote-fit", config.image_fit);
-    this._applyTransition();
-
-    els.scene.classList.toggle("hover-flip", config.hover_flip);
-    els.frontBadge.classList.toggle("hidden", !config.show_hint);
-    els.backBadge.classList.toggle("hidden", !config.show_hint);
-    this._applySide();
-    this._updateFooter();
+    els.stage.classList.toggle("hover-flip", config.hover_flip);
+    els.badge.classList.toggle("hidden", !config.show_hint || config.slides.length < 2);
+    this._applyMode();
   }
 
-  private _updateFooter(): void {
-    const els = this._els;
+  private _mode(): Transition {
     const config = this._config;
-    if (!els || !config) return;
-    const hasMeta = !els.noteMeta.classList.contains("hidden") && els.noteMeta.textContent !== "";
-    const hasDots = config.pages.length > 1 && config.show_navigation;
-    els.noteFooter.classList.toggle("hidden", this._editing || (!hasMeta && !hasDots && !config.show_hint));
-    this._updateScrollState();
+    if (!config) return "flip";
+    return this._motionQuery.matches && config.transition !== "none" ? "fade" : config.transition;
   }
 
-  /** Marks the note side as scrollable so the footer can fade the text out above it. */
-  private _updateScrollState(): void {
-    const els = this._els;
-    if (!els) return;
-    const body = els.noteBody;
-    const scrollable = body.scrollHeight > body.clientHeight + 1;
-    const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
-    els.back.classList.toggle("scrollable", scrollable);
-    els.back.classList.toggle("at-end", atEnd);
-  }
-
-  private _applyTitles(): void {
-    const els = this._els;
-    const config = this._config;
-    if (!els || !config) return;
-    const title = this.page?.title || config.title;
-    const showTitle = config.show_title && title !== "";
-    els.titleOverlay.textContent = title;
-    els.titleOverlay.classList.toggle("hidden", !showTitle);
-    els.noteTitle.textContent = title || translate(this._lang, "note");
-    els.noteHeader.classList.toggle("no-title", title === "");
-  }
-
-  private _applyTransition(): void {
+  private _applyMode(): void {
     const els = this._els;
     const config = this._config;
     if (!els || !config) return;
     const reduced = this._motionQuery.matches;
-    const transition: Transition = reduced && config.transition !== "none" ? "fade" : config.transition;
     const duration = reduced ? Math.min(config.duration, 200) : config.duration;
-    els.scene.classList.remove("flip", "fade", "slide", "cube", "none", "horizontal", "vertical");
-    els.scene.classList.add(transition, config.direction);
     this.style.setProperty("--imagenote-duration", `${duration}ms`);
-    this._updateDepth();
+    els.scene.classList.remove("mode-flip", "mode-fade", "mode-slide", "mode-cube", "mode-none");
+    els.scene.classList.add(`mode-${this._mode()}`);
+    this._resetPositions();
   }
 
   private _applyStrings(): void {
     const els = this._els;
     if (!els) return;
     const t = (key: string) => translate(this._lang, key);
-    els.frontBadgeLabel.textContent = t("note");
-    els.backBadgeLabel.textContent = t("photo");
-    els.editButton.title = t("editNote");
-    els.editButton.setAttribute("aria-label", t("editNote"));
-    els.cancelButton.textContent = t("cancel");
-    els.saveButton.textContent = this._saving ? t("saving") : t("save");
-    for (const button of els.navButtons) {
-      const label = t(button.classList.contains("next") ? "nextPicture" : "previousPicture");
-      button.title = label;
-      button.setAttribute("aria-label", label);
+    for (const view of els.faces) {
+      view.editButton.title = t("editNote");
+      view.editButton.setAttribute("aria-label", t("editNote"));
+      view.cancelButton.textContent = t("cancel");
+      view.saveButton.textContent = this._saving ? t("saving") : t("save");
     }
-    this._applyTitles();
-    this._updatePlaceholder();
-    this._applySide();
-    // Re-render the note so empty-state texts follow the language.
-    this._lastNote = undefined;
-    this._applyHass();
+    els.prev.title = t("previousPicture");
+    els.prev.setAttribute("aria-label", t("previousPicture"));
+    els.next.title = t("nextPicture");
+    els.next.setAttribute("aria-label", t("nextPicture"));
+    if (this._config) {
+      this._lastNote = undefined;
+      this._renderSlide(this._currentFace, this._slide);
+      this._afterSlideChange(false);
+    }
   }
 
-  private _applySide(): void {
+  // ---------------------------------------------------------------- slide engine
+
+  private _rot(): "rotateX" | "rotateY" {
+    return this._config?.direction === "vertical" ? "rotateX" : "rotateY";
+  }
+
+  private _depth(): number {
+    const els = this._els;
+    if (!els) return 150;
+    const rect = els.stage.getBoundingClientRect();
+    const size = this._config?.direction === "vertical" ? rect.height : rect.width;
+    return size > 0 ? size / 2 : 150;
+  }
+
+  /** Where a face sits for a given angle, per transition mode. */
+  private _faceTransform(angle: number): string {
+    const mode = this._mode();
+    const sign = this._config?.direction === "vertical" ? -1 : 1;
+    if (mode === "flip") return `${this._rot()}(${sign * angle}deg)`;
+    if (mode === "cube") return `${this._rot()}(${sign * angle}deg) translateZ(${this._depth()}px)`;
+    return "";
+  }
+
+  private _sceneTransform(angle: number): string {
+    const mode = this._mode();
+    const sign = this._config?.direction === "vertical" ? -1 : 1;
+    if (mode === "flip") return `${this._rot()}(${-sign * angle}deg)`;
+    if (mode === "cube") return `translateZ(${-this._depth()}px) ${this._rot()}(${-sign * angle}deg)`;
+    return "";
+  }
+
+  /** Puts the current face in front without animation and parks the other one. */
+  private _resetPositions(): void {
+    const els = this._els;
+    if (!els) return;
+    window.clearTimeout(this._animTimer);
+    this._angle = 0;
+    this._faceAngle = [0, 0];
+    els.scene.classList.add("no-transition");
+    els.scene.style.transform = this._sceneTransform(0);
+    els.faces.forEach((view, i) => {
+      view.el.style.transform = this._faceTransform(0);
+      view.el.style.opacity = "";
+      const isCurrent = i === this._current;
+      view.el.classList.toggle("current", isCurrent);
+      view.el.classList.toggle("hidden-face", !isCurrent);
+    });
+    void els.scene.offsetWidth; // flush so the next change animates
+    els.scene.classList.remove("no-transition");
+  }
+
+  private _go(index: number, dir: 1 | -1, animate: boolean): void {
     const els = this._els;
     const config = this._config;
-    if (!els || !config) return;
-    const flipped = this._side === "note";
-    els.scene.classList.toggle("flipped", flipped);
-    els.stage.setAttribute("aria-pressed", String(flipped));
-    const title = this.page?.title || config.title;
-    const parts: string[] = [];
-    if (title) parts.push(title);
-    if (config.pages.length > 1) {
-      parts.push(translate(this._lang, "page", { index: this._index + 1, total: config.pages.length }));
-    }
-    parts.push(translate(this._lang, flipped ? "showPhoto" : "showNote"));
-    els.stage.setAttribute("aria-label", parts.join(" – "));
-  }
+    if (!els || !config || this._editing) return;
+    const slide = config.slides[index];
+    if (!slide) return;
+    const fromIndex = this._current;
+    const toIndex: 0 | 1 = fromIndex === 0 ? 1 : 0;
+    const from = els.faces[fromIndex];
+    const to = els.faces[toIndex];
+    const mode = animate ? this._mode() : "none";
+    const duration = Number.parseFloat(getComputedStyle(this).getPropertyValue("--imagenote-duration")) || 0;
 
-  private _setSide(side: Side): void {
-    if (side === this._side) return;
-    this._side = side;
-    this._applySide();
-    this.dispatchEvent(
-      new CustomEvent("imagenote-flip", { detail: { side, index: this._index }, bubbles: true, composed: true }),
-    );
-  }
-
-  // ---------------------------------------------------------------- pages
-
-  private _showPage(index: number, initial = false): void {
-    const els = this._els;
-    const config = this._config;
-    if (!els || !config) return;
+    window.clearTimeout(this._animTimer);
     this._index = index;
-    for (const container of els.dots) {
-      Array.from(container.children).forEach((dot, i) => dot.classList.toggle("active", i === index));
-    }
-    this._applyTitles();
-    this._applySide();
     this._lastNote = undefined;
-    this._lastImageSrc = undefined;
-    this._resolveImage();
-    this._applyHass();
-    if (!initial) {
-      this.dispatchEvent(
-        new CustomEvent("imagenote-page", { detail: { index }, bubbles: true, composed: true }),
-      );
+    this._renderSlide(to, slide);
+    to.el.classList.remove("hidden-face");
+    to.el.classList.add("current");
+    from.el.classList.remove("current");
+
+    const axis = config.direction === "vertical" ? "translateY" : "translateX";
+    switch (mode) {
+      case "flip":
+      case "cube": {
+        this._angle += dir * (mode === "flip" ? 180 : 90);
+        this._faceAngle[toIndex] = this._angle;
+        to.el.style.transform = this._faceTransform(this._angle);
+        els.scene.style.transform = this._sceneTransform(this._angle);
+        break;
+      }
+      case "slide": {
+        els.scene.classList.add("no-transition");
+        to.el.style.transform = `${axis}(${dir * 100}%)`;
+        from.el.style.transform = `${axis}(0)`;
+        void els.scene.offsetWidth;
+        els.scene.classList.remove("no-transition");
+        to.el.style.transform = `${axis}(0)`;
+        from.el.style.transform = `${axis}(${-dir * 100}%)`;
+        break;
+      }
+      case "fade": {
+        els.scene.classList.add("no-transition");
+        to.el.style.opacity = "0";
+        from.el.style.opacity = "1";
+        void els.scene.offsetWidth;
+        els.scene.classList.remove("no-transition");
+        to.el.style.opacity = "1";
+        from.el.style.opacity = "0";
+        break;
+      }
+      default: {
+        this._current = toIndex;
+        this._resetPositions();
+        break;
+      }
+    }
+    this._current = toIndex;
+    this._lastNote = slide.kind === "note" ? this._noteSource(slide) : undefined;
+    if (mode !== "none") {
+      this._animTimer = window.setTimeout(() => {
+        from.el.classList.add("hidden-face");
+        this._updateScrollState(to);
+      }, duration);
+    }
+    this._afterSlideChange(true);
+  }
+
+  /** Dots, badge, aria and events after the visible slide changed. */
+  private _afterSlideChange(emit: boolean): void {
+    const els = this._els;
+    const config = this._config;
+    if (!els || !config) return;
+    const slide = this._slide;
+    const total = config.slides.length;
+    els.stage.classList.toggle("kind-note", slide.kind === "note");
+    Array.from(els.dots.children).forEach((dot, i) => dot.classList.toggle("active", i === this._index));
+
+    const next = config.slides[(this._index + 1) % total];
+    const t = (key: string, vars?: Record<string, string | number>) => translate(this._lang, key, vars);
+    if (next && total > 1) {
+      els.badgeIcon.setAttribute("icon", next.kind === "note" ? "mdi:note-text-outline" : "mdi:image-outline");
+      els.badgeLabel.textContent = t(next.kind === "note" ? "note" : "photo");
+    }
+    const parts: string[] = [];
+    const title = slide.title || config.title;
+    if (title) parts.push(title);
+    if (total > 1) parts.push(t("slide", { index: this._index + 1, total }));
+    if (next && total > 1) parts.push(t(next.kind === "note" ? "showNote" : "showPhoto"));
+    els.stage.setAttribute("aria-label", parts.join(" – "));
+    els.stage.setAttribute("aria-pressed", String(slide.kind === "note"));
+
+    this._updateScrollState(this._currentFace);
+    if (emit) {
+      const detail = { index: this._index, kind: slide.kind, side: slide.kind };
+      this.dispatchEvent(new CustomEvent("imagenote-slide", { detail, bubbles: true, composed: true }));
+      this.dispatchEvent(new CustomEvent("imagenote-flip", { detail, bubbles: true, composed: true }));
     }
   }
 
   private _onSwipe(direction: SwipeDirection): void {
-    if (!this._config || this._config.pages.length < 2 || this._editing) return;
+    if (!this._config || this._config.slides.length < 2 || this._editing) return;
     this.goTo(direction === "left" ? "next" : "prev");
+  }
+
+  // ---------------------------------------------------------------- rendering a slide into a face
+
+  private _renderSlide(view: FaceView, slide: Slide): void {
+    const config = this._config;
+    if (!config) return;
+    view.el.classList.toggle("kind-image", slide.kind === "image");
+    view.el.classList.toggle("kind-note", slide.kind === "note");
+    const title = slide.title || config.title;
+    if (slide.kind === "image") {
+      view.titleOverlay.textContent = title;
+      view.titleOverlay.classList.toggle("hidden", !(config.show_title && title));
+      this._applyImage(view, slide);
+    } else {
+      view.noteTitle.textContent = title || translate(this._lang, "note");
+      view.noteHeader.classList.toggle("no-title", !title);
+      const source = this._noteSource(slide);
+      if (view === this._currentFace) this._lastNote = source;
+      view.editButton.classList.toggle("hidden", !source.editable);
+      this._renderNote(view, source);
+      this._renderMetaFor(view, source);
+    }
   }
 
   // ---------------------------------------------------------------- picture
 
-  private _imageSourceFromEntity(page: NormalizedPage): string | undefined {
-    if (!page.image_entity || !this._hass) return undefined;
-    const entity = this._hass.states[page.image_entity];
+  private _imageSourceFromEntity(slide: Slide): string | undefined {
+    if (!slide.image_entity || !this._hass) return undefined;
+    const entity = this._hass.states[slide.image_entity];
     if (!entity) return undefined;
     const picture = entity.attributes.entity_picture;
     if (typeof picture !== "string" || !picture) return undefined;
-    const domain = page.image_entity.split(".")[0];
+    const domain = slide.image_entity.split(".")[0];
     if (domain === "image" || domain === "camera") {
-      // Cache-bust when the entity updates so the card shows the latest frame.
       const join = picture.includes("?") ? "&" : "?";
       return `${picture}${join}state=${encodeURIComponent(entity.state)}`;
     }
     return picture;
   }
 
-  private _resolveImage(): void {
-    const page = this.page;
-    if (!page) return;
-    const index = this._index;
-    const token = ++this._resolveToken;
-    window.clearTimeout(this._refreshTimer);
+  private _applyImage(view: FaceView, slide: Slide): void {
+    const token = ++view.resolveToken;
     this._mediaPending = false;
-
-    if (page.image_entity) {
-      this._setImage(this._imageSourceFromEntity(page) ?? "", false);
+    if (slide.image_entity) {
+      this._setImage(view, this._imageSourceFromEntity(slide) ?? "", false);
       return;
     }
-
-    const image = page.image;
+    const image = slide.image;
     if (!image) {
-      this._setImage("", false);
+      this._setImage(view, "", false);
       return;
     }
-
-    let mediaId: string | undefined;
-    if (typeof image === "string") {
-      if (!isMediaSourceId(image)) {
-        this._setImage(image, false);
-        return;
-      }
-      mediaId = image;
-    } else {
-      mediaId = image.media_content_id;
+    const mediaId = typeof image === "string" ? (isMediaSourceId(image) ? image : undefined) : image.media_content_id;
+    if (!mediaId) {
+      this._setImage(view, image as string, false);
+      return;
     }
-
-    const cached = this._resolved.get(index);
+    const cached = this._resolved.get(mediaId);
     if (cached && !cached.failed && cached.expiresAt > Date.now()) {
-      this._setImage(cached.url, false);
+      this._setImage(view, cached.url, false);
       this._scheduleRefresh(cached.expiresAt);
       return;
     }
-
     if (!this._hass) {
       this._mediaPending = true;
-      this._setImage("", false);
+      this._setImage(view, "", false);
       return;
     }
-
     void this._hass
       .callWS<ResolvedMedia>({
         type: "media_source/resolve_media",
@@ -662,130 +771,88 @@ export class ImageNoteCard extends HTMLElement {
       })
       .then((result) => {
         const expiresAt = Date.now() + MEDIA_REFRESH_MS;
-        this._resolved.set(index, { url: result.url, failed: false, expiresAt });
-        if (token !== this._resolveToken) return;
-        this._setImage(result.url, false);
+        this._resolved.set(mediaId, { url: result.url, failed: false, expiresAt });
+        if (token !== view.resolveToken) return;
+        this._setImage(view, result.url, false);
         this._scheduleRefresh(expiresAt);
       })
       .catch(() => {
-        this._resolved.set(index, { url: "", failed: true, expiresAt: 0 });
-        if (token !== this._resolveToken) return;
-        this._setImage("", true);
+        this._resolved.set(mediaId, { url: "", failed: true, expiresAt: 0 });
+        if (token !== view.resolveToken) return;
+        this._setImage(view, "", true);
       });
   }
 
   private _scheduleRefresh(expiresAt: number): void {
     window.clearTimeout(this._refreshTimer);
     const delay = Math.max(1000, expiresAt - Date.now());
-    this._refreshTimer = window.setTimeout(() => this._resolveImage(), delay);
+    this._refreshTimer = window.setTimeout(() => {
+      if (this._els && this._slide.kind === "image") this._applyImage(this._currentFace, this._slide);
+    }, delay);
   }
 
-  private _setImage(src: string, failed: boolean): void {
-    const els = this._els;
-    if (!els) return;
-    if (src === this._lastImageSrc && !failed) {
+  private _setImage(view: FaceView, src: string, failed: boolean): void {
+    if (src === view.src && failed === view.failed) {
+      this._updatePlaceholder(view);
       return;
     }
-    this._lastImageSrc = src;
-    const previous = this._activeLayer === "a" ? els.imgA : els.imgB;
-    if (!src) {
-      previous.removeAttribute("src");
-      previous.classList.add("hidden");
-      this._updatePlaceholder(failed);
-      return;
+    view.src = src;
+    view.failed = failed;
+    if (src) {
+      view.img.src = src;
+    } else {
+      view.img.removeAttribute("src");
     }
-    // Crossfade: load into the inactive layer, then swap when it arrives.
-    const nextLayer = this._activeLayer === "a" ? "b" : "a";
-    const next = nextLayer === "a" ? els.imgA : els.imgB;
-    if (!previous.getAttribute("src")) {
-      // Nothing visible yet: load straight into the active layer.
-      previous.classList.remove("hidden");
-      previous.src = src;
-      this._updatePlaceholder(false, true);
-      return;
-    }
-    next.classList.remove("hidden");
-    next.dataset.pending = "1";
-    next.src = src;
-    this._updatePlaceholder(false, true);
+    this._updatePlaceholder(view);
   }
 
-  private _swapLayers(loaded: HTMLImageElement): void {
-    const els = this._els;
-    if (!els) return;
-    const layer = loaded === els.imgA ? "a" : "b";
-    this._activeLayer = layer;
-    els.imgA.classList.toggle("inactive", layer !== "a");
-    els.imgB.classList.toggle("active", layer === "b");
-    const other = layer === "a" ? els.imgB : els.imgA;
-    window.setTimeout(() => {
-      if (this._activeLayer === layer) {
-        other.removeAttribute("src");
-        other.classList.add("hidden");
-      }
-    }, 400);
-  }
-
-  private _updatePlaceholder(failed = false, loading = false): void {
-    const els = this._els;
-    if (!els) return;
-    const hasImage = Boolean(this._lastImageSrc) && !failed;
-    els.placeholder.classList.toggle("hidden", hasImage);
-    if (!hasImage) {
-      els.imgA.classList.add("hidden");
-      els.imgB.classList.add("hidden");
-    }
+  private _updatePlaceholder(view: FaceView): void {
+    const hasImage = Boolean(view.src) && !view.failed;
+    view.placeholder.classList.toggle("hidden", hasImage);
+    view.img.classList.toggle("hidden", !hasImage);
     const t = (key: string) => translate(this._lang, key);
-    if (failed) {
-      els.placeholderIcon.setAttribute("icon", "mdi:image-broken-variant");
-      els.placeholderTitle.textContent = t("imageError");
-      els.placeholderHelp.textContent = "";
-    } else if (!loading) {
-      els.placeholderIcon.setAttribute("icon", "mdi:image-plus-outline");
-      els.placeholderTitle.textContent = t("noImage");
-      els.placeholderHelp.textContent = t("noImageHelp");
+    if (view.failed) {
+      view.placeholderIcon.setAttribute("icon", "mdi:image-broken-variant");
+      view.placeholderTitle.textContent = t("imageError");
+      view.placeholderHelp.textContent = "";
+    } else {
+      view.placeholderIcon.setAttribute("icon", "mdi:image-plus-outline");
+      view.placeholderTitle.textContent = t("noImage");
+      view.placeholderHelp.textContent = t("noImageHelp");
     }
   }
 
-  private _onImageError(img: HTMLImageElement): void {
-    if (!img.getAttribute("src")) return;
-    if (img.dataset.pending) {
-      delete img.dataset.pending;
-      img.removeAttribute("src");
-      img.classList.add("hidden");
-    }
-    this._updatePlaceholder(true);
+  private _onImageError(view: FaceView): void {
+    if (!view.img.getAttribute("src")) return;
+    view.failed = true;
+    this._updatePlaceholder(view);
   }
 
-  private _onImageLoad(img: HTMLImageElement): void {
-    if (img.dataset.pending) {
-      delete img.dataset.pending;
-      this._swapLayers(img);
-    }
-    this._updatePlaceholder(false);
+  private _onImageLoad(view: FaceView): void {
+    view.failed = false;
+    this._updatePlaceholder(view);
     this._updateDepth();
   }
 
   // ---------------------------------------------------------------- note
 
-  private _noteSource(): NoteSource {
+  private _noteSource(slide: Slide): NoteSource {
     const config = this._config;
-    const page = this.page;
     const empty: NoteSource = { text: "", editable: false, error: "", max: null, domain: "", changed: "", entityId: "" };
-    if (!config || !page) return empty;
-    if (!page.note_entity) {
-      return { ...empty, text: page.note };
+    if (!config) return empty;
+    if (!slide.note_entity) {
+      return { ...empty, text: slide.note };
     }
-    const entity: HassEntity | undefined = this._hass?.states[page.note_entity];
+    const entity: HassEntity | undefined = this._hass?.states[slide.note_entity];
     if (!entity) {
       return {
         ...empty,
-        entityId: page.note_entity,
-        error: this._hass ? translate(this._lang, "entityMissing", { entity: page.note_entity }) : "",
+        entityId: slide.note_entity,
+        error: this._hass ? translate(this._lang, "entityMissing", { entity: slide.note_entity }) : "",
       };
     }
-    const domain = page.note_entity.split(".")[0];
-    const attr = page.note_attribute;
+    const domain = slide.note_entity.split(".")[0];
+    const attr = slide.note_attribute;
     let text: string;
     if (attr) {
       const raw = entity.attributes[attr];
@@ -801,23 +868,24 @@ export class ImageNoteCard extends HTMLElement {
       max,
       domain,
       changed: config.show_updated ? entity.last_changed ?? "" : "",
-      entityId: page.note_entity,
+      entityId: slide.note_entity,
     };
   }
 
+  /** Reacts to state changes for the slide currently shown. */
   private _applyHass(): void {
     const els = this._els;
-    const page = this.page;
-    if (!els || !this._config || !page) return;
-
-    if (page.image_entity) {
-      const src = this._imageSourceFromEntity(page) ?? "";
-      if (src !== this._lastImageSrc) {
-        this._setImage(src, false);
+    if (!els || !this._config) return;
+    const slide = this._slide;
+    const view = this._currentFace;
+    if (slide.kind === "image") {
+      if (slide.image_entity) {
+        const src = this._imageSourceFromEntity(slide) ?? "";
+        if (src !== view.src) this._setImage(view, src, false);
       }
+      return;
     }
-
-    const source = this._noteSource();
+    const source = this._noteSource(slide);
     const last = this._lastNote;
     if (
       last &&
@@ -831,42 +899,40 @@ export class ImageNoteCard extends HTMLElement {
       return;
     }
     this._lastNote = source;
-    els.editButton.classList.toggle("hidden", !source.editable || this._editing);
+    view.editButton.classList.toggle("hidden", !source.editable || this._editing);
     if (!this._editing) {
-      this._renderNote(source);
+      this._renderNote(view, source);
     }
-    this._renderMeta();
-    requestAnimationFrame(() => this._updateScrollState());
+    this._renderMetaFor(view, source);
+    requestAnimationFrame(() => this._updateScrollState(view));
   }
 
   private _renderMeta(): void {
-    const els = this._els;
-    if (!els) return;
-    const changed = this._lastNote?.changed;
-    if (!changed || this._editing) {
-      els.noteMeta.textContent = "";
-      els.noteMeta.classList.add("hidden");
-      this._updateFooter();
+    if (!this._els || !this._lastNote || this._slide.kind !== "note") return;
+    this._renderMetaFor(this._currentFace, this._lastNote);
+  }
+
+  private _renderMetaFor(view: FaceView, source: NoteSource): void {
+    if (!source.changed || this._editing) {
+      view.noteMeta.textContent = "";
       return;
     }
-    const relative = formatRelativeTime(new Date(changed), this._lang);
-    els.noteMeta.textContent = translate(this._lang, "updated", { time: relative });
-    els.noteMeta.classList.remove("hidden");
-    this._updateFooter();
+    const relative = formatRelativeTime(new Date(source.changed), this._lang);
+    view.noteMeta.textContent = translate(this._lang, "updated", { time: relative });
   }
 
-  private _startMetaTimer(): void {
-    window.clearInterval(this._metaTimer);
-    this._metaTimer = window.setInterval(() => this._renderMeta(), 30_000);
+  private _updateScrollState(view: FaceView): void {
+    const body = view.noteBody;
+    const scrollable = body.scrollHeight > body.clientHeight + 1;
+    const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
+    view.noteLayer.classList.toggle("scrollable", scrollable);
+    view.noteLayer.classList.toggle("at-end", atEnd);
   }
 
-  private _renderNote(source: NoteSource): void {
-    const els = this._els;
-    if (!els) return;
-    const body = els.noteBody;
+  private _renderNote(view: FaceView, source: NoteSource): void {
+    const body = view.noteBody;
     body.replaceChildren();
     const t = (key: string) => translate(this._lang, key);
-
     if (source.error) {
       const div = document.createElement("div");
       div.className = "error-text";
@@ -886,10 +952,7 @@ export class ImageNoteCard extends HTMLElement {
       return;
     }
     if (this._markdownReady) {
-      const md = document.createElement("ha-markdown") as HTMLElement & {
-        content?: string;
-        breaks?: boolean;
-      };
+      const md = document.createElement("ha-markdown") as HTMLElement & { content?: string; breaks?: boolean };
       md.setAttribute("breaks", "");
       md.breaks = true;
       md.content = source.text;
@@ -904,7 +967,6 @@ export class ImageNoteCard extends HTMLElement {
 
   private _ensureMarkdown(): void {
     if (this._markdownReady) return;
-    // The markdown card pulls in <ha-markdown>; creating one makes HA load it lazily.
     window
       .loadCardHelpers?.()
       .then((helpers) => {
@@ -913,8 +975,8 @@ export class ImageNoteCard extends HTMLElement {
       .catch(() => undefined);
     void customElements.whenDefined("ha-markdown").then(() => {
       this._markdownReady = true;
-      if (this._lastNote && !this._editing) {
-        this._renderNote(this._lastNote);
+      if (this._els && this._lastNote && !this._editing && this._slide.kind === "note") {
+        this._renderNote(this._currentFace, this._lastNote);
       }
     });
   }
@@ -923,44 +985,50 @@ export class ImageNoteCard extends HTMLElement {
 
   private _startEdit(): void {
     const els = this._els;
-    const source = this._lastNote ?? this._noteSource();
-    if (!els || !source.editable || !this._hass) return;
+    if (!els || this._slide.kind !== "note" || !this._hass) return;
+    const view = this._currentFace;
+    const source = this._lastNote ?? this._noteSource(this._slide);
+    if (!source.editable) return;
     this._editing = true;
     this._stopTimers();
-    this._setSide("note");
     els.scene.classList.add("editing");
-    els.noteBody.style.display = "none";
-    els.editButton.classList.add("hidden");
-    els.noteEditor.classList.add("visible");
-    els.noteFooter.classList.add("hidden");
-    els.errorText.textContent = "";
-    els.textarea.value = source.text;
+    els.stage.classList.add("editing");
+    view.noteBody.style.display = "none";
+    view.noteFooter.style.display = "none";
+    view.editButton.classList.add("hidden");
+    view.noteEditor.classList.add("visible");
+    view.errorText.textContent = "";
+    view.textarea.value = source.text;
     if (source.max) {
-      els.textarea.maxLength = source.max;
+      view.textarea.maxLength = source.max;
     } else {
-      els.textarea.removeAttribute("maxlength");
+      view.textarea.removeAttribute("maxlength");
     }
     this._updateCounter();
-    els.textarea.focus();
-    els.textarea.setSelectionRange(els.textarea.value.length, els.textarea.value.length);
+    view.textarea.focus();
+    view.textarea.setSelectionRange(view.textarea.value.length, view.textarea.value.length);
   }
 
   private _finishEdit(): void {
     const els = this._els;
     if (!els) return;
+    const view = this._currentFace;
     this._editing = false;
     this._saving = false;
     els.scene.classList.remove("editing");
-    els.noteBody.style.display = "";
-    els.noteEditor.classList.remove("visible");
-    els.saveButton.disabled = false;
-    els.cancelButton.disabled = false;
-    els.saveButton.textContent = translate(this._lang, "save");
-    const source = this._noteSource();
+    els.stage.classList.remove("editing");
+    view.noteBody.style.display = "";
+    view.noteFooter.style.display = "";
+    view.noteEditor.classList.remove("visible");
+    view.saveButton.disabled = false;
+    view.cancelButton.disabled = false;
+    view.saveButton.textContent = translate(this._lang, "save");
+    const source = this._noteSource(this._slide);
     this._lastNote = source;
-    els.editButton.classList.toggle("hidden", !source.editable);
-    this._renderNote(source);
-    this._renderMeta();
+    view.editButton.classList.toggle("hidden", !source.editable);
+    this._renderNote(view, source);
+    this._renderMetaFor(view, source);
+    this._updateScrollState(view);
     this._startTimers();
     els.stage.focus({ preventScroll: true });
   }
@@ -973,47 +1041,44 @@ export class ImageNoteCard extends HTMLElement {
   private async _saveEdit(): Promise<void> {
     const els = this._els;
     if (!els || !this._hass || !this._editing || this._saving) return;
-    const source = this._lastNote ?? this._noteSource();
-    const value = els.textarea.value;
+    const view = this._currentFace;
+    const source = this._lastNote ?? this._noteSource(this._slide);
+    const value = view.textarea.value;
     if (value === source.text) {
       this._finishEdit();
       return;
     }
     this._saving = true;
-    els.saveButton.disabled = true;
-    els.cancelButton.disabled = true;
-    els.saveButton.textContent = translate(this._lang, "saving");
-    els.errorText.textContent = "";
+    view.saveButton.disabled = true;
+    view.cancelButton.disabled = true;
+    view.saveButton.textContent = translate(this._lang, "saving");
+    view.errorText.textContent = "";
     try {
-      await this._hass.callService(source.domain, "set_value", {
-        entity_id: source.entityId,
-        value,
-      });
-      // Show the new text immediately; the state update will confirm it shortly.
+      await this._hass.callService(source.domain, "set_value", { entity_id: source.entityId, value });
       this._lastNote = { ...source, text: value };
       this._finishEdit();
-      this._renderNote(this._lastNote);
+      this._renderNote(view, this._lastNote);
     } catch (err) {
       this._saving = false;
-      els.saveButton.disabled = false;
-      els.cancelButton.disabled = false;
-      els.saveButton.textContent = translate(this._lang, "save");
+      view.saveButton.disabled = false;
+      view.cancelButton.disabled = false;
+      view.saveButton.textContent = translate(this._lang, "save");
       const message = err instanceof Error ? err.message : (err as { message?: string })?.message;
-      els.errorText.textContent = `${translate(this._lang, "saveFailed")}${message ? `: ${message}` : ""}`;
+      view.errorText.textContent = `${translate(this._lang, "saveFailed")}${message ? `: ${message}` : ""}`;
     }
   }
 
   private _updateCounter(): void {
-    const els = this._els;
-    if (!els) return;
-    const max = this._lastNote?.max ?? null;
+    if (!this._els) return;
+    const view = this._currentFace;
+    const max = (this._lastNote ?? this._noteSource(this._slide)).max;
     if (!max) {
-      els.counter.textContent = "";
+      view.counter.textContent = "";
       return;
     }
-    const left = max - els.textarea.value.length;
-    els.counter.textContent = translate(this._lang, "charsLeft", { count: left });
-    els.counter.classList.toggle("over", left < 0);
+    const left = max - view.textarea.value.length;
+    view.counter.textContent = translate(this._lang, "charsLeft", { count: left });
+    view.counter.classList.toggle("over", left < 0);
   }
 
   // ---------------------------------------------------------------- interaction
@@ -1022,39 +1087,40 @@ export class ImageNoteCard extends HTMLElement {
     if (this._editing) return false;
     for (const node of ev.composedPath()) {
       if (node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement) return false;
-      if (node === this._els?.noteEditor) return false;
+      if (node instanceof HTMLElement && node.classList.contains("note-editor")) return false;
     }
     return true;
   }
 
   private async _handleGesture(kind: ActionKind): Promise<void> {
     const config = this._config;
-    const page = this.page;
-    if (!config || !page || this._editing) return;
+    if (!config || this._editing) return;
     if (kind === "tap") {
       const root = this._root as ShadowRoot & { getSelection?: () => Selection | null };
       const selection = root.getSelection ? root.getSelection() : window.getSelection();
       if (selection && selection.toString().length > 0) return;
     }
+    const slide = this._slide;
+    // Default entities come from the config entry, so a picture slide still knows its note entity.
+    const entry = config.entries[slide.entry] ?? slide;
     const action =
       kind === "hold" ? config.hold_action : kind === "double_tap" ? config.double_tap_action : config.tap_action;
     try {
       const shouldFlip = await runAction(
         this,
         this._hass,
-        { note_entity: page.note_entity, image_entity: page.image_entity },
+        { note_entity: entry.note_entity, image_entity: entry.image_entity },
         action,
         translate(this._lang, "confirm"),
       );
-      if (shouldFlip) this.flip();
+      if (shouldFlip) this.goTo("next");
     } catch (err) {
       console.warn("ImageNote: action failed", err);
     }
   }
 
   private readonly _onStageKeydown = (ev: KeyboardEvent): void => {
-    if (this._editing) return;
-    if (ev.target !== this._els?.stage) return;
+    if (this._editing || ev.target !== this._els?.stage) return;
     if (ev.key === "Enter" || ev.key === " ") {
       ev.preventDefault();
       void this._handleGesture("tap");
@@ -1069,16 +1135,17 @@ export class ImageNoteCard extends HTMLElement {
 
   private readonly _onMouseEnter = (): void => {
     if (!this._config?.hover_flip || !this._hoverQuery.matches || this._editing) return;
-    this._setSide("note");
+    this.goTo("next");
   };
 
   private readonly _onMouseLeave = (): void => {
     if (!this._config?.hover_flip || !this._hoverQuery.matches || this._editing) return;
-    this._setSide(this._config.default_side);
+    const start = this._startIndex();
+    if (start !== this._index) this._go(start, -1, true);
   };
 
   private readonly _onMotionChange = (): void => {
-    this._applyTransition();
+    this._applyMode();
   };
 
   // ---------------------------------------------------------------- timers & layout
@@ -1086,32 +1153,22 @@ export class ImageNoteCard extends HTMLElement {
   private _startTimers(): void {
     this._stopTimers();
     const config = this._config;
-    if (!this.isConnected || !config || this._tiles) return;
-    if (config.auto_flip > 0) {
-      this._autoFlipTimer = window.setInterval(() => {
-        if (this._editing) return;
-        this._setSide(this._side === "image" ? "note" : "image");
-      }, config.auto_flip * 1000);
-    }
-    if (config.auto_advance > 0 && config.pages.length > 1) {
-      this._autoAdvanceTimer = window.setInterval(() => {
-        if (this._editing) return;
-        this._showPage((this._index + 1) % config.pages.length);
-      }, config.auto_advance * 1000);
+    if (!this.isConnected || !config || this._tiles || !this._els) return;
+    const seconds = config.auto_flip || config.auto_advance;
+    if (seconds > 0 && config.slides.length > 1) {
+      this._autoTimer = window.setInterval(() => {
+        if (!this._editing) this.goTo("next");
+      }, seconds * 1000);
     }
   }
 
   private _stopTimers(): void {
-    window.clearInterval(this._autoFlipTimer);
-    window.clearInterval(this._autoAdvanceTimer);
-    this._autoFlipTimer = undefined;
-    this._autoAdvanceTimer = undefined;
+    window.clearInterval(this._autoTimer);
+    this._autoTimer = undefined;
   }
 
   private _restartTimers(): void {
-    if (this._autoFlipTimer !== undefined || this._autoAdvanceTimer !== undefined) {
-      this._startTimers();
-    }
+    if (this._autoTimer !== undefined) this._startTimers();
   }
 
   private _observeResize(): void {
@@ -1119,20 +1176,21 @@ export class ImageNoteCard extends HTMLElement {
     this._resizeObserver?.disconnect();
     this._resizeObserver = new ResizeObserver(() => {
       this._updateDepth();
-      this._updateScrollState();
+      if (this._els) this._updateScrollState(this._currentFace);
     });
     this._resizeObserver.observe(this._els.stage);
   }
 
-  /** The cube transition needs half the stage size as its rotation depth. */
+  /** The cube keeps its faces at half the stage size; re-place them when the card resizes. */
   private _updateDepth(): void {
     const els = this._els;
-    const config = this._config;
-    if (!els || !config) return;
-    const rect = els.stage.getBoundingClientRect();
-    const size = config.direction === "vertical" ? rect.height : rect.width;
-    if (size > 0) {
-      els.scene.style.setProperty("--imagenote-depth", `${size / 2}px`);
-    }
+    if (!els || this._mode() !== "cube") return;
+    els.scene.classList.add("no-transition");
+    els.faces.forEach((view, i) => {
+      view.el.style.transform = this._faceTransform(this._faceAngle[i]);
+    });
+    els.scene.style.transform = this._sceneTransform(this._angle);
+    void els.scene.offsetWidth;
+    els.scene.classList.remove("no-transition");
   }
 }

@@ -19,6 +19,11 @@ ha-card {
   border-radius: var(--imagenote-radius);
 }
 
+.hidden {
+  display: none !important;
+}
+
+/* ---------- stage & scene ---------- */
 .stage {
   position: relative;
   width: 100%;
@@ -44,7 +49,7 @@ ha-card {
   border-radius: inherit;
   box-shadow: inset 0 0 0 2px var(--primary-color);
   pointer-events: none;
-  z-index: 5;
+  z-index: 6;
 }
 
 .scene {
@@ -54,6 +59,7 @@ ha-card {
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  transition: transform var(--imagenote-duration) var(--imagenote-easing);
 }
 .stage.natural .scene {
   position: relative;
@@ -61,6 +67,10 @@ ha-card {
 }
 .scene.editing {
   cursor: default;
+}
+.scene.no-transition,
+.scene.no-transition .face {
+  transition: none !important;
 }
 
 .face {
@@ -71,163 +81,49 @@ ha-card {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   background: var(--imagenote-note-background);
-  transform: translateZ(0);
 }
-.stage.natural .face.front {
+.face.hidden-face {
+  visibility: hidden;
+}
+.stage.natural .face.current {
+  position: relative;
+  inset: auto;
+}
+.scene.mode-fade .face {
+  transition: opacity var(--imagenote-duration) ease;
+}
+.scene.mode-slide .face {
+  transition: transform var(--imagenote-duration) var(--imagenote-easing);
+}
+
+/* ---------- layers ---------- */
+.layer {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+.face.kind-image .layer-image {
+  display: block;
+}
+.face.kind-note .layer-note {
+  display: flex;
+  flex-direction: column;
+  color: var(--primary-text-color);
+}
+.stage.natural .face.current.kind-image .layer-image {
   position: relative;
   inset: auto;
 }
 
-/* ---------- transitions ---------- */
-.scene.flip,
-.scene.cube {
-  transition: transform var(--imagenote-duration) var(--imagenote-easing);
-}
-.scene.flip.horizontal .back { transform: rotateY(180deg); }
-.scene.flip.horizontal.flipped { transform: rotateY(180deg); }
-.scene.flip.vertical .back { transform: rotateX(-180deg); }
-.scene.flip.vertical.flipped { transform: rotateX(180deg); }
-
-.scene.fade .face {
-  transition:
-    opacity var(--imagenote-duration) ease,
-    visibility 0s linear var(--imagenote-duration);
-}
-.scene.fade .back { opacity: 0; visibility: hidden; }
-.scene.fade.flipped .back { opacity: 1; visibility: visible; transition-delay: 0s, 0s; }
-.scene.fade.flipped .front { opacity: 0; visibility: hidden; }
-
-.scene.slide .face {
-  transition: transform var(--imagenote-duration) var(--imagenote-easing);
-}
-.scene.slide.horizontal .back { transform: translateX(100%); }
-.scene.slide.horizontal.flipped .front { transform: translateX(-100%); }
-.scene.slide.horizontal.flipped .back { transform: translateX(0); }
-.scene.slide.vertical .back { transform: translateY(100%); }
-.scene.slide.vertical.flipped .front { transform: translateY(-100%); }
-.scene.slide.vertical.flipped .back { transform: translateY(0); }
-
-.scene.cube { transform: translateZ(calc(-1 * var(--imagenote-depth, 150px))); }
-.scene.cube .front { transform: translateZ(var(--imagenote-depth, 150px)); }
-.scene.cube.horizontal .back { transform: rotateY(90deg) translateZ(var(--imagenote-depth, 150px)); }
-.scene.cube.horizontal.flipped { transform: translateZ(calc(-1 * var(--imagenote-depth, 150px))) rotateY(-90deg); }
-.scene.cube.vertical .back { transform: rotateX(-90deg) translateZ(var(--imagenote-depth, 150px)); }
-.scene.cube.vertical.flipped { transform: translateZ(calc(-1 * var(--imagenote-depth, 150px))) rotateX(90deg); }
-
-.scene.none .back { visibility: hidden; }
-.scene.none.flipped .back { visibility: visible; }
-.scene.none.flipped .front { visibility: hidden; }
-
-/* ---------- picture side ---------- */
-.front img {
+.layer-image img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: var(--imagenote-fit, cover);
   background: var(--imagenote-placeholder-background);
-  transition: opacity 350ms ease;
 }
-.front img.layer-b {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-}
-.front img.layer-b.active {
-  opacity: 1;
-}
-.front img.layer-a.inactive {
-  opacity: 0;
-}
-.stage.natural .front img.layer-a {
+.stage.natural .face.current .layer-image img {
   height: auto;
-}
-.front img.hidden {
-  display: none;
-}
-
-.nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 200ms ease, background-color 150ms ease;
-  z-index: 3;
-  padding: 0;
-}
-.nav.prev { left: 8px; }
-.nav.next { right: 8px; }
-.nav:hover,
-.nav:focus-visible {
-  background: rgba(0, 0, 0, 0.55);
-  outline: none;
-}
-.scene:hover .nav,
-.stage:focus-within .nav {
-  opacity: 1;
-}
-@media (hover: none) {
-  .nav { opacity: 0.8; }
-}
-.nav.hidden {
-  display: none !important;
-}
-.back .nav {
-  color: var(--primary-text-color);
-  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
-}
-
-.dots {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 10px;
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  z-index: 3;
-  pointer-events: none;
-}
-.dots.hidden {
-  display: none;
-}
-.dots button {
-  appearance: none;
-  border: none;
-  padding: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.55);
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
-  cursor: pointer;
-  pointer-events: auto;
-  transition: transform 150ms ease, background-color 150ms ease;
-}
-.dots button.active {
-  background: #fff;
-  transform: scale(1.3);
-}
-.back .dots button {
-  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.25);
-  box-shadow: none;
-}
-.back .dots button.active {
-  background: var(--primary-color);
-}
-.title-overlay.with-dots {
-  padding-bottom: 26px;
 }
 .placeholder {
   position: absolute;
@@ -261,9 +157,6 @@ ha-card {
   font-size: 0.85em;
   max-width: 28em;
 }
-.placeholder.hidden {
-  display: none;
-}
 
 .title-overlay {
   position: absolute;
@@ -282,16 +175,11 @@ ha-card {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.title-overlay.hidden {
-  display: none;
+.stage.with-dots .title-overlay {
+  padding-bottom: 26px;
 }
 
-/* ---------- note side ---------- */
-.back {
-  display: flex;
-  flex-direction: column;
-  color: var(--primary-text-color);
-}
+/* ---------- note layer ---------- */
 .note-header {
   display: flex;
   align-items: center;
@@ -344,17 +232,12 @@ ha-card {
 .note-body ha-markdown p:first-child {
   margin-top: 0;
 }
-
 .note-footer {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 10px 10px 16px;
-  min-height: 24px;
-}
-.note-footer.hidden {
-  display: none;
+  padding: 4px 16px 10px;
+  min-height: 26px;
 }
 .note-footer::before {
   content: "";
@@ -368,32 +251,19 @@ ha-card {
   opacity: 0;
   transition: opacity 150ms ease;
 }
-.back.scrollable:not(.at-end) .note-footer::before {
+.layer-note.scrollable:not(.at-end) .note-footer::before {
   opacity: 1;
 }
 .note-meta {
-  flex: 1;
-  min-width: 0;
+  max-width: 55%;
   font-size: 0.75em;
   color: var(--secondary-text-color);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.note-meta.hidden,
 .note-meta:empty {
   display: none;
-}
-.note-footer .spacer {
-  flex: 1;
-}
-.back .dots {
-  position: static;
-  flex: none;
-}
-.back .badge {
-  position: static;
-  flex: none;
 }
 
 .icon-button {
@@ -417,9 +287,6 @@ ha-card {
   background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
   color: var(--primary-color);
   outline: none;
-}
-.icon-button.hidden {
-  display: none;
 }
 
 .note-editor {
@@ -489,7 +356,6 @@ ha-card {
   color: var(--text-primary-color, #fff);
 }
 .btn.primary:hover:not(:disabled) {
-  background: var(--primary-color);
   filter: brightness(1.08);
 }
 .btn:disabled {
@@ -504,7 +370,89 @@ ha-card {
   display: none;
 }
 
-/* ---------- flip hint badge ---------- */
+/* ---------- overlay: arrows, dots, hint badge ---------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+.nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 200ms ease, background-color 150ms ease;
+  padding: 0;
+  pointer-events: auto;
+}
+.nav.prev { left: 8px; }
+.nav.next { right: 8px; }
+.nav:hover,
+.nav:focus-visible {
+  background: rgba(0, 0, 0, 0.55);
+  outline: none;
+}
+.stage:hover .nav,
+.stage:focus-within .nav {
+  opacity: 1;
+}
+@media (hover: none) {
+  .nav { opacity: 0.8; }
+}
+.stage.kind-note .nav {
+  color: var(--primary-text-color);
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
+}
+.stage.editing .nav {
+  display: none;
+}
+
+.dots {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+.dots button {
+  appearance: none;
+  border: none;
+  padding: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 150ms ease, background-color 150ms ease;
+}
+.dots button.active {
+  background: #fff;
+  transform: scale(1.3);
+}
+.stage.kind-note .dots button {
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.25);
+  box-shadow: none;
+}
+.stage.kind-note .dots button.active {
+  background: var(--primary-color);
+}
+
 .badge {
   position: absolute;
   right: 10px;
@@ -523,27 +471,24 @@ ha-card {
   -webkit-backdrop-filter: blur(6px);
   opacity: 0.85;
   transition: opacity 200ms ease, transform 200ms ease;
-  pointer-events: none;
-  z-index: 2;
 }
 .badge ha-icon {
   --mdc-icon-size: 16px;
 }
-.back .badge {
+.stage.kind-note .badge {
   color: var(--primary-text-color);
   background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
 }
-.scene:hover .badge {
+.stage:hover .badge {
   opacity: 1;
   transform: translateY(-2px);
 }
-.badge.hidden,
-.scene.editing .badge {
+.stage.editing .badge,
+.stage.editing .dots {
   display: none;
 }
-
 @media (hover: hover) {
-  .scene.hover-flip:not(.editing):hover .badge {
+  .stage.hover-flip:not(.editing):hover .badge {
     opacity: 0;
   }
 }
@@ -585,12 +530,12 @@ ha-card {
   .badge span { display: none; }
   .badge { padding: 5px; gap: 0; }
   .title-overlay { font-size: 1em; padding: 24px 12px 10px; }
-  .title-overlay.with-dots { padding-bottom: 22px; }
+  .stage.with-dots .title-overlay { padding-bottom: 22px; }
   .note-header { padding: 8px 8px 4px 12px; gap: 8px; }
   .note-header .title { font-size: 1em; }
   .note-header ha-icon { --mdc-icon-size: 20px; }
   .note-body { padding: 0 12px 6px; font-size: 0.92em; line-height: 1.4; }
-  .note-footer { padding: 2px 8px 8px 12px; }
+  .note-footer { padding: 2px 12px 8px; }
   .nav { width: 28px; height: 28px; }
   .nav ha-icon { --mdc-icon-size: 20px; }
   .placeholder small { display: none; }
@@ -599,7 +544,7 @@ ha-card {
   .note-meta { display: none; }
   .note-header { padding-top: 6px; padding-bottom: 2px; }
   .note-body { padding-bottom: 4px; }
-  .note-footer { padding-top: 0; padding-bottom: 6px; }
+  .note-footer { padding-top: 0; padding-bottom: 6px; min-height: 22px; }
   .title-overlay { padding-top: 20px; }
   .placeholder ha-icon { display: none; }
 }
