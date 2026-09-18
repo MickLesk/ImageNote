@@ -606,6 +606,19 @@ test("language follows hass", async () => {
   const { page, context } = await openDemo();
   await page.click("#lang");
   assert.equal(await card(page, 0).locator(".badge span").innerText(), "Notiz");
+  const labels = await page.evaluate(() => {
+    const out = {};
+    for (const language of ["nl", "fr", "es", "pt"]) {
+      const el = document.createElement("pinboard-card");
+      el.setConfig({ type: "custom:pinboard-card", image: "./sample-1.svg", note: "x" });
+      el.hass = { states: {}, language, callService: async () => {}, callWS: async () => ({}) };
+      document.body.append(el);
+      out[language] = el.shadowRoot.querySelector(".badge span").textContent;
+      el.remove();
+    }
+    return out;
+  });
+  assert.deepEqual(labels, { nl: "Notitie", fr: "Note", es: "Nota", pt: "Note" }); // pt falls back to English
   await context.close();
 });
 

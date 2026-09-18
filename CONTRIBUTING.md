@@ -30,6 +30,7 @@ resource, or point HACS at your fork as a custom repository.
 | `tests/` | Playwright smoke tests against the demo page, run with `node --test`. |
 | `scripts/` | Build, bundle checks, demo server, changelog tooling. |
 | `docs/images/` | Screenshots used in the README. |
+| `.github/workflows/` | `validate.yml` (CI), `release.yml` (releases), `pages.yml` (publishes `demo/` and `dist/` to GitHub Pages on every push to `main`; needs Pages set to "GitHub Actions" once in the repository settings). |
 
 ## Branches
 
@@ -54,7 +55,9 @@ resource, or point HACS at your fork as a custom repository.
   it with your change.
 - New behaviour comes with a test in `tests/smoke.test.mjs` and, when it is
   visible, with a card in `demo/index.html` so it can be looked at.
-- New strings go into both languages in `src/i18n.ts`.
+- New strings go into every language table in `src/i18n.ts` (English,
+  German, Dutch, French, Spanish). English is the fallback, so a missing
+  translation shows English rather than a key.
 - New options get a row in the README options table and, where useful, an
   entry in the visual editor.
 

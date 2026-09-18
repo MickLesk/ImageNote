@@ -10,6 +10,8 @@ All notable changes to Pinboard are documented here. The format follows
 - Conditional pages: `visible` on a page shows it only while an entity has
   (or does not have) a state.
 - Per-page `tap_action`, `hold_action` and `double_tap_action`.
+- Dutch, French and Spanish translations.
+- The demo page is published to GitHub Pages on every push to `main`.
 - The editor groups page and card settings into sections: picture, note,
   audio, display, visibility, actions; appearance, navigation, notes and
   to-do lists, uploads, actions.

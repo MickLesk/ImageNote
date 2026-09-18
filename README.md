@@ -51,7 +51,10 @@ can hold up to ten pictures, notes and recordings in any order.
   horizontal or vertical. Respects `prefers-reduced-motion`.
 - **Fits every layout** — fixed aspect ratios or the picture's natural size,
   masonry and sections views, phone and wall panel.
-- **Visual editor** for every option, English and German UI, keyboard access.
+- **Visual editor** for every option, grouped into sections. UI in English,
+  German, Dutch, French and Spanish. Keyboard access throughout.
+- **Try it first**: the [demo page](https://micklesk.github.io/pinboard-card/demo/)
+  shows every feature with stand-ins for Home Assistant.
 
 ## Installation
 
