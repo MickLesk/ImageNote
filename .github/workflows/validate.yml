@@ -1,0 +1,57 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hacs:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: plugin
+
+  build:
+    name: Build and verify bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Snapshot committed bundle
+        run: cp dist/imagenote-card.js "$RUNNER_TEMP/committed.js"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify bundle
+        run: npm run verify
+
+      - name: Verify committed bundle is current
+        run: |
+          if ! diff -u "$RUNNER_TEMP/committed.js" dist/imagenote-card.js > "$RUNNER_TEMP/bundle.diff"; then
+            echo "::error file=dist/imagenote-card.js::Committed bundle is out of date. Run npm ci && npm run build and commit the result."
+            head -n 80 "$RUNNER_TEMP/bundle.diff"
+            exit 1
+          fi

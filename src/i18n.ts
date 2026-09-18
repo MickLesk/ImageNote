@@ -1,0 +1,158 @@
+import type { HomeAssistant } from "./types";
+
+type Strings = Record<string, string>;
+
+const en: Strings = {
+  note: "Note",
+  photo: "Photo",
+  tapToFlip: "Tap to flip",
+  showNote: "Show note",
+  showPhoto: "Show photo",
+  editNote: "Edit note",
+  save: "Save",
+  cancel: "Cancel",
+  saving: "Saving…",
+  saveFailed: "Saving failed",
+  noImage: "No picture yet",
+  noImageHelp: "Open the card editor to upload or pick a picture.",
+  noNote: "No note yet",
+  noNoteHelp: "Add a note in the card editor or link a text entity.",
+  entityMissing: "Entity {entity} not found",
+  imageError: "The picture could not be loaded",
+  charsLeft: "{count} characters left",
+
+  editor_title: "Title",
+  editor_title_help: "Shown on the picture and above the note. Optional.",
+  editor_image: "Picture URL",
+  editor_image_help: "Upload a picture or enter a URL, a /local/ path or a media-source id.",
+  editor_image_entity: "Picture entity (optional)",
+  editor_image_entity_help: "Use the picture of an image, camera or person entity instead of a static picture.",
+  editor_note_source: "Note from an entity",
+  editor_upload: "Upload picture",
+  editor_clear: "Remove",
+  editor_uploading: "Uploading…",
+  editor_upload_done: "Uploaded. The picture is stored by Home Assistant.",
+  editor_upload_failed: "Upload failed",
+  editor_upload_too_large: "The file is too large",
+  editor_note: "Note",
+  editor_note_help: "Markdown is supported. Ignored when a note entity is set.",
+  editor_note_entity: "Note entity (optional)",
+  editor_note_entity_help:
+    "Read and edit the note from an input_text or text entity. The note can then be changed on the card itself.",
+  editor_note_attribute: "Note attribute (optional)",
+  editor_note_attribute_help: "Read the note from an attribute instead of the entity state.",
+  editor_appearance: "Appearance",
+  editor_behaviour: "Behaviour",
+  editor_transition: "Animation",
+  editor_direction: "Direction",
+  editor_default_side: "Start with",
+  editor_aspect_ratio: "Aspect ratio",
+  editor_image_fit: "Picture fit",
+  editor_duration: "Animation duration",
+  editor_auto_flip: "Auto flip every",
+  editor_auto_flip_help: "0 disables automatic flipping.",
+  editor_hover_flip: "Flip on hover (desktop)",
+  editor_show_hint: "Show flip hint",
+  editor_show_title: "Show title",
+  transition_flip: "3D flip",
+  transition_fade: "Crossfade",
+  transition_slide: "Slide",
+  transition_cube: "Cube",
+  transition_none: "None",
+  direction_horizontal: "Horizontal",
+  direction_vertical: "Vertical",
+  side_image: "Picture",
+  side_note: "Note",
+  fit_cover: "Fill (crop)",
+  fit_contain: "Fit (letterbox)",
+  ratio_auto: "Natural picture size",
+};
+
+const de: Strings = {
+  note: "Notiz",
+  photo: "Foto",
+  tapToFlip: "Tippen zum Umdrehen",
+  showNote: "Notiz anzeigen",
+  showPhoto: "Foto anzeigen",
+  editNote: "Notiz bearbeiten",
+  save: "Speichern",
+  cancel: "Abbrechen",
+  saving: "Speichern…",
+  saveFailed: "Speichern fehlgeschlagen",
+  noImage: "Noch kein Bild",
+  noImageHelp: "Öffne den Karteneditor, um ein Bild hochzuladen oder auszuwählen.",
+  noNote: "Noch keine Notiz",
+  noNoteHelp: "Füge im Karteneditor eine Notiz hinzu oder verknüpfe eine Text-Entität.",
+  entityMissing: "Entität {entity} nicht gefunden",
+  imageError: "Das Bild konnte nicht geladen werden",
+  charsLeft: "{count} Zeichen übrig",
+
+  editor_title: "Titel",
+  editor_title_help: "Wird auf dem Bild und über der Notiz angezeigt. Optional.",
+  editor_image: "Bild-URL",
+  editor_image_help: "Bild hochladen oder eine URL, einen /local/-Pfad oder eine media-source-ID eingeben.",
+  editor_image_entity: "Bild-Entität (optional)",
+  editor_image_entity_help: "Bild einer image-, camera- oder person-Entität statt eines festen Bildes verwenden.",
+  editor_note_source: "Notiz aus einer Entität",
+  editor_upload: "Bild hochladen",
+  editor_clear: "Entfernen",
+  editor_uploading: "Wird hochgeladen…",
+  editor_upload_done: "Hochgeladen. Home Assistant speichert das Bild.",
+  editor_upload_failed: "Upload fehlgeschlagen",
+  editor_upload_too_large: "Die Datei ist zu groß",
+  editor_note: "Notiz",
+  editor_note_help: "Markdown wird unterstützt. Wird ignoriert, wenn eine Notiz-Entität gesetzt ist.",
+  editor_note_entity: "Notiz-Entität (optional)",
+  editor_note_entity_help:
+    "Notiz aus einer input_text- oder text-Entität lesen und bearbeiten. Die Notiz lässt sich dann direkt auf der Karte ändern.",
+  editor_note_attribute: "Notiz-Attribut (optional)",
+  editor_note_attribute_help: "Notiz aus einem Attribut statt aus dem Zustand der Entität lesen.",
+  editor_appearance: "Darstellung",
+  editor_behaviour: "Verhalten",
+  editor_transition: "Animation",
+  editor_direction: "Richtung",
+  editor_default_side: "Startseite",
+  editor_aspect_ratio: "Seitenverhältnis",
+  editor_image_fit: "Bildanpassung",
+  editor_duration: "Animationsdauer",
+  editor_auto_flip: "Automatisch umdrehen alle",
+  editor_auto_flip_help: "0 deaktiviert das automatische Umdrehen.",
+  editor_hover_flip: "Beim Überfahren umdrehen (Desktop)",
+  editor_show_hint: "Hinweis zum Umdrehen anzeigen",
+  editor_show_title: "Titel anzeigen",
+  transition_flip: "3D-Flip",
+  transition_fade: "Überblenden",
+  transition_slide: "Schieben",
+  transition_cube: "Würfel",
+  transition_none: "Keine",
+  direction_horizontal: "Horizontal",
+  direction_vertical: "Vertikal",
+  side_image: "Bild",
+  side_note: "Notiz",
+  fit_cover: "Füllen (zuschneiden)",
+  fit_contain: "Einpassen (Ränder)",
+  ratio_auto: "Natürliche Bildgröße",
+};
+
+const LOCALES: Record<string, Strings> = { en, de };
+
+export function resolveLanguage(hass?: HomeAssistant): string {
+  const raw = hass?.locale?.language || hass?.language || navigator.language || "en";
+  const short = raw.toLowerCase().split(/[-_]/)[0];
+  return short in LOCALES ? short : "en";
+}
+
+export function translate(
+  language: string,
+  key: string,
+  vars?: Record<string, string | number>,
+): string {
+  const table = LOCALES[language] ?? en;
+  let text = table[key] ?? en[key] ?? key;
+  if (vars) {
+    for (const [name, value] of Object.entries(vars)) {
+      text = text.replace(`{${name}}`, String(value));
+    }
+  }
+  return text;
+}

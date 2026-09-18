@@ -1,0 +1,19 @@
+{
+  "name": "imagenote-card",
+  "version": "0.1.0",
+  "description": "Home Assistant dashboard card that pairs a picture with a note and flips between them.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "verify": "node --check dist/imagenote-card.js && node scripts/verify_bundle.mjs",
+    "validate": "npm run typecheck && npm run build && npm run verify",
+    "demo": "node scripts/serve_demo.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ImageNote Card – demo</title>
+  <style>
+    :root {
+      --primary-color: #03a9f4;
+      --rgb-primary-color: 3, 169, 244;
+      --primary-text-color: #212121;
+      --rgb-primary-text-color: 33, 33, 33;
+      --secondary-text-color: #727272;
+      --text-primary-color: #fff;
+      --card-background-color: #fff;
+      --ha-card-background: #fff;
+      --secondary-background-color: #e5e5e5;
+      --divider-color: rgba(0, 0, 0, 0.12);
+      --error-color: #db4437;
+      --ha-card-border-radius: 12px;
+      --mdc-icon-size: 24px;
+    }
+    body.dark {
+      --primary-text-color: #e1e1e1;
+      --rgb-primary-text-color: 225, 225, 225;
+      --secondary-text-color: #9b9b9b;
+      --card-background-color: #1c1c1c;
+      --ha-card-background: #1c1c1c;
+      --secondary-background-color: #282828;
+      --divider-color: rgba(255, 255, 255, 0.12);
+      background: #111;
+      color: var(--primary-text-color);
+    }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: Roboto, "Segoe UI", system-ui, sans-serif;
+      background: #fafafa;
+      color: var(--primary-text-color);
+    }
+    h1 { font-size: 20px; font-weight: 500; margin: 0 0 4px; }
+    p.lead { margin: 0 0 20px; color: var(--secondary-text-color); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; max-width: 1100px; }
+    .cell h2 { font-size: 13px; font-weight: 500; margin: 0 0 8px; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: .06em; }
+    .toolbar { margin-bottom: 20px; display: flex; gap: 12px; }
+    button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: inherit; cursor: pointer; }
+    ha-card { display: block; background: var(--ha-card-background); box-shadow: 0 2px 6px rgba(0,0,0,.12); }
+    ha-icon { display: inline-flex; width: var(--mdc-icon-size, 24px); height: var(--mdc-icon-size, 24px); align-items: center; justify-content: center; }
+    ha-icon svg { width: 100%; height: 100%; fill: currentColor; }
+    #editor { max-width: 520px; margin-top: 32px; padding: 16px; border-radius: 12px; background: var(--card-background-color); box-shadow: 0 2px 6px rgba(0,0,0,.12); }
+    #editor h2 { font-size: 14px; margin: 0 0 12px; }
+    ha-form { display: block; }
+    ha-form pre { font-size: 12px; background: var(--secondary-background-color); padding: 8px; border-radius: 8px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>ImageNote Card – demo</h1>
+  <p class="lead">Local preview with minimal Home Assistant stubs. Tap a card to flip it.</p>
+  <div class="toolbar">
+    <button id="theme">Toggle dark theme</button>
+    <button id="lang">Toggle language (en/de)</button>
+    <button id="flipall">Flip all</button>
+  </div>
+  <div class="grid" id="grid"></div>
+
+  <div id="editor">
+    <h2>Editor element (ha-form is stubbed as a JSON dump)</h2>
+    <imagenote-card-editor></imagenote-card-editor>
+  </div>
+
+  <script type="module">
+    // ---- Minimal stand-ins for Home Assistant elements -------------------------
+    const ICONS = {
+      "mdi:note-text-outline": "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6m4 18H6V4h7v5h5v11M8 12h8v2H8v-2m0 4h8v2H8v-2Z",
+      "mdi:image-outline": "M19 19H5V5h14m0-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2m-5.04 9.29-2.75 3.54-1.96-2.36L6.5 17h11l-3.54-4.71Z",
+      "mdi:image-plus-outline": "M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3h-2m-5 4H5V5h14v7.9c.7.1 1.4.3 2 .6V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8.9c-.3-.6-.5-1.3-.6-2m-.4-7.7-2.75 3.54-1.96-2.36L6.5 17h6.6c.2-1.5.9-2.9 2-4L12.6 11.3Z",
+      "mdi:image-broken-variant": "M21 5v6.59l-3-3.01-4 4.01-4-4-4 4-3-3.01V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2m-3 6.42 3 3.01V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6.58l3 2.99 4-4 4 4 4-3.99Z",
+      "mdi:pencil-outline": "M14.06 9.02l.92.92L5.92 19H5v-.92l9.06-9.06M17.66 3c-.25 0-.51.1-.7.29l-1.83 1.83 3.75 3.75 1.83-1.83a1 1 0 0 0 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.71-.29m-3.6 3.19L3 17.25V21h3.75L17.81 9.94l-3.75-3.75Z",
+      "mdi:upload": "M9 16v-6H5l7-7 7 7h-4v6H9m-4 4v-2h14v2H5Z",
+      "mdi:close": "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z",
+    };
+    customElements.define("ha-card", class extends HTMLElement {});
+    customElements.define("ha-icon", class extends HTMLElement {
+      static get observedAttributes() { return ["icon"]; }
+      attributeChangedCallback() { this.render(); }
+      connectedCallback() { this.render(); }
+      render() {
+        const d = ICONS[this.getAttribute("icon")] ?? "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z";
+        this.innerHTML = `<svg viewBox="0 0 24 24"><path d="${d}"/></svg>`;
+      }
+    });
+    // Very small markdown: **bold**, *em*, line breaks, "- " lists.
+    customElements.define("ha-markdown", class extends HTMLElement {
+      set content(v) { this._c = v; this.render(); }
+      get content() { return this._c; }
+      render() {
+        const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+        const html = esc(this._c ?? "")
+          .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+          .replace(/\*(.+?)\*/g, "<em>$1</em>")
+          .split(/\n{2,}/).map((p) => p.startsWith("- ")
+            ? "<ul>" + p.split("\n").map((l) => `<li>${l.replace(/^- /, "")}</li>`).join("") + "</ul>"
+            : `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+        this.innerHTML = html;
+      }
+    });
+    customElements.define("ha-form", class extends HTMLElement {
+      set schema(v) { this._s = v; this.render(); }
+      set data(v) { this._d = v; this.render(); }
+      set hass(v) {}
+      set computeLabel(f) { this._l = f; this.render(); }
+      set computeHelper(f) {}
+      render() {
+        if (!this._s || !this._d) return;
+        const rows = [];
+        const walk = (items) => items.forEach((i) => i.schema ? walk(i.schema) : rows.push(`${this._l ? this._l(i) : i.name}: ${JSON.stringify(this._d[i.name])}`));
+        walk(this._s);
+        this.innerHTML = `<pre>${rows.join("\n")}</pre>`;
+      }
+    });
+
+    // ---- Fake hass --------------------------------------------------------------
+    const states = {
+      "input_text.fridge_note": { entity_id: "input_text.fridge_note", state: "Milk is running low – buy 2 litres on Friday.", attributes: { max: 255, friendly_name: "Fridge note" } },
+    };
+    let language = "en";
+    const listeners = new Set();
+    const makeHass = () => ({
+      states: { ...states },
+      language,
+      locale: { language },
+      async callService(domain, service, data) {
+        await new Promise((r) => setTimeout(r, 400));
+        if (service === "set_value") {
+          states[data.entity_id] = { ...states[data.entity_id], state: data.value };
+          listeners.forEach((f) => f());
+        }
+      },
+      async callWS(msg) {
+        if (msg.type === "media_source/resolve_media") return { url: "./sample-2.svg", mime_type: "image/svg+xml" };
+        throw new Error("unsupported");
+      },
+    });
+
+    await import("../dist/imagenote-card.js");
+
+    const configs = [
+      { label: "3D flip (default)", config: { type: "custom:imagenote-card", title: "Kitchen", image: "./sample-1.svg", note: "**Filter replaced** on 12 Oct.\n\nNext change due in 6 months.\n\n- Model: XY-200\n- Ordered from the usual shop" } },
+      { label: "Vertical flip, editable note (input_text)", config: { type: "custom:imagenote-card", title: "Fridge", image: "./sample-2.svg", direction: "vertical", note_entity: "input_text.fridge_note" } },
+      { label: "Crossfade, 4:3, contain", config: { type: "custom:imagenote-card", title: "Garden", image: "./sample-3.svg", transition: "fade", aspect_ratio: "4:3", image_fit: "contain", note: "Water the tomatoes every second day.\nSeedlings go out after the last frost." } },
+      { label: "Slide, no title, starts on note", config: { type: "custom:imagenote-card", image: "./sample-1.svg", transition: "slide", default_side: "note", note: "A card without a title.\n\nIt starts on the note side and slides to the picture." } },
+      { label: "Cube, media-source picture, auto flip 4 s", config: { type: "custom:imagenote-card", title: "Cube", image: "media-source://media_source/local/demo.jpg", transition: "cube", auto_flip: 4, note: "Media-source ids are resolved through the websocket API.\n\nThis one auto-flips every 4 seconds." } },
+      { label: "Empty states", config: { type: "custom:imagenote-card", title: "Nothing yet" } },
+      { label: "Broken picture + missing entity", config: { type: "custom:imagenote-card", title: "Broken", image: "./does-not-exist.jpg", note_entity: "input_text.missing" } },
+      { label: "Natural size, hover flip", config: { type: "custom:imagenote-card", title: "Natural", image: "./sample-3.svg", aspect_ratio: "auto", hover_flip: true, note: "Hover me on a desktop." } },
+    ];
+
+    const grid = document.getElementById("grid");
+    const cards = [];
+    for (const { label, config } of configs) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      const h = document.createElement("h2");
+      h.textContent = label;
+      const card = document.createElement("imagenote-card");
+      card.setConfig(config);
+      card.hass = makeHass();
+      cell.append(h, card);
+      grid.append(cell);
+      cards.push(card);
+    }
+    const editor = document.querySelector("imagenote-card-editor");
+    editor.setConfig(configs[1].config);
+    editor.hass = makeHass();
+    editor.addEventListener("config-changed", (ev) => console.log("config-changed", ev.detail.config));
+
+    const push = () => { const h = makeHass(); cards.forEach((c) => (c.hass = h)); editor.hass = h; };
+    listeners.add(push);
+    document.getElementById("theme").addEventListener("click", () => document.body.classList.toggle("dark"));
+    document.getElementById("lang").addEventListener("click", () => { language = language === "en" ? "de" : "en"; push(); });
+    document.getElementById("flipall").addEventListener("click", () => cards.forEach((c) => c.flip()));
+    window.__cards = cards;
+  </script>
+</body>
+</html>
