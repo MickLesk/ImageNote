@@ -62,6 +62,7 @@ export const DEFAULTS: Omit<NormalizedConfig, "type" | "entries" | "slides"> = {
   upload_target: "image",
   upload_folder: "imagenote",
   upload_max_size: 1920,
+  upload_crop: false,
   ken_burns: false,
   show_camera: true,
   tap_action: FLIP_ACTION,

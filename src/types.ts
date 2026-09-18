@@ -120,6 +120,8 @@ export interface ImageNoteCardConfig extends PageConfig {
   upload_folder?: string;
   /** Longest edge for uploaded pictures in pixels; 0 keeps originals. */
   upload_max_size?: number;
+  /** Centre-crop uploads to the card's aspect ratio. */
+  upload_crop?: boolean;
   /** Slow zoom and pan on pictures, for wall panels. */
   ken_burns?: boolean;
   /** Camera button on pictures whose image_entity is an input_text / text entity. */
@@ -158,6 +160,7 @@ export interface NormalizedConfig {
   upload_target: "image" | "media";
   upload_folder: string;
   upload_max_size: number;
+  upload_crop: boolean;
   ken_burns: boolean;
   show_camera: boolean;
   tap_action: ActionConfig;

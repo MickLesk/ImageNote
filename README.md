@@ -169,6 +169,7 @@ direction: vertical
 | `ken_burns` | `false` | Slow zoom and pan on pictures. Off under "reduce motion". |
 | `show_camera` | `true` | Camera button on pictures from an `input_text` / `text` entity. |
 | `upload_max_size` | `1920` | Longest edge in pixels that uploaded and captured pictures are scaled down to. `0` keeps originals. |
+| `upload_crop` | `false` | Centre-crop uploaded and captured pictures to the card's `aspect_ratio` before upload. |
 | `image_fit` | `cover` | `cover` fills the card and crops, `contain` shows the whole picture. |
 | `aspect_ratio` | `16:9` | `16:9`, `4:3`, `1:1`, `9:16`, any `w:h`, or `auto` for the picture's natural size. |
 | `note` | – | The note text. Markdown is rendered. Ignored when `note_entity` is set. |
@@ -321,6 +322,20 @@ Any picture that already exists in `/config/www/` can be used with a `/local/`
 path, and any file in `/media` with its `media-source://media_source/local/…`
 id. Media-source ids are resolved through the media source API and renewed
 before the signed URL expires.
+
+## The editor
+
+- **Pictures and notes** are entries you add with *+ Picture* and *+ Note*,
+  reorder by dragging the chips (or with the arrow buttons on touch screens)
+  and remove with *Remove*. An entry may carry both a picture and a note; it
+  then counts as two pages.
+- **Upload picture** stores the file (scaled down, optionally cropped) in the
+  chosen target and fills in the address.
+- **Import from a media folder** adds every picture in a folder below
+  `/media` as a page, up to the limit of ten.
+- **Markers** are placed by clicking on the preview picture.
+- **Preview** at the bottom shows the card with the current settings; *Play
+  animation* turns it over so you can compare transitions.
 
 ## Sizing
 

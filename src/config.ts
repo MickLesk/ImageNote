@@ -204,6 +204,7 @@ export function normalizeConfig(config: ImageNoteCardConfig): NormalizedConfig {
     upload_target: config.upload_target === "media" ? "media" : "image",
     upload_folder: str(config.upload_folder, DEFAULTS.upload_folder),
     upload_max_size: Math.round(num(config.upload_max_size, DEFAULTS.upload_max_size, 0, 8000)),
+    upload_crop: bool(config.upload_crop, DEFAULTS.upload_crop),
     ken_burns: bool(config.ken_burns, DEFAULTS.ken_burns),
     show_camera: bool(config.show_camera, DEFAULTS.show_camera),
     tap_action: action(config.tap_action, DEFAULTS.tap_action),

@@ -1110,6 +1110,7 @@ export class ImageNoteCard extends HTMLElement {
         target: config.upload_target,
         folder: config.upload_folder,
         maxSize: config.upload_max_size,
+        cropAspect: config.upload_crop ? (parseAspectRatio(config.aspect_ratio) ?? undefined) : undefined,
       });
       const domain = slide.image_entity.split(".")[0];
       await hass.callService(domain, "set_value", { entity_id: slide.image_entity, value });

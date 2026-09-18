@@ -53,6 +53,7 @@ var DEFAULTS = {
   upload_target: "image",
   upload_folder: "imagenote",
   upload_max_size: 1920,
+  upload_crop: false,
   ken_burns: false,
   show_camera: true,
   tap_action: FLIP_ACTION,
@@ -396,6 +397,7 @@ function normalizeConfig(config) {
     upload_target: config.upload_target === "media" ? "media" : "image",
     upload_folder: str(config.upload_folder, DEFAULTS.upload_folder),
     upload_max_size: Math.round(num(config.upload_max_size, DEFAULTS.upload_max_size, 0, 8e3)),
+    upload_crop: bool(config.upload_crop, DEFAULTS.upload_crop),
     ken_burns: bool(config.ken_burns, DEFAULTS.ken_burns),
     show_camera: bool(config.show_camera, DEFAULTS.show_camera),
     tap_action: action(config.tap_action, DEFAULTS.tap_action),
@@ -526,6 +528,17 @@ var en = {
   editor_upload_folder_help: "Created on the first upload. Leave empty for the top level.",
   editor_upload_max_size: "Scale pictures down to",
   editor_upload_max_size_help: "Longest edge in pixels before upload. 0 keeps the original size.",
+  editor_upload_crop: "Crop uploads to the card's aspect ratio",
+  editor_preview: "Preview",
+  editor_preview_help: "Tap the preview or the button to see the animation.",
+  editor_play: "Play animation",
+  editor_import: "Import from a media folder",
+  editor_import_help: "Adds every picture in a folder below /media as a page, up to the limit of 10.",
+  editor_import_button: "Import",
+  editor_import_done: "{count} pictures added.",
+  editor_import_none: "No pictures found in {folder}.",
+  editor_import_failed: "Import failed",
+  editor_drag_hint: "Drag to reorder",
   editor_ken_burns: "Slow zoom on pictures (Ken Burns)",
   editor_show_camera: "Camera button on pictures from an input_text",
   editor_show_camera_help: "When a picture comes from an input_text or text entity, a camera button on the card takes or picks a new photo and stores its address in the entity.",
@@ -669,6 +682,17 @@ var de = {
   editor_upload_folder_help: "Wird beim ersten Upload angelegt. Leer lassen für die oberste Ebene.",
   editor_upload_max_size: "Bilder verkleinern auf",
   editor_upload_max_size_help: "Längste Kante in Pixeln vor dem Upload. 0 behält die Originalgröße.",
+  editor_upload_crop: "Uploads auf das Seitenverhältnis der Karte zuschneiden",
+  editor_preview: "Vorschau",
+  editor_preview_help: "Auf die Vorschau oder den Button tippen, um die Animation zu sehen.",
+  editor_play: "Animation abspielen",
+  editor_import: "Aus einem Medienordner importieren",
+  editor_import_help: "Fügt jedes Bild eines Ordners unter /media als Seite hinzu, bis zur Grenze von 10.",
+  editor_import_button: "Importieren",
+  editor_import_done: "{count} Bilder hinzugefügt.",
+  editor_import_none: "Keine Bilder in {folder} gefunden.",
+  editor_import_failed: "Import fehlgeschlagen",
+  editor_drag_hint: "Ziehen zum Sortieren",
   editor_ken_burns: "Langsamer Zoom auf Bildern (Ken Burns)",
   editor_show_camera: "Kamera-Button bei Bildern aus einem input_text",
   editor_show_camera_help: "Kommt ein Bild aus einer input_text- oder text-Entität, nimmt ein Kamera-Button auf der Karte ein neues Foto auf und speichert dessen Adresse in der Entität.",
@@ -1616,8 +1640,8 @@ function checkResponse(response) {
   if (response.status === 401 || response.status === 403) throw new UploadError("forbidden", "forbidden");
   if (!response.ok) throw new UploadError(`${response.status} ${response.statusText}`, "http");
 }
-async function downscaleImage(file, maxSize, quality = 0.85) {
-  if (!maxSize || !file.type.startsWith("image/") || file.type === "image/svg+xml" || file.type === "image/gif") {
+async function downscaleImage(file, maxSize, quality = 0.85, cropAspect) {
+  if (!maxSize && !cropAspect || !file.type.startsWith("image/") || file.type === "image/svg+xml" || file.type === "image/gif") {
     return file;
   }
   let bitmap;
@@ -1627,21 +1651,34 @@ async function downscaleImage(file, maxSize, quality = 0.85) {
     return file;
   }
   const { width, height } = bitmap;
-  const longest = Math.max(width, height);
-  if (longest <= maxSize) {
+  let sx = 0;
+  let sy = 0;
+  let sw = width;
+  let sh = height;
+  if (cropAspect && cropAspect > 0) {
+    if (width / height > cropAspect) {
+      sw = Math.round(height * cropAspect);
+      sx = Math.round((width - sw) / 2);
+    } else {
+      sh = Math.round(width / cropAspect);
+      sy = Math.round((height - sh) / 2);
+    }
+  }
+  const longest = Math.max(sw, sh);
+  const scale = maxSize && longest > maxSize ? maxSize / longest : 1;
+  if (scale === 1 && sw === width && sh === height) {
     bitmap.close();
     return file;
   }
-  const scale = maxSize / longest;
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(width * scale);
-  canvas.height = Math.round(height * scale);
+  canvas.width = Math.max(1, Math.round(sw * scale));
+  canvas.height = Math.max(1, Math.round(sh * scale));
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     bitmap.close();
     return file;
   }
-  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
   bitmap.close();
   const keepPng = file.type === "image/png";
   const type = keepPng ? "image/png" : "image/jpeg";
@@ -1672,7 +1709,7 @@ async function uploadToMedia(hass, file, folder) {
   return result.media_content_id;
 }
 async function uploadPicture(hass, file, options) {
-  const prepared = await downscaleImage(file, options.maxSize, options.quality);
+  const prepared = await downscaleImage(file, options.maxSize, options.quality, options.cropAspect);
   return options.target === "media" ? uploadToMedia(hass, prepared, options.folder) : uploadToImageStore(hass, prepared);
 }
 
@@ -2701,7 +2738,8 @@ var ImageNoteCard = class extends HTMLElement {
       const value = await uploadPicture(hass, file, {
         target: config.upload_target,
         folder: config.upload_folder,
-        maxSize: config.upload_max_size
+        maxSize: config.upload_max_size,
+        cropAspect: config.upload_crop ? parseAspectRatio(config.aspect_ratio) ?? void 0 : void 0
       });
       const domain = slide.image_entity.split(".")[0];
       await hass.callService(domain, "set_value", { entity_id: slide.image_entity, value });
@@ -3165,6 +3203,11 @@ var TEMPLATE2 = `
   <div class="chips"></div>
   <div class="chips add-row"></div>
   <div class="status max-note"></div>
+  <div class="import-row">
+    <input class="import-folder" type="text" />
+    <button class="btn import" type="button"><ha-icon icon="mdi:folder-image"></ha-icon><span></span></button>
+  </div>
+  <div class="status import-status"></div>
   <div class="buttons entry-actions">
     <button class="btn move-left" type="button"><ha-icon icon="mdi:arrow-left"></ha-icon><span></span></button>
     <button class="btn move-right" type="button"><ha-icon icon="mdi:arrow-right"></ha-icon><span></span></button>
@@ -3193,6 +3236,13 @@ var TEMPLATE2 = `
 <ha-form class="page-form"></ha-form>
 <div class="divider"></div>
 <ha-form class="card-form"></ha-form>
+<div class="divider"></div>
+<div class="preview-section">
+  <div class="picture-label preview-label"></div>
+  <div class="picture-help preview-help"></div>
+  <div class="preview-card"></div>
+  <div class="buttons"><button class="btn primary play" type="button"><ha-icon icon="mdi:play"></ha-icon><span></span></button></div>
+</div>
 <div class="version">ImageNote ${VERSION}</div>`;
 var STYLES = `
 .pages {
@@ -3237,6 +3287,46 @@ var STYLES = `
 }
 .entry-actions {
   margin-top: 10px;
+}
+.chip[draggable="true"] {
+  cursor: grab;
+}
+.chip.dragging {
+  opacity: 0.4;
+}
+.chip.drop-target {
+  outline: 2px dashed var(--primary-color);
+  outline-offset: 2px;
+}
+.import-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.import-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.9em;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+  background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
+  color: var(--primary-text-color);
+  outline: none;
+}
+.import-row input:focus {
+  border-color: var(--primary-color);
+}
+.preview-section {
+  margin-bottom: 8px;
+}
+.preview-card {
+  margin: 10px 0;
+  max-width: 420px;
+}
+.preview-card imagenote-card {
+  display: block;
 }
 .entry-actions:not(:has(.btn:not(.hidden))) {
   display: none;
@@ -3488,6 +3578,9 @@ var ImageNoteCardEditor = class extends HTMLElement {
   _previewToken = 0;
   _selectedMarker = -1;
   _canvasImg;
+  _previewCard;
+  _dragIndex = -1;
+  _importing = false;
   constructor() {
     super();
     this._root = this.attachShadow({ mode: "open" });
@@ -3505,6 +3598,7 @@ var ImageNoteCardEditor = class extends HTMLElement {
     this._lang = lang;
     if (this._pageForm) this._pageForm.hass = hass;
     if (this._cardForm) this._cardForm.hass = hass;
+    if (this._previewCard) this._previewCard.hass = hass;
     if (langChanged) {
       this._render();
     } else {
@@ -3580,6 +3674,68 @@ var ImageNoteCardEditor = class extends HTMLElement {
     this._pageIndex = to;
     this._emit(this._withPages(this._config ?? { type: "" }, pages));
   }
+  _reorder(from, to) {
+    const pages = this._pages().map((p) => ({ ...p }));
+    if (from < 0 || from >= pages.length || to < 0 || to >= pages.length) return;
+    const [moved] = pages.splice(from, 1);
+    pages.splice(to, 0, moved);
+    this._pageIndex = to;
+    this._emit(this._withPages(this._config ?? { type: "" }, pages));
+  }
+  /** Adds every picture of a folder below /media as an entry, up to the slide limit. */
+  async _importFolder() {
+    const hass = this._hass;
+    const input = this._root.querySelector(".import-folder");
+    const status = this._root.querySelector(".import-status");
+    if (!hass || !input || this._importing) return;
+    const t = (key, vars) => translate(this._lang, key, vars);
+    const folder = input.value.trim().replace(/^\/+|\/+$/g, "");
+    const id = folder.startsWith(MEDIA_SOURCE_PREFIX) ? folder : `${MEDIA_SOURCE_PREFIX}media_source/local${folder ? `/${folder}` : ""}`;
+    this._importing = true;
+    if (status) {
+      status.textContent = t("editor_uploading");
+      status.classList.remove("error");
+    }
+    try {
+      const result = await hass.callWS({
+        type: "media_source/browse_media",
+        media_content_id: id
+      });
+      const pictures = (result.children ?? []).filter(
+        (child) => child.media_class === "image" || (child.media_content_type ?? "").startsWith("image/")
+      );
+      const pages = this._pages().map((p) => ({ ...p }));
+      let added = 0;
+      for (const child of pictures) {
+        if (this._slideCount(pages) >= MAX_SLIDES) break;
+        pages.push({ image: child.media_content_id });
+        added++;
+      }
+      if (added) {
+        this._pageIndex = pages.length - 1;
+        this._emit(this._withPages(this._config ?? { type: "" }, pages));
+      }
+      if (status) status.textContent = added ? t("editor_import_done", { count: added }) : t("editor_import_none", { folder: folder || "/media" });
+    } catch (err) {
+      if (status) {
+        status.textContent = `${t("editor_import_failed")}: ${err instanceof Error ? err.message : String(err)}`;
+        status.classList.add("error");
+      }
+    } finally {
+      this._importing = false;
+      const button = this._root.querySelector(".import");
+      if (button) button.disabled = false;
+    }
+  }
+  _updatePreviewCard() {
+    const card = this._previewCard;
+    if (!card || !this._config) return;
+    try {
+      card.setConfig({ ...this._config, type: this._config.type || `custom:${CARD_TYPE}` });
+      if (this._hass) card.hass = this._hass;
+    } catch {
+    }
+  }
   _selectPage(index) {
     this._pageIndex = index;
     this._render();
@@ -3611,6 +3767,16 @@ var ImageNoteCardEditor = class extends HTMLElement {
     this._moveRightButton = q(".move-right");
     this._canvasImg = q(".marker-canvas img");
     this._root.querySelector(".marker-canvas")?.addEventListener("click", (ev) => this._onCanvasClick(ev));
+    this._root.querySelector(".import")?.addEventListener("click", () => void this._importFolder());
+    this._root.querySelector(".import-folder")?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") void this._importFolder();
+    });
+    const preview = this._root.querySelector(".preview-card");
+    if (preview && customElements.get(CARD_TYPE)) {
+      this._previewCard = document.createElement(CARD_TYPE);
+      if (this._previewCard) preview.append(this._previewCard);
+    }
+    this._root.querySelector(".play")?.addEventListener("click", () => this._previewCard?.flip());
     this._pageForm?.addEventListener("value-changed", this._onPageValueChanged);
     this._cardForm?.addEventListener("value-changed", this._onCardValueChanged);
     this._uploadButton?.addEventListener("click", () => this._fileInput?.click());
@@ -3662,7 +3828,33 @@ var ImageNoteCardEditor = class extends HTMLElement {
         const label = document.createElement("span");
         label.textContent = `${index + 1} · ${t(`editor_kind_${kind}`)}`;
         chip.append(icon, label);
+        chip.title = t("editor_drag_hint");
         chip.addEventListener("click", () => this._selectPage(index));
+        chip.draggable = true;
+        chip.addEventListener("dragstart", (ev) => {
+          this._dragIndex = index;
+          chip.classList.add("dragging");
+          ev.dataTransfer?.setData("text/plain", String(index));
+          if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "move";
+        });
+        chip.addEventListener("dragend", () => {
+          this._dragIndex = -1;
+          chip.classList.remove("dragging");
+        });
+        chip.addEventListener("dragover", (ev) => {
+          if (this._dragIndex < 0 || this._dragIndex === index) return;
+          ev.preventDefault();
+          chip.classList.add("drop-target");
+        });
+        chip.addEventListener("dragleave", () => chip.classList.remove("drop-target"));
+        chip.addEventListener("drop", (ev) => {
+          ev.preventDefault();
+          chip.classList.remove("drop-target");
+          const from = this._dragIndex >= 0 ? this._dragIndex : Number(ev.dataTransfer?.getData("text/plain"));
+          this._dragIndex = -1;
+          if (!Number.isInteger(from) || from === index) return;
+          this._reorder(from, index);
+        });
         this._chips?.append(chip);
       });
     }
@@ -3682,6 +3874,22 @@ var ImageNoteCardEditor = class extends HTMLElement {
     }
     const maxNote = this._root.querySelector(".max-note");
     if (maxNote) maxNote.textContent = full ? t("editor_max_slides") : "";
+    const importInput = this._root.querySelector(".import-folder");
+    if (importInput) {
+      importInput.placeholder = t("editor_import");
+      importInput.title = t("editor_import_help");
+      if (!importInput.value && !importInput.dataset.touched) {
+        importInput.value = this._config?.upload_folder ?? DEFAULTS.upload_folder;
+        importInput.addEventListener("input", () => importInput.dataset.touched = "1", { once: true });
+      }
+    }
+    setText(".import span", t("editor_import_button"));
+    const importButton = this._root.querySelector(".import");
+    if (importButton) importButton.disabled = full || this._importing;
+    setText(".preview-label", t("editor_preview"));
+    setText(".preview-help", t("editor_preview_help"));
+    setText(".play span", t("editor_play"));
+    this._updatePreviewCard();
     const currentKind = this._kindOf(this._page());
     this._root.querySelector(".picture")?.classList.toggle("hidden", currentKind === "note");
     this._renderMarkers(currentKind !== "note");
@@ -3863,7 +4071,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
           {
             name: "upload_max_size",
             selector: { number: { min: 0, max: 8e3, step: 10, mode: "box", unit_of_measurement: "px" } }
-          }
+          },
+          { name: "upload_crop", selector: { boolean: {} } }
         ]
       },
       {
@@ -3993,7 +4202,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
       const image = await uploadPicture(hass, file, {
         target: config.upload_target === "media" ? "media" : "image",
         folder: config.upload_folder ?? DEFAULTS.upload_folder,
-        maxSize: config.upload_max_size ?? DEFAULTS.upload_max_size
+        maxSize: config.upload_max_size ?? DEFAULTS.upload_max_size,
+        cropAspect: config.upload_crop ? parseAspectRatio(config.aspect_ratio ?? DEFAULTS.aspect_ratio) ?? void 0 : void 0
       });
       this._emit(this._withPage(this._pageIndex, { ...this._page(), image, image_entity: void 0 }));
       this._setStatus(t("editor_upload_done"), false);

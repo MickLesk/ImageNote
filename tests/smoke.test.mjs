@@ -373,6 +373,74 @@ test("a picture from an input_text gets a camera button that uploads and writes 
   await context.close();
 });
 
+test("the editor imports pictures from a media folder, reorders by drag and drop and previews", async () => {
+  const { page, context } = await openDemo();
+  const editor = page.locator("imagenote-card-editor");
+  await page.evaluate(() => {
+    window.__configs = [];
+    document.querySelector("imagenote-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
+  });
+  await editor.locator(".import-folder").fill("holiday");
+  await editor.locator(".import").click();
+  await page.waitForFunction(() => window.__configs.length > 0);
+  let latest = await page.evaluate(() => window.__configs.at(-1));
+  assert.equal(latest.slides.length, 3);
+  assert.equal(latest.slides[1].image, "media-source://media_source/local/holiday/a.jpg");
+  assert.equal(latest.slides[2].image, "media-source://media_source/local/holiday/b.png");
+  assert.match(await editor.locator(".import-status").innerText(), /2 pictures added/);
+
+  // Drag the third chip onto the first.
+  const chips = editor.locator(".chips:not(.add-row) .chip");
+  await chips.nth(2).dragTo(chips.nth(0));
+  latest = await page.evaluate(() => window.__configs.at(-1));
+  assert.equal(latest.slides[0].image, "media-source://media_source/local/holiday/b.png");
+  assert.equal(latest.slides[1].image, "./sample-2.svg");
+
+  // The preview card follows the config and plays the animation.
+  const preview = editor.locator(".preview-card imagenote-card");
+  assert.equal(await preview.count(), 1);
+  assert.equal(await preview.locator(".dots button").count(), 4);
+  await editor.locator(".play").click();
+  await page.waitForTimeout(100);
+  assert.equal(await preview.locator(".dots button.active").evaluate((el) => Array.from(el.parentNode.children).indexOf(el)), 1);
+  await context.close();
+});
+
+test("uploads are scaled down and cropped before they leave the browser", async () => {
+  const { page, context } = await openDemo();
+  // The helper is bundled, so exercise it through the editor's upload path.
+  const editor = page.locator("imagenote-card-editor");
+  await page.evaluate(() => {
+    window.__uploaded = null;
+    const hass = document.querySelector("imagenote-card-editor").hass;
+    hass.fetchWithAuth = async (path, init) => {
+      const file = init.body.get("file");
+      const bitmap = await createImageBitmap(file);
+      window.__uploaded = { width: bitmap.width, height: bitmap.height, type: file.type, name: file.name };
+      return new Response(JSON.stringify({ id: "scaled" }), { status: 200 });
+    };
+    document.querySelector("imagenote-card-editor").hass = hass;
+  });
+  await page.evaluate(() => {
+    const ed = document.querySelector("imagenote-card-editor");
+    ed.setConfig({ ...ed._config, upload_max_size: 600, upload_crop: true, aspect_ratio: "1:1" });
+  });
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), editor.locator(".upload").click()]);
+  const png = await page.evaluate(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 3000;
+    canvas.height = 1000;
+    canvas.getContext("2d").fillRect(0, 0, 3000, 1000);
+    const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
+    return Array.from(new Uint8Array(await blob.arrayBuffer()));
+  });
+  await chooser.setFiles({ name: "wide.png", mimeType: "image/png", buffer: Buffer.from(png) });
+  await page.waitForFunction(() => window.__uploaded !== null);
+  const uploaded = await page.evaluate(() => window.__uploaded);
+  assert.deepEqual([uploaded.width, uploaded.height, uploaded.type], [600, 600, "image/png"]);
+  await context.close();
+});
+
 test("empty and broken states show placeholders", async () => {
   const { page, context } = await openDemo();
   assert.match(await card(page, 5).locator(".face.current .placeholder").innerText(), /No picture yet/);

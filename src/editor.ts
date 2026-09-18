@@ -12,7 +12,8 @@ import {
   TRANSITIONS,
   VERSION,
 } from "./const";
-import { MAX_MARKERS, MAX_SLIDES } from "./const";
+import { CARD_TYPE, MAX_MARKERS, MAX_SLIDES, MEDIA_SOURCE_PREFIX as MEDIA_PREFIX } from "./const";
+import { parseAspectRatio } from "./config";
 import { UploadError, uploadPicture } from "./upload";
 import { configPages, expandSlides, hasNote, hasPicture, normalizePage } from "./config";
 import { NOTE_COLOR_PRESETS } from "./notes";
@@ -43,6 +44,11 @@ const TEMPLATE = `
   <div class="chips"></div>
   <div class="chips add-row"></div>
   <div class="status max-note"></div>
+  <div class="import-row">
+    <input class="import-folder" type="text" />
+    <button class="btn import" type="button"><ha-icon icon="mdi:folder-image"></ha-icon><span></span></button>
+  </div>
+  <div class="status import-status"></div>
   <div class="buttons entry-actions">
     <button class="btn move-left" type="button"><ha-icon icon="mdi:arrow-left"></ha-icon><span></span></button>
     <button class="btn move-right" type="button"><ha-icon icon="mdi:arrow-right"></ha-icon><span></span></button>
@@ -71,6 +77,13 @@ const TEMPLATE = `
 <ha-form class="page-form"></ha-form>
 <div class="divider"></div>
 <ha-form class="card-form"></ha-form>
+<div class="divider"></div>
+<div class="preview-section">
+  <div class="picture-label preview-label"></div>
+  <div class="picture-help preview-help"></div>
+  <div class="preview-card"></div>
+  <div class="buttons"><button class="btn primary play" type="button"><ha-icon icon="mdi:play"></ha-icon><span></span></button></div>
+</div>
 <div class="version">ImageNote ${VERSION}</div>`;
 
 const STYLES = `
@@ -116,6 +129,46 @@ const STYLES = `
 }
 .entry-actions {
   margin-top: 10px;
+}
+.chip[draggable="true"] {
+  cursor: grab;
+}
+.chip.dragging {
+  opacity: 0.4;
+}
+.chip.drop-target {
+  outline: 2px dashed var(--primary-color);
+  outline-offset: 2px;
+}
+.import-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.import-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.9em;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+  background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
+  color: var(--primary-text-color);
+  outline: none;
+}
+.import-row input:focus {
+  border-color: var(--primary-color);
+}
+.preview-section {
+  margin-bottom: 8px;
+}
+.preview-card {
+  margin: 10px 0;
+  max-width: 420px;
+}
+.preview-card imagenote-card {
+  display: block;
 }
 .entry-actions:not(:has(.btn:not(.hidden))) {
   display: none;
@@ -368,6 +421,9 @@ export class ImageNoteCardEditor extends HTMLElement {
   private _previewToken = 0;
   private _selectedMarker = -1;
   private _canvasImg?: HTMLImageElement;
+  private _previewCard?: HTMLElement & { setConfig(config: ImageNoteCardConfig): void; hass?: HomeAssistant; flip(): void };
+  private _dragIndex = -1;
+  private _importing = false;
 
   constructor() {
     super();
@@ -388,6 +444,7 @@ export class ImageNoteCardEditor extends HTMLElement {
     this._lang = lang;
     if (this._pageForm) this._pageForm.hass = hass;
     if (this._cardForm) this._cardForm.hass = hass;
+    if (this._previewCard) this._previewCard.hass = hass;
     if (langChanged) {
       this._render();
     } else {
@@ -476,6 +533,72 @@ export class ImageNoteCardEditor extends HTMLElement {
     this._emit(this._withPages(this._config ?? { type: "" }, pages));
   }
 
+  private _reorder(from: number, to: number): void {
+    const pages = this._pages().map((p) => ({ ...p }));
+    if (from < 0 || from >= pages.length || to < 0 || to >= pages.length) return;
+    const [moved] = pages.splice(from, 1);
+    pages.splice(to, 0, moved);
+    this._pageIndex = to;
+    this._emit(this._withPages(this._config ?? { type: "" }, pages));
+  }
+
+  /** Adds every picture of a folder below /media as an entry, up to the slide limit. */
+  private async _importFolder(): Promise<void> {
+    const hass = this._hass;
+    const input = this._root.querySelector<HTMLInputElement>(".import-folder");
+    const status = this._root.querySelector<HTMLElement>(".import-status");
+    if (!hass || !input || this._importing) return;
+    const t = (key: string, vars?: Record<string, string | number>) => translate(this._lang, key, vars);
+    const folder = input.value.trim().replace(/^\/+|\/+$/g, "");
+    const id = folder.startsWith(MEDIA_PREFIX) ? folder : `${MEDIA_PREFIX}media_source/local${folder ? `/${folder}` : ""}`;
+    this._importing = true;
+    if (status) {
+      status.textContent = t("editor_uploading");
+      status.classList.remove("error");
+    }
+    try {
+      const result = await hass.callWS<{ children?: Array<{ media_content_id: string; media_class?: string; media_content_type?: string }> }>({
+        type: "media_source/browse_media",
+        media_content_id: id,
+      });
+      const pictures = (result.children ?? []).filter(
+        (child) => child.media_class === "image" || (child.media_content_type ?? "").startsWith("image/"),
+      );
+      const pages = this._pages().map((p) => ({ ...p }));
+      let added = 0;
+      for (const child of pictures) {
+        if (this._slideCount(pages) >= MAX_SLIDES) break;
+        pages.push({ image: child.media_content_id });
+        added++;
+      }
+      if (added) {
+        this._pageIndex = pages.length - 1;
+        this._emit(this._withPages(this._config ?? { type: "" }, pages));
+      }
+      if (status) status.textContent = added ? t("editor_import_done", { count: added }) : t("editor_import_none", { folder: folder || "/media" });
+    } catch (err) {
+      if (status) {
+        status.textContent = `${t("editor_import_failed")}: ${err instanceof Error ? err.message : String(err)}`;
+        status.classList.add("error");
+      }
+    } finally {
+      this._importing = false;
+      const button = this._root.querySelector<HTMLButtonElement>(".import");
+      if (button) button.disabled = false;
+    }
+  }
+
+  private _updatePreviewCard(): void {
+    const card = this._previewCard;
+    if (!card || !this._config) return;
+    try {
+      card.setConfig({ ...this._config, type: this._config.type || `custom:${CARD_TYPE}` });
+      if (this._hass) card.hass = this._hass;
+    } catch {
+      // An incomplete config while typing; the preview keeps the last good one.
+    }
+  }
+
   private _selectPage(index: number): void {
     this._pageIndex = index;
     this._render();
@@ -514,6 +637,16 @@ export class ImageNoteCardEditor extends HTMLElement {
     this._moveRightButton = q<HTMLButtonElement>(".move-right");
     this._canvasImg = q<HTMLImageElement>(".marker-canvas img");
     this._root.querySelector<HTMLElement>(".marker-canvas")?.addEventListener("click", (ev) => this._onCanvasClick(ev));
+    this._root.querySelector<HTMLButtonElement>(".import")?.addEventListener("click", () => void this._importFolder());
+    this._root.querySelector<HTMLInputElement>(".import-folder")?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") void this._importFolder();
+    });
+    const preview = this._root.querySelector<HTMLElement>(".preview-card");
+    if (preview && customElements.get(CARD_TYPE)) {
+      this._previewCard = document.createElement(CARD_TYPE) as typeof this._previewCard;
+      if (this._previewCard) preview.append(this._previewCard);
+    }
+    this._root.querySelector<HTMLButtonElement>(".play")?.addEventListener("click", () => this._previewCard?.flip());
 
     this._pageForm?.addEventListener("value-changed", this._onPageValueChanged as EventListener);
     this._cardForm?.addEventListener("value-changed", this._onCardValueChanged as EventListener);
@@ -568,7 +701,33 @@ export class ImageNoteCardEditor extends HTMLElement {
         const label = document.createElement("span");
         label.textContent = `${index + 1} · ${t(`editor_kind_${kind}`)}`;
         chip.append(icon, label);
+        chip.title = t("editor_drag_hint");
         chip.addEventListener("click", () => this._selectPage(index));
+        chip.draggable = true;
+        chip.addEventListener("dragstart", (ev) => {
+          this._dragIndex = index;
+          chip.classList.add("dragging");
+          ev.dataTransfer?.setData("text/plain", String(index));
+          if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "move";
+        });
+        chip.addEventListener("dragend", () => {
+          this._dragIndex = -1;
+          chip.classList.remove("dragging");
+        });
+        chip.addEventListener("dragover", (ev) => {
+          if (this._dragIndex < 0 || this._dragIndex === index) return;
+          ev.preventDefault();
+          chip.classList.add("drop-target");
+        });
+        chip.addEventListener("dragleave", () => chip.classList.remove("drop-target"));
+        chip.addEventListener("drop", (ev) => {
+          ev.preventDefault();
+          chip.classList.remove("drop-target");
+          const from = this._dragIndex >= 0 ? this._dragIndex : Number(ev.dataTransfer?.getData("text/plain"));
+          this._dragIndex = -1;
+          if (!Number.isInteger(from) || from === index) return;
+          this._reorder(from, index);
+        });
         this._chips?.append(chip);
       });
     }
@@ -588,6 +747,22 @@ export class ImageNoteCardEditor extends HTMLElement {
     }
     const maxNote = this._root.querySelector<HTMLElement>(".max-note");
     if (maxNote) maxNote.textContent = full ? t("editor_max_slides") : "";
+    const importInput = this._root.querySelector<HTMLInputElement>(".import-folder");
+    if (importInput) {
+      importInput.placeholder = t("editor_import");
+      importInput.title = t("editor_import_help");
+      if (!importInput.value && !importInput.dataset.touched) {
+        importInput.value = this._config?.upload_folder ?? (DEFAULTS.upload_folder as string);
+        importInput.addEventListener("input", () => (importInput.dataset.touched = "1"), { once: true });
+      }
+    }
+    setText(".import span", t("editor_import_button"));
+    const importButton = this._root.querySelector<HTMLButtonElement>(".import");
+    if (importButton) importButton.disabled = full || this._importing;
+    setText(".preview-label", t("editor_preview"));
+    setText(".preview-help", t("editor_preview_help"));
+    setText(".play span", t("editor_play"));
+    this._updatePreviewCard();
     const currentKind = this._kindOf(this._page());
     this._root.querySelector(".picture")?.classList.toggle("hidden", currentKind === "note");
     this._renderMarkers(currentKind !== "note");
@@ -776,6 +951,7 @@ export class ImageNoteCardEditor extends HTMLElement {
             name: "upload_max_size",
             selector: { number: { min: 0, max: 8000, step: 10, mode: "box", unit_of_measurement: "px" } },
           },
+          { name: "upload_crop", selector: { boolean: {} } },
         ],
       },
       {
@@ -920,6 +1096,7 @@ export class ImageNoteCardEditor extends HTMLElement {
         target: config.upload_target === "media" ? "media" : "image",
         folder: config.upload_folder ?? (DEFAULTS.upload_folder as string),
         maxSize: config.upload_max_size ?? DEFAULTS.upload_max_size,
+        cropAspect: config.upload_crop ? (parseAspectRatio(config.aspect_ratio ?? DEFAULTS.aspect_ratio) ?? undefined) : undefined,
       });
       this._emit(this._withPage(this._pageIndex, { ...this._page(), image, image_entity: undefined }));
       this._setStatus(t("editor_upload_done"), false);

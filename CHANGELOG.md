@@ -42,6 +42,9 @@ All notable changes to ImageNote are documented here. The format follows
 - `ken_burns` slow zoom on pictures.
 - Uploaded and captured pictures are scaled down to `upload_max_size`
   (1920 px by default) before upload.
+- Editor: drag-and-drop ordering of entries, import of all pictures in a
+  media folder, a live preview with a "Play animation" button, and
+  `upload_crop` to crop uploads to the card's aspect ratio.
 - Upload target per card: Home Assistant's image store or a folder in
   `/media`.
 - Pictures can be reordered in the editor.

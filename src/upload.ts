@@ -12,6 +12,8 @@ export interface UploadOptions {
   maxSize: number;
   /** JPEG quality for downscaled pictures. */
   quality?: number;
+  /** Width / height to centre-crop to before scaling; undefined keeps the picture's shape. */
+  cropAspect?: number;
 }
 
 export class UploadError extends Error {
@@ -42,8 +44,13 @@ function checkResponse(response: Response): void {
  * 4000 px and several megabytes; a dashboard never needs that. Returns the original file
  * when it is small enough or cannot be decoded (SVG, unsupported formats).
  */
-export async function downscaleImage(file: File, maxSize: number, quality = 0.85): Promise<File> {
-  if (!maxSize || !file.type.startsWith("image/") || file.type === "image/svg+xml" || file.type === "image/gif") {
+export async function downscaleImage(
+  file: File,
+  maxSize: number,
+  quality = 0.85,
+  cropAspect?: number,
+): Promise<File> {
+  if ((!maxSize && !cropAspect) || !file.type.startsWith("image/") || file.type === "image/svg+xml" || file.type === "image/gif") {
     return file;
   }
   let bitmap: ImageBitmap;
@@ -53,21 +60,35 @@ export async function downscaleImage(file: File, maxSize: number, quality = 0.85
     return file;
   }
   const { width, height } = bitmap;
-  const longest = Math.max(width, height);
-  if (longest <= maxSize) {
+  // Crop rectangle (source pixels), centred.
+  let sx = 0;
+  let sy = 0;
+  let sw = width;
+  let sh = height;
+  if (cropAspect && cropAspect > 0) {
+    if (width / height > cropAspect) {
+      sw = Math.round(height * cropAspect);
+      sx = Math.round((width - sw) / 2);
+    } else {
+      sh = Math.round(width / cropAspect);
+      sy = Math.round((height - sh) / 2);
+    }
+  }
+  const longest = Math.max(sw, sh);
+  const scale = maxSize && longest > maxSize ? maxSize / longest : 1;
+  if (scale === 1 && sw === width && sh === height) {
     bitmap.close();
     return file;
   }
-  const scale = maxSize / longest;
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(width * scale);
-  canvas.height = Math.round(height * scale);
+  canvas.width = Math.max(1, Math.round(sw * scale));
+  canvas.height = Math.max(1, Math.round(sh * scale));
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     bitmap.close();
     return file;
   }
-  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
   bitmap.close();
   const keepPng = file.type === "image/png";
   const type = keepPng ? "image/png" : "image/jpeg";
@@ -105,7 +126,7 @@ export async function uploadToMedia(hass: HomeAssistant, file: File, folder: str
 
 /** Downscales and uploads; resolves to the value to store as `image`. */
 export async function uploadPicture(hass: HomeAssistant, file: File, options: UploadOptions): Promise<string> {
-  const prepared = await downscaleImage(file, options.maxSize, options.quality);
+  const prepared = await downscaleImage(file, options.maxSize, options.quality, options.cropAspect);
   return options.target === "media"
     ? uploadToMedia(hass, prepared, options.folder)
     : uploadToImageStore(hass, prepared);
