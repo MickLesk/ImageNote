@@ -70,322 +70,204 @@ Copy `dist/pinboard-card.js` to `/config/www/pinboard-card.js` and add
 
 Requires Home Assistant 2024.10 or newer.
 
-## Usage
+## Quick start
 
-Add the card from the card picker (**Pinboard Card**) and fill in the editor,
-or write YAML:
+Add the card from the card picker (**Pinboard Card**) and use the visual
+editor, or paste YAML. The smallest useful card is a picture with a note on
+its back:
 
 ```yaml
 type: custom:pinboard-card
 title: Boiler
-image: /api/image/serve/3f2a9c…/original   # what the editor's upload produces
+image: /local/pictures/boiler.jpg
 note: |
   **Last service:** 12 Oct 2025
   Next filter change in six months.
 ```
 
-Note from an entity, editable on the card:
+## Full configuration
+
+Every option, with its default where one exists. Only `type` is required.
 
 ```yaml
 type: custom:pinboard-card
-title: Fridge
-image: /local/pictures/fridge.jpg
-note_entity: input_text.fridge_note
-transition: fade
-```
+title: Garage                      # shown on pictures and above notes
 
-Wall-panel slideshow that turns over on its own:
-
-```yaml
-type: custom:pinboard-card
-image: media-source://media_source/local/family/summer.jpg
-note: See you on Sunday!
-aspect_ratio: "4:3"
-auto_flip: 20
-show_hint: false
-```
-
-Pictures and notes in any order, up to ten. An entry with both a picture and a
-note counts as two:
-
-```yaml
-type: custom:pinboard-card
-title: Holiday
+# --- pages ------------------------------------------------------------------
+# Up to ten pictures, notes and recordings in any order. An entry with several
+# parts becomes one page per part (picture, note, audio). For a single entry
+# you can put its keys on the card itself instead of under slides.
 slides:
-  - image: /local/pictures/arrival.jpg
-    title: Arrival
-  - note: "Day 1: **arrived** late, the hotel is fine."
-  - note: "Day 2: hiking. Bring water."
-  - image: /local/pictures/lake.jpg
-    title: Lake
-  - note_entity: input_text.holiday_shopping
-    title: Shopping
-auto_flip: 15
-```
+  - image: /local/pictures/bike.jpg          # URL, /local/ path, /api/image/serve/… or media-source:// id
+    title: Bike                              # optional, falls back to the card title
+    note: |                                  # Markdown, checklists and templates
+      Chain oiled in March.
+      - [ ] Pump the tyres
+      - [x] Fix the light
+    markers:                                 # pins on the picture
+      - x: 30                                # percent of the width
+        y: 45                                # percent of the height
+        label: Stopcock
+        icon: mdi:water-off                  # optional; a number without it
+        entity: sensor.garage_temperature    # optional; state in the label, tap opens more-info
+  - image_entity: camera.garage              # picture from an image, camera or person entity,
+                                             # or an input_text / text holding a picture address
+    title: Live view
+  - note_entity: input_text.garage_note      # note from an entity; editable on the card
+    note_attribute: ""                       # read an attribute instead of the state (read-only)
+    color: yellow                            # yellow, green, blue, pink, orange, purple, grey or any CSS colour
+    expires: "2026-10-01 18:00"              # afterwards dimmed and tagged, or hidden (expired_slides)
+  - audio: media-source://media_source/local/pinboard/memo.webm   # a recording or any audio file
+    title: Voice memo
+  - audio_entity: input_text.garage_memo     # audio from an entity; record button on the card
+    kind: audio                              # only needed for an entry without content yet
 
-The same entries side by side as tiles; each tile turns between its own
-picture and note:
+# --- layout ----------------------------------------------------------------
+layout: stack                      # stack: one page after another | grid: entries side by side as tiles
+columns: 0                         # grid: tiles per row, 0 fits as many as the width allows
+aspect_ratio: "16:9"               # 16:9, 4:3, 3:2, 1:1, 3:4, 9:16, any w:h, or auto
+image_fit: cover                   # cover (fill and crop) | contain (whole picture)
 
-```yaml
-type: custom:pinboard-card
-title: Garage
-layout: grid
-columns: 3
-slides:
-  - image: /local/pictures/bike.jpg
-    title: Bike
-    note: Chain oiled in March.
-  - image: /local/pictures/car.jpg
-    title: Car
-    note: "Tyres: 2.5 bar front, 2.8 bar rear."
-  - image: /local/pictures/tools.jpg
-    title: Tools
-    note_entity: input_text.garage_tools
-```
+# --- animation -------------------------------------------------------------
+transition: flip                   # flip | fade | slide | cube | none
+direction: horizontal              # horizontal | vertical
+duration: 700                      # milliseconds
+default_side: image                # image: start on the first picture | note: start on the first note
+auto_flip: 0                       # seconds between automatic page turns, 0 = off
+hover_flip: false                  # show the next page while the pointer hovers (mouse only)
+ken_burns: false                   # slow zoom and pan on pictures
 
-Picture from an entity, note from an attribute:
+# --- appearance ------------------------------------------------------------
+show_title: true                   # title overlay on pictures
+show_hint: true                    # the "Note" / "Photo" / "Audio" badge in the corner
+show_navigation: true              # arrows and dots when there are more than two pages
+show_updated: true                 # "Updated 5 minutes ago" for notes and recordings from entities
+note_style: plain                  # plain | sticky
+expired_slides: dim                # dim: greyed out with an "Expired" tag | hide: removed from the sequence
 
-```yaml
-type: custom:pinboard-card
-title: Front door
-image_entity: camera.front_door
-note_entity: sensor.last_visitor
-note_attribute: message
-transition: slide
-direction: vertical
-```
+# --- notes -----------------------------------------------------------------
+checklist: true                    # "- [ ] item" lines become checkboxes
+checklist_writeback: true          # save ticks to input_text / text entities
 
-## Options
+# --- uploads (editor upload button, camera and record buttons) -------------
+upload_target: image               # image: Home Assistant's image store (/config/image) | media: the media folder
+upload_folder: pinboard            # media target: folder below /media, created on the first upload
+upload_max_size: 1920              # longest edge in pixels pictures are scaled down to, 0 keeps originals
+upload_crop: false                 # centre-crop uploads to aspect_ratio
+show_camera: true                  # camera button on pictures from an input_text / text entity
+show_record: true                  # record button on audio pages from an input_text / text entity
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `title` | – | Shown on the picture and above the note. |
-| `image` | – | Picture URL, `/local/` path, `/api/image/serve/…` URL or `media-source://` id. Uploads from the editor land here. |
-| `slides` | – | Pictures, notes and audio in order, at most ten. Each entry is an object with `image` or `image_entity` (a picture), `note`, `note_entity` or `note_attribute` (a note), `audio` or `audio_entity` (a recording), an optional `title`, or just a URL string. An entry with several parts becomes one page per part, in the order picture, note, audio. When set, the top-level fields are ignored. An entry without `title` uses the card title. `images` is accepted as an older name. |
-| `audio` | – | Per entry: URL or `media-source://` id of an audio file. |
-| `audio_entity` | – | Per entry: an `input_text` / `text` entity whose state is the audio address. The card then shows a record button. |
-| `show_record` | `true` | Record button on audio pages from an `input_text` / `text` entity. |
-| `layout` | `stack` | How several entries are shown: `stack` (one after another) or `grid` (tiles side by side, each turning between its own picture and note). |
-| `columns` | `0` | With `layout: grid`: tiles per row. `0` fits as many as the width allows (about 150 px each). |
-| `image_entity` | – | Use the picture of an `image`, `camera` or `person` entity, or an `input_text` / `text` entity whose state is a picture address (URL or `media-source://` id). |
-| `markers` | – | Per picture: a list of `{ x, y, label, icon, entity }` pins. `x` and `y` are percent of the picture. See [Markers](#markers). |
-| `ken_burns` | `false` | Slow zoom and pan on pictures. Off under "reduce motion". |
-| `show_camera` | `true` | Camera button on pictures from an `input_text` / `text` entity. |
-| `upload_max_size` | `1920` | Longest edge in pixels that uploaded and captured pictures are scaled down to. `0` keeps originals. |
-| `upload_crop` | `false` | Centre-crop uploaded and captured pictures to the card's `aspect_ratio` before upload. |
-| `image_fit` | `cover` | `cover` fills the card and crops, `contain` shows the whole picture. |
-| `aspect_ratio` | `16:9` | `16:9`, `4:3`, `1:1`, `9:16`, any `w:h`, or `auto` for the picture's natural size. |
-| `note` | – | The note text. Markdown is rendered. Ignored when `note_entity` is set. |
-| `note_entity` | – | Read the note from an entity. `input_text` and `text` entities are editable on the card. |
-| `note_attribute` | – | Read the note from this attribute of `note_entity` instead of its state (read-only). |
-| `expires` | – | Per entry: `2026-10-01` or `2026-10-01 18:00`. Afterwards the page is dimmed and marked, or hidden (`expired_slides`). Until then the note shows "Until …". |
-| `color` | – | Per note page: `yellow`, `green`, `blue`, `pink`, `orange`, `purple`, `grey` or any CSS colour. |
-| `note_style` | `plain` | `plain` or `sticky`. Sticky notes get a paper tint and a folded corner. |
-| `expired_slides` | `dim` | `dim` keeps expired pages greyed out with an "Expired" tag, `hide` removes them from the sequence. |
-| `checklist` | `true` | Lines like `- [ ] item` become checkboxes on the card. |
-| `checklist_writeback` | `true` | Ticks on notes from an `input_text` or `text` entity are saved to the entity. Ticks on other notes are remembered in the browser only. |
-| `transition` | `flip` | `flip`, `fade`, `slide`, `cube` or `none`. |
-| `direction` | `horizontal` | `horizontal` or `vertical`, for `flip`, `slide` and `cube`. |
-| `duration` | `700` | Animation length in milliseconds. |
-| `default_side` | `image` | Start on the first picture (`image`) or the first note (`note`). |
-| `auto_flip` | `0` | Move to the next slide automatically every *n* seconds. `0` disables it. `auto_advance` is an older name for the same thing. |
-| `show_navigation` | `true` | With more than two slides: show the arrows and dots. Swiping and the arrow keys always work. |
-| `upload_target` | `image` | Where the editor's upload button stores files: `image` (Home Assistant's image store) or `media` (the media folder). |
-| `upload_folder` | `pinboard` | With `upload_target: media`: the folder below `/media`. Created on the first upload. |
-| `hover_flip` | `false` | Show the note while the pointer hovers over the card (mouse devices only). |
-| `show_hint` | `true` | Show the small “Note” / “Photo” badge in the corner. |
-| `show_title` | `true` | Show the title overlay on the picture. |
-| `show_updated` | `true` | With `note_entity`: show when the note was last changed. |
-| `tap_action` | `flip` | Action for a tap. See [Actions](#actions). |
-| `hold_action` | `none` | Action for a long press. |
-| `double_tap_action` | `none` | Action for a double tap. |
-
-## Markers
-
-Pins on a picture point at things and say what they are:
-
-```yaml
-type: custom:pinboard-card
-title: Boiler room
-image: /local/pictures/boiler.jpg
-markers:
-  - x: 30
-    y: 45
-    label: Stopcock
-    icon: mdi:water-off
-  - x: 72
-    y: 30
-    label: Pressure
-    entity: sensor.boiler_pressure
-  - x: 85
-    y: 85
-    entity: sensor.boiler_temp
-```
-
-A pin shows a number or its `icon`. A tap opens its label; with `entity` the
-label also shows the state and a tap on the label opens the more-info dialog.
-In the editor, click on the preview to add a pin, select a pin and click again
-to move it, and fill in label, icon and entity in the list below.
-
-## Taking photos on the card
-
-Point `image_entity` at an `input_text` (or `text`) entity. The card shows
-that entity's state as the picture address and adds a camera button. On a
-phone the button opens the camera, elsewhere a file picker; the picture is
-scaled down (`upload_max_size`), uploaded to the chosen `upload_target` and
-its address is written into the entity with `set_value`. Automations can do
-the same: any URL, `/local/` path or `media-source://` id works as a state.
-
-```yaml
-type: custom:pinboard-card
-title: Damage report
-image_entity: input_text.damage_photo
-note_entity: input_text.damage_note
-```
-
-## Voice memos
-
-An audio page shows a player with a big play button, a progress bar you can
-tap to seek, and the title. Three ways to fill it:
-
-- **Record in the editor.** *+ Audio*, then *Record*. The browser asks for
-  the microphone; *Stop* uploads the memo to the media folder
-  (`upload_folder`) and fills in the address. Recording works in Chrome,
-  Firefox and Safari 14.5 or newer.
-- **Upload an audio file** or paste a URL / `media-source://` id.
-- **Record on the card.** Point `audio_entity` at an `input_text`. The page
-  gets a microphone button; a tap records (up to three minutes), a second tap
-  stops, uploads and writes the address into the entity. Requires an
-  administrator account for the media upload.
-
-```yaml
-type: custom:pinboard-card
-title: Message for Dad
-slides:
-  - image: /local/pictures/kids.jpg
-  - audio_entity: input_text.kids_memo
-```
-
-## Notes
-
-Markdown is rendered by Home Assistant's own markdown element. On top of that:
-
-- **Checklists.** `- [ ] Bread` and `- [x] Milk` become real checkboxes. When
-  the note comes from an `input_text` or `text` entity the tick is written
-  back, so every dashboard and automation sees it. For notes in the card
-  config the tick is remembered in that browser.
-- **Templates.** Anything with `{{ … }}` or `{% … %}` is rendered by Home
-  Assistant and updates live:
-  ```yaml
-  note: "Boiler at **{{ states('sensor.boiler_temp') }} °C**, last error: {{ states('sensor.boiler_error') }}"
-  ```
-  Templated notes are read-only for checklists (the text changes under them).
-- **Expiry.** `expires: 2026-10-01` shows "Until 1 Oct" in the footer and dims
-  or hides the page afterwards. Good for "parcel at the neighbour's".
-- **Colours and sticky notes.** `color: yellow` on an entry, or
-  `note_style: sticky` on the card for the classic look.
-
-## Actions
-
-Tap, hold and double tap take the same action objects as Home Assistant's own
-cards, plus `flip`:
-
-| `action` | Effect |
-| --- | --- |
-| `flip` | Show the next slide. Default for `tap_action`. |
-| `more-info` | Open the more-info dialog. `entity` defaults to `note_entity`, then `image_entity`. |
-| `toggle` | Toggle `entity` (same default). |
-| `navigate` | Go to `navigation_path`. |
-| `url` | Open `url_path` in a new tab. |
-| `perform-action` | Run `perform_action` with `data` and `target`. `call-service` / `service` still work. |
-| `none` | Nothing. |
-
-`confirmation: true` or `confirmation: { text: "…" }` asks before running an
-action. A double tap is only detected when `double_tap_action` is set, so a
-single tap stays instant otherwise.
-
-```yaml
-type: custom:pinboard-card
-title: Fridge
-image: /local/pictures/fridge.jpg
-note_entity: input_text.fridge_note
+# --- actions ---------------------------------------------------------------
+tap_action:
+  action: flip                     # flip | more-info | toggle | navigate | url | perform-action | none
 hold_action:
-  action: more-info
+  action: more-info                # entity defaults to the page's note_entity, then image_entity
 double_tap_action:
   action: perform-action
   perform_action: input_text.set_value
   target:
-    entity_id: input_text.fridge_note
+    entity_id: input_text.garage_note
   data:
     value: ""
   confirmation:
     text: Clear the note?
 ```
 
-## Styling
+## Options
 
-The card uses your theme. These CSS variables can be overridden with
-[card-mod](https://github.com/thomasloven/lovelace-card-mod) or a theme:
+### Card
 
-| Variable | Purpose |
-| --- | --- |
-| `--pinboard-note-background` | Background of the note side. |
-| `--pinboard-badge-background`, `--pinboard-badge-color` | The corner badge on the picture. |
-| `--pinboard-placeholder-background` | Background when no picture is set. |
-| `--pinboard-easing` | Timing function of the flip. |
-
-## How pictures are stored
-
-The editor's **Upload picture** button has two targets, chosen under *Where
-uploads are stored*:
-
-| Target | Where the file ends up | Notes |
+| Option | Default | Description |
 | --- | --- | --- |
-| **Home Assistant image store** (default) | `/config/image/<id>/original` | The same API that person and area pictures use. Served by id from `/api/image/serve/<id>/original`, so the file name never leaks into the dashboard. The location is fixed by Home Assistant. |
-| **Media folder** | `/media/<folder>/<timestamp>-<name>` | A plain file you can see in the media browser, back up, and manage with Samba or the file editor. Uploading here needs an administrator account. The folder is configurable per card and created on demand. |
+| `type` | – | `custom:pinboard-card`. Required. |
+| `title` | – | Shown on pictures and above notes. Pages without their own `title` use it. |
+| `slides` | – | Pictures, notes and recordings in order, at most ten pages. See [Page](#page). `images` is accepted as an older name. |
+| `image`, `image_entity`, `note`, `note_entity`, `note_attribute`, `audio`, `audio_entity`, `expires`, `color`, `markers`, `kind` | – | The single-entry form: the same keys as one `slides` entry, placed on the card. Ignored when `slides` is set. |
+| `layout` | `stack` | `stack` shows one page after another, `grid` shows the entries side by side as tiles that each turn on their own. |
+| `columns` | `0` | With `layout: grid`: tiles per row. `0` fits as many as the width allows (about 150 px each). |
+| `aspect_ratio` | `16:9` | `16:9`, `4:3`, `3:2`, `1:1`, `3:4`, `9:16`, any `w:h`, or `auto` for the picture's natural size. In sections view the card fills its rows instead. |
+| `image_fit` | `cover` | `cover` fills the card and crops, `contain` shows the whole picture. |
+| `transition` | `flip` | `flip`, `fade`, `slide`, `cube` or `none`. Replaced by a short fade when the system asks for reduced motion. |
+| `direction` | `horizontal` | `horizontal` or `vertical`, for `flip`, `slide` and `cube`. |
+| `duration` | `700` | Animation length in milliseconds. |
+| `default_side` | `image` | Start on the first picture (`image`) or the first note (`note`). |
+| `auto_flip` | `0` | Turn to the next page every *n* seconds. `0` disables it. `auto_advance` is an older name. |
+| `hover_flip` | `false` | Show the next page while the pointer hovers over the card. Mouse devices only. |
+| `ken_burns` | `false` | Slow zoom and pan on pictures. Off under "reduce motion". |
+| `show_title` | `true` | Title overlay on pictures. |
+| `show_hint` | `true` | The badge in the corner that names the next page. |
+| `show_navigation` | `true` | Arrows and dots when there are more than two pages. Swiping and the arrow keys always work. |
+| `show_updated` | `true` | "Updated … ago" for notes and recordings that come from an entity. |
+| `note_style` | `plain` | `plain` or `sticky`. Sticky notes get a paper tint and a folded corner. |
+| `expired_slides` | `dim` | What happens to pages past their `expires`: `dim` keeps them greyed out with an "Expired" tag, `hide` removes them from the sequence. |
+| `checklist` | `true` | Lines like `- [ ] item` become checkboxes on the card. |
+| `checklist_writeback` | `true` | Ticks on notes from an `input_text` or `text` entity are saved to the entity. Other notes remember their ticks in the browser. |
+| `upload_target` | `image` | Where the editor's upload button and the camera and record buttons store files: `image` (Home Assistant's image store) or `media` (the media folder). Audio always goes to the media folder. |
+| `upload_folder` | `pinboard` | With `upload_target: media`: the folder below `/media`. Created on the first upload. |
+| `upload_max_size` | `1920` | Longest edge in pixels that pictures are scaled down to before upload. `0` keeps originals. |
+| `upload_crop` | `false` | Centre-crop pictures to `aspect_ratio` before upload. |
+| `show_camera` | `true` | Camera button on pictures whose `image_entity` is an `input_text` / `text` entity. |
+| `show_record` | `true` | Record button on audio pages whose `audio_entity` is an `input_text` / `text` entity. |
+| `tap_action` | `flip` | Action for a tap. See [Action](#action). |
+| `hold_action` | `none` | Action for a long press. |
+| `double_tap_action` | `none` | Action for a double tap. Only when set is a double tap awaited, so a single tap stays instant otherwise. |
 
-Any picture that already exists in `/config/www/` can be used with a `/local/`
-path, and any file in `/media` with its `media-source://media_source/local/…`
-id. Media-source ids are resolved through the media source API and renewed
-before the signed URL expires.
+### Page
 
-## The editor
+One entry of `slides`, or the single-entry keys on the card. An entry with a
+picture, a note and a recording yields three pages, in that order. A bare
+string is treated as `image`.
 
-- **Pictures and notes** are entries you add with *+ Picture* and *+ Note*,
-  reorder by dragging the chips (or with the arrow buttons on touch screens)
-  and remove with *Remove*. An entry may carry both a picture and a note; it
-  then counts as two pages.
-- **Upload picture** stores the file (scaled down, optionally cropped) in the
-  chosen target and fills in the address.
-- **Import from a media folder** adds every picture in a folder below
-  `/media` as a page, up to the limit of ten.
-- **Markers** are placed by clicking on the preview picture.
-- **Preview** at the bottom shows the card with the current settings; *Play
-  animation* turns it over so you can compare transitions.
+| Option | Default | Description |
+| --- | --- | --- |
+| `title` | card `title` | Title of this page. |
+| `image` | – | Picture URL, `/local/` path, `/api/image/serve/…` URL or `media-source://` id. Uploads from the editor land here. |
+| `image_entity` | – | Picture from an `image`, `camera` or `person` entity, or from an `input_text` / `text` entity whose state is a picture address. The latter gets a camera button. |
+| `note` | – | The note in Markdown. Checklists and templates work. Ignored when `note_entity` is set. |
+| `note_entity` | – | Note from an entity's state. `input_text` and `text` entities are editable on the card. |
+| `note_attribute` | – | Read this attribute of `note_entity` instead of its state. Read-only. |
+| `audio` | – | URL or `media-source://` id of an audio file. |
+| `audio_entity` | – | Audio from an `input_text` / `text` entity whose state is the audio address. Gets a record button. |
+| `expires` | – | `2026-10-01` or `2026-10-01 18:00`. Until then the footer shows "Until …"; afterwards the page is dimmed or hidden. |
+| `color` | – | Tint of a note page: `yellow`, `green`, `blue`, `pink`, `orange`, `purple`, `grey` or any CSS colour. |
+| `markers` | – | A list of pins on the picture. See [Marker](#marker). |
+| `kind` | – | `image`, `note` or `audio`. Only needed for an entry that has no content yet; the editor sets it. |
 
-## Sizing
+### Marker
 
-In sections view the card fills the rows it is given (default 6 × 4, minimum
-4 × 2) and scrolls a long note behind a soft fade above the footer. In masonry
-view the card follows `aspect_ratio`. Below about 260 px width the badges
-shrink to icons and paddings tighten; below 160 px height the "Updated" line
-is hidden.
+| Option | Default | Description |
+| --- | --- | --- |
+| `x`, `y` | – | Position in percent of the picture's width and height. Required. |
+| `label` | – | Text shown when the pin is tapped. |
+| `icon` | – | An `mdi:` icon instead of the number. |
+| `entity` | – | Its state is added to the label; a tap on the label opens the more-info dialog. |
 
-## Development
+### Action
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository layout, the branch
-and pull request workflow, and how releases are cut. In short:
+The same objects Home Assistant's own cards use, plus `flip`.
 
-```bash
-npm ci
-npm run build        # bundles src/ into dist/pinboard-card.js
-npm run demo         # http://localhost:8765/demo/ with stubbed Home Assistant elements
-npm run validate     # typecheck, build, bundle checks and browser tests
-```
+| `action` | Effect |
+| --- | --- |
+| `flip` | Show the next page. Default for `tap_action`. |
+| `more-info` | Open the more-info dialog of `entity`, defaulting to the page's `note_entity`, then `image_entity`. |
+| `toggle` | Toggle `entity` (same default). |
+| `navigate` | Go to `navigation_path`; `navigation_replace: true` replaces the history entry. |
+| `url` | Open `url_path` in a new tab. |
+| `perform-action` | Run `perform_action` with `data` and `target`. `call-service` with `service` still works. |
+| `none` | Nothing. |
 
-The card is a plain custom element written in TypeScript, bundled with
-esbuild, without a framework dependency. `dist/pinboard-card.js` is committed;
-CI fails when it does not match the sources.
+`confirmation: true` or `confirmation: { text: "…" }` asks before an action
+runs.
+
+## Documentation
+
+| Page | Contents |
+| --- | --- |
+| [Pages and content](docs/content.md) | Pictures, notes, checklists, templates, expiry, colours, markers, photos and voice memos on the card, several pages, tiles |
+| [Actions](docs/actions.md) | Tap, hold and double tap, examples |
+| [The editor and uploads](docs/editor.md) | Entries, ordering, upload targets, folder import, markers, recording, preview |
+| [Styling and sizing](docs/styling.md) | CSS variables, sections and masonry views, small cards |
+| [Contributing](CONTRIBUTING.md) | Repository layout, branches, pull requests, releases |
 
 ## Ideas for later
 
