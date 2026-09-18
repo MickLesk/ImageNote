@@ -18,7 +18,6 @@ const options = {
   legalComments: "none",
   sourcemap: false,
   minify: true,
-  keepNames: true,
   charset: "utf8",
   logLevel: "info",
 };
