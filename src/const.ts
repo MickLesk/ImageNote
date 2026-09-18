@@ -17,7 +17,6 @@ export const TILE_MIN_WIDTH_PX = 150;
 export const MAX_SLIDES = 10;
 export const NOTE_STYLES: NoteStyle[] = ["plain", "sticky"];
 export const EXPIRED_MODES: ExpiredMode[] = ["dim", "hide"];
-export const CHECKLIST_STORAGE_PREFIX = "pinboard:checks:";
 export const ASPECT_RATIOS = ["16:9", "4:3", "3:2", "1:1", "3:4", "9:16", "auto"];
 
 export const NOTE_ENTITY_DOMAINS = ["input_text", "text"];
@@ -62,6 +61,8 @@ export const DEFAULTS: Omit<NormalizedConfig, "type" | "entries" | "slides"> = {
   expired_slides: "dim",
   checklist: true,
   checklist_writeback: true,
+  todo_add: true,
+  todo_show_completed: true,
   upload_target: "image",
   upload_folder: "pinboard",
   upload_max_size: 1920,

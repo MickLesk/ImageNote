@@ -34,7 +34,7 @@ interface HaFormElement extends HTMLElement {
 const UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
 const UPLOAD_TARGETS = ["image", "media"];
 const EDITOR_DEFAULTS: Record<string, unknown> = {};
-const PAGE_KEYS: Array<keyof PageConfig> = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "expires", "color", "markers", "audio", "audio_entity"];
+const PAGE_KEYS: Array<keyof PageConfig> = ["kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "todo_entity", "expires", "color", "markers", "audio", "audio_entity"];
 type EntryKind = "image" | "note" | "audio" | "both";
 const LIST_KEYS = ["slides", "images"];
 
@@ -1006,8 +1006,9 @@ export class PinboardCardEditor extends HTMLElement {
         flatten: true,
         icon: "mdi:text-box-edit-outline",
         title: t("editor_note_source"),
-        expanded: Boolean(this._page().note_entity),
+        expanded: Boolean(this._page().note_entity || this._page().todo_entity),
         schema: [
+          { name: "todo_entity", selector: { entity: { filter: [{ domain: "todo" }] } } },
           { name: "note_entity", selector: { entity: {} } },
           {
             name: "note_attribute",
@@ -1168,6 +1169,8 @@ export class PinboardCardEditor extends HTMLElement {
             schema: [
               { name: "checklist", selector: { boolean: {} } },
               { name: "checklist_writeback", selector: { boolean: {} } },
+              { name: "todo_add", selector: { boolean: {} } },
+              { name: "todo_show_completed", selector: { boolean: {} } },
               { name: "show_camera", selector: { boolean: {} } },
               { name: "show_record", selector: { boolean: {} } },
             ],
@@ -1191,6 +1194,7 @@ export class PinboardCardEditor extends HTMLElement {
       note: page.note ?? "",
       note_entity: page.note_entity ?? "",
       note_attribute: page.note_attribute ?? "",
+      todo_entity: page.todo_entity ?? "",
       expires: page.expires ?? "",
       color: page.color ?? "",
       audio: typeof page.audio === "object" && page.audio !== null ? page.audio.media_content_id : page.audio ?? "",

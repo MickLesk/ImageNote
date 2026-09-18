@@ -61,13 +61,33 @@ note_attribute: message
 
 The footer shows when the note was last changed (`show_updated`).
 
-### Checklists
+### To-do lists
 
-Lines like `- [ ] Bread` and `- [x] Milk` become checkboxes. When the note
-comes from an `input_text` or `text` entity the tick is written back to the
-entity (`checklist_writeback`). For notes in the card configuration the tick
-is remembered in that browser. Set `checklist: false` to render them as plain
-Markdown.
+The proper way to keep a list is a Home Assistant to-do list. Create one under
+*Settings → Devices & services → Add integration → Local To-do* (or use a
+Google Tasks, Todoist or shopping list entity) and point a page at it:
+
+```yaml
+type: custom:pinboard-card
+image: /local/pictures/fridge.jpg
+todo_entity: todo.shopping
+note: "Before the weekend:"
+```
+
+The page shows the open items as checkboxes, the completed ones struck
+through below (`todo_show_completed`), and an input row for new items
+(`todo_add`). Ticks call `todo.update_item`, new items `todo.add_item`, so the
+list stays the same on every device, in Home Assistant's To-do view and for
+automations. The list's name is used as the page title when the page has
+none; `note` is shown as text above the list.
+
+### Checklists in note text
+
+Lines like `- [ ] Bread` and `- [x] Milk` in a note become checkboxes. When
+the note comes from an `input_text` or `text` entity the tick is written back
+to the entity (`checklist_writeback`). In a note from the card configuration
+the boxes are read-only, because there is nowhere to keep the tick; use a
+to-do list for that. `checklist: false` renders them as plain Markdown.
 
 ### Templates
 

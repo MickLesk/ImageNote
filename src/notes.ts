@@ -118,11 +118,3 @@ export function contrastTextColor(color: string): string {
   return luminance > 0.55 ? "#1f1f1f" : "#ffffff";
 }
 
-/** Small stable hash so per-browser checklist state can be keyed by note text. */
-export function hashText(text: string): string {
-  let hash = 5381;
-  for (let i = 0; i < text.length; i++) {
-    hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
-  }
-  return (hash >>> 0).toString(36);
-}

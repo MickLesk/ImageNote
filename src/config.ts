@@ -126,6 +126,7 @@ export function normalizePage(page: PageConfig): NormalizedPage {
     note: str(page.note),
     note_entity: str(page.note_entity).trim(),
     note_attribute: str(page.note_attribute).trim(),
+    todo_entity: str(page.todo_entity).trim(),
     expires: str(page.expires).trim(),
     color: str(page.color).trim(),
     markers: normalizeMarkers(page.markers),
@@ -152,6 +153,7 @@ export function configPages(config: PinboardCardConfig): PageConfig[] {
       note: config.note,
       note_entity: config.note_entity,
       note_attribute: config.note_attribute,
+      todo_entity: config.todo_entity,
       expires: config.expires,
       color: config.color,
       markers: config.markers,
@@ -166,7 +168,7 @@ export function hasPicture(page: PageConfig | NormalizedPage): boolean {
 }
 
 export function hasNote(page: PageConfig | NormalizedPage): boolean {
-  return Boolean(page.note) || Boolean(page.note_entity);
+  return Boolean(page.note) || Boolean(page.note_entity) || Boolean(page.todo_entity);
 }
 
 /** An entry with a picture, a note and/or audio becomes one slide per part; an empty entry is an empty picture slide. */
@@ -177,13 +179,13 @@ export function expandSlides(entries: NormalizedPage[]): Slide[] {
     const note = hasNote(entry) || entry.kind === "note";
     const audio = hasAudio(entry) || entry.kind === "audio";
     if (picture || (!note && !audio)) {
-      slides.push({ ...entry, kind: "image", entry: index, note: "", note_entity: "", note_attribute: "", audio: undefined, audio_entity: "" });
+      slides.push({ ...entry, kind: "image", entry: index, note: "", note_entity: "", note_attribute: "", todo_entity: "", audio: undefined, audio_entity: "" });
     }
     if (note) {
       slides.push({ ...entry, kind: "note", entry: index, image: undefined, image_entity: "", audio: undefined, audio_entity: "" });
     }
     if (audio) {
-      slides.push({ ...entry, kind: "audio", entry: index, image: undefined, image_entity: "", note: "", note_entity: "", note_attribute: "" });
+      slides.push({ ...entry, kind: "audio", entry: index, image: undefined, image_entity: "", note: "", note_entity: "", note_attribute: "", todo_entity: "" });
     }
   });
   return slides;
@@ -217,6 +219,8 @@ export function normalizeConfig(config: PinboardCardConfig): NormalizedConfig {
     expired_slides: pick(config.expired_slides, EXPIRED_MODES, DEFAULTS.expired_slides),
     checklist: bool(config.checklist, DEFAULTS.checklist),
     checklist_writeback: bool(config.checklist_writeback, DEFAULTS.checklist_writeback),
+    todo_add: bool(config.todo_add, DEFAULTS.todo_add),
+    todo_show_completed: bool(config.todo_show_completed, DEFAULTS.todo_show_completed),
     upload_target: config.upload_target === "media" ? "media" : "image",
     upload_folder: str(config.upload_folder, DEFAULTS.upload_folder),
     upload_max_size: Math.round(num(config.upload_max_size, DEFAULTS.upload_max_size, 0, 8000)),

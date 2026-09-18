@@ -62,6 +62,8 @@ export interface PageConfig {
   note?: string;
   note_entity?: string;
   note_attribute?: string;
+  /** A todo.* list shown as a checklist; ticks and new items go to the list. */
+  todo_entity?: string;
   /** "2026-10-01" or "2026-10-01 18:00": after this the slide is dimmed or hidden. */
   expires?: string;
   /** Tint of a note page: a preset name (yellow, green, …) or any CSS colour. */
@@ -82,6 +84,7 @@ export interface NormalizedPage {
   note: string;
   note_entity: string;
   note_attribute: string;
+  todo_entity: string;
   expires: string;
   color: string;
   markers: Marker[];
@@ -124,6 +127,10 @@ export interface PinboardCardConfig extends PageConfig {
   expired_slides?: ExpiredMode;
   checklist?: boolean;
   checklist_writeback?: boolean;
+  /** Input row on to-do pages for adding items. */
+  todo_add?: boolean;
+  /** Keep completed to-do items visible, struck through. */
+  todo_show_completed?: boolean;
   upload_target?: "image" | "media";
   upload_folder?: string;
   /** Longest edge for uploaded pictures in pixels; 0 keeps originals. */
@@ -168,6 +175,8 @@ export interface NormalizedConfig {
   expired_slides: ExpiredMode;
   checklist: boolean;
   checklist_writeback: boolean;
+  todo_add: boolean;
+  todo_show_completed: boolean;
   upload_target: "image" | "media";
   upload_folder: string;
   upload_max_size: number;
@@ -206,6 +215,14 @@ export interface HomeAssistant {
     ): Promise<() => Promise<void>>;
   };
   auth?: { data?: { access_token?: string } };
+}
+
+export interface TodoItem {
+  uid: string;
+  summary: string;
+  status: "needs_action" | "completed";
+  due?: string;
+  description?: string;
 }
 
 export interface ResolvedMedia {

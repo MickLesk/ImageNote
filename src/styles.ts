@@ -641,6 +641,70 @@ ha-card {
   text-decoration: line-through;
   opacity: 0.6;
 }
+.check.static {
+  cursor: default;
+}
+.check.static:hover {
+  background: transparent;
+}
+.check.static input {
+  cursor: default;
+  opacity: 0.7;
+}
+.check.busy {
+  opacity: 0.6;
+}
+.todo-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0 4px;
+}
+.todo-add input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.95em;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+  background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
+  color: inherit;
+  outline: none;
+}
+.todo-add input:focus {
+  border-color: var(--primary-color);
+}
+.todo-add button {
+  appearance: none;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary-color);
+  color: var(--text-primary-color, #fff);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.todo-add button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.todo-add button ha-icon {
+  --mdc-icon-size: 20px;
+}
+.todo-section {
+  margin: 8px 0 2px;
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--secondary-text-color);
+}
 .note-body .note-empty small {
   display: block;
   margin-top: 4px;

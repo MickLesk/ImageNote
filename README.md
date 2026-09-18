@@ -23,9 +23,11 @@ can hold up to ten pictures, notes and recordings in any order.
 - **Upload a picture from the editor** — stored by Home Assistant, no `www`
   folder needed. URLs, `/local/` paths, `media-source://` ids and `image`,
   `camera` or `person` entities work too.
-- **Notes in Markdown** — bold, lists, links, plus **checklists** you can tick
-  on the card and **templates** such as `{{ states('sensor.boiler') }}` that
-  follow state changes.
+- **Notes in Markdown** — bold, lists, links, plus **templates** such as
+  `{{ states('sensor.boiler') }}` that follow state changes.
+- **To-do lists as pages** — a `todo.*` list becomes a checklist you tick and
+  extend on the card. Home Assistant keeps the list, so every device, the
+  To-do view and automations see the same state.
 - **Notes with a shelf life and a colour** — `expires` dims or hides a note
   after a date, `color` tints the page, and the sticky-note look makes notes
   read like a note on the fridge.
@@ -115,6 +117,8 @@ slides:
     title: Live view
   - note_entity: input_text.garage_note      # note from an entity; editable on the card
     note_attribute: ""                       # read an attribute instead of the state (read-only)
+  - todo_entity: todo.garage                 # a to-do list as a checklist page
+    note: "Before the weekend:"              # optional text above the list
     color: yellow                            # yellow, green, blue, pink, orange, purple, grey or any CSS colour
     expires: "2026-10-01 18:00"              # afterwards dimmed and tagged, or hidden (expired_slides)
   - audio: media-source://media_source/local/pinboard/memo.webm   # a recording or any audio file
@@ -146,9 +150,11 @@ show_updated: true                 # "Updated 5 minutes ago" for notes and recor
 note_style: plain                  # plain | sticky
 expired_slides: dim                # dim: greyed out with an "Expired" tag | hide: removed from the sequence
 
-# --- notes -----------------------------------------------------------------
+# --- notes and to-do lists -------------------------------------------------
 checklist: true                    # "- [ ] item" lines become checkboxes
 checklist_writeback: true          # save ticks to input_text / text entities
+todo_add: true                     # input row on to-do pages for new items
+todo_show_completed: true          # keep completed to-do items visible, struck through
 
 # --- uploads (editor upload button, camera and record buttons) -------------
 upload_target: image               # image: Home Assistant's image store (/config/image) | media: the media folder
@@ -202,8 +208,10 @@ double_tap_action:
 | `show_updated` | `true` | "Updated … ago" for notes and recordings that come from an entity. |
 | `note_style` | `plain` | `plain` or `sticky`. Sticky notes get a paper tint and a folded corner. |
 | `expired_slides` | `dim` | What happens to pages past their `expires`: `dim` keeps them greyed out with an "Expired" tag, `hide` removes them from the sequence. |
-| `checklist` | `true` | Lines like `- [ ] item` become checkboxes on the card. |
-| `checklist_writeback` | `true` | Ticks on notes from an `input_text` or `text` entity are saved to the entity. Other notes remember their ticks in the browser. |
+| `checklist` | `true` | Lines like `- [ ] item` become checkboxes. Ticks are saved for notes from an `input_text` / `text` entity; in notes from the card config the boxes are read-only. |
+| `checklist_writeback` | `true` | Save ticks on notes from an `input_text` or `text` entity to the entity. |
+| `todo_add` | `true` | Input row on to-do pages for adding items. |
+| `todo_show_completed` | `true` | Keep completed to-do items visible below the open ones, struck through. |
 | `upload_target` | `image` | Where the editor's upload button and the camera and record buttons store files: `image` (Home Assistant's image store) or `media` (the media folder). Audio always goes to the media folder. |
 | `upload_folder` | `pinboard` | With `upload_target: media`: the folder below `/media`. Created on the first upload. |
 | `upload_max_size` | `1920` | Longest edge in pixels that pictures are scaled down to before upload. `0` keeps originals. |
@@ -228,6 +236,7 @@ string is treated as `image`.
 | `note` | – | The note in Markdown. Checklists and templates work. Ignored when `note_entity` is set. |
 | `note_entity` | – | Note from an entity's state. `input_text` and `text` entities are editable on the card. |
 | `note_attribute` | – | Read this attribute of `note_entity` instead of its state. Read-only. |
+| `todo_entity` | – | A `todo.*` list shown as a checklist. Ticks and new items go to the list. `note` becomes the text above it. |
 | `audio` | – | URL or `media-source://` id of an audio file. |
 | `audio_entity` | – | Audio from an `input_text` / `text` entity whose state is the audio address. Gets a record button. |
 | `expires` | – | `2026-10-01` or `2026-10-01 18:00`. Until then the footer shows "Until …"; afterwards the page is dimmed or hidden. |

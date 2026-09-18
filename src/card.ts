@@ -1,6 +1,5 @@
 import {
   CARD_TYPE,
-  CHECKLIST_STORAGE_PREFIX,
   DOUBLE_TAP_WINDOW_MS,
   EDITOR_TYPE,
   HOLD_DELAY_MS,
@@ -24,7 +23,6 @@ import {
   contrastTextColor,
   hasChecklist,
   hasTemplate,
-  hashText,
   isExpired,
   parseExpiry,
   parseNoteBlocks,
@@ -39,6 +37,7 @@ import type {
   ResolvedMedia,
   Side,
   Slide,
+  TodoItem,
   Transition,
 } from "./types";
 
@@ -115,6 +114,8 @@ interface NoteSource {
   /** The text as stored, used when writing checklist ticks back. */
   raw: string;
   templated: boolean;
+  /** Set for pages bound to a todo.* list. */
+  todo: string;
   editable: boolean;
   error: string;
   max: number | null;
@@ -255,6 +256,11 @@ export class PinboardCard extends HTMLElement {
   private _templateResult?: string;
   private _templateError = "";
   private _templateUnsub?: Promise<() => Promise<void>>;
+  private _todoEntity = "";
+  private _todoItems: TodoItem[] = [];
+  private _todoKey = "";
+  private _todoUnsub?: Promise<() => Promise<void>>;
+  private _todoBusy = new Set<string>();
   private _markdownReady = customElements.get("ha-markdown") !== undefined;
 
   constructor() {
@@ -284,6 +290,7 @@ export class PinboardCard extends HTMLElement {
     window.clearInterval(this._metaTimer);
     this._metaTimer = undefined;
     this._unsubscribeTemplate();
+    this._unsubscribeTodo();
     this._stopAudio();
     this._stopRecording(true);
   }
@@ -302,6 +309,7 @@ export class PinboardCard extends HTMLElement {
     this._lastNote = undefined;
     this._resolved.clear();
     this._unsubscribeTemplate();
+    this._unsubscribeTodo();
     this._stopAudio();
     this._visible = this._computeVisible();
     if (this._config.layout === "grid" && this._config.entries.length > 1) {
@@ -900,10 +908,10 @@ export class PinboardCard extends HTMLElement {
       view.camera.title = translate(this._lang, "takePhoto");
       view.camera.setAttribute("aria-label", translate(this._lang, "takePhoto"));
     } else {
-      view.noteTitle.textContent = title || translate(this._lang, "note");
-      view.noteHeader.classList.toggle("no-title", !title);
+      this._applyNoteTitle(view, slide);
       this._applyNoteColor(view, slide);
       this._ensureTemplate(slide);
+      this._ensureTodo(slide);
       const source = this._noteSource(slide);
       if (view === this._currentFace) this._lastNote = source;
       view.editButton.classList.toggle("hidden", !source.editable);
@@ -911,6 +919,15 @@ export class PinboardCard extends HTMLElement {
       this._renderMetaFor(view, source);
     }
     this._applyExpiry(view, slide);
+  }
+
+  private _applyNoteTitle(view: FaceView, slide: Slide): void {
+    const title = slide.title || this._config?.title || "";
+    const listName = slide.todo_entity
+      ? (this._hass?.states[slide.todo_entity]?.attributes.friendly_name as string | undefined)
+      : undefined;
+    view.noteTitle.textContent = title || listName || translate(this._lang, "note");
+    view.noteHeader.classList.toggle("no-title", !title && !listName);
   }
 
   private _applyNoteColor(view: FaceView, slide: Slide): void {
@@ -1455,6 +1472,7 @@ export class PinboardCard extends HTMLElement {
       text: "",
       raw: "",
       templated: false,
+      todo: "",
       editable: false,
       error: "",
       max: null,
@@ -1463,6 +1481,18 @@ export class PinboardCard extends HTMLElement {
       entityId: "",
     };
     if (!config) return empty;
+    if (slide.todo_entity) {
+      const list = this._hass?.states[slide.todo_entity];
+      return {
+        ...empty,
+        text: slide.note,
+        raw: slide.note,
+        todo: slide.todo_entity,
+        entityId: slide.todo_entity,
+        changed: config.show_updated ? list?.last_changed ?? "" : "",
+        error: this._hass && !list ? translate(this._lang, "todoMissing", { entity: slide.todo_entity }) : "",
+      };
+    }
     if (!slide.note_entity) {
       return this._withTemplate({ ...empty, text: slide.note, raw: slide.note });
     }
@@ -1488,6 +1518,7 @@ export class PinboardCard extends HTMLElement {
       text,
       raw: text,
       templated: false,
+      todo: "",
       editable: !attr && NOTE_ENTITY_DOMAINS.includes(domain),
       error: "",
       max,
@@ -1544,6 +1575,8 @@ export class PinboardCard extends HTMLElement {
       return;
     }
     this._ensureTemplate(slide);
+    this._ensureTodo(slide);
+    if (slide.todo_entity) this._applyNoteTitle(view, slide);
     const source = this._noteSource(slide);
     const last = this._lastNote;
     if (
@@ -1554,7 +1587,8 @@ export class PinboardCard extends HTMLElement {
       last.error === source.error &&
       last.max === source.max &&
       last.changed === source.changed &&
-      last.entityId === source.entityId
+      last.entityId === source.entityId &&
+      (!source.todo || last.todo === source.todo)
     ) {
       return;
     }
@@ -1609,6 +1643,11 @@ export class PinboardCard extends HTMLElement {
       body.append(div);
       return;
     }
+    if (source.todo) {
+      if (source.text.trim()) body.append(this._markdownElement(source.text));
+      this._renderTodo(body, source);
+      return;
+    }
     if (!source.text.trim()) {
       const div = document.createElement("div");
       div.className = "note-empty";
@@ -1621,7 +1660,7 @@ export class PinboardCard extends HTMLElement {
       return;
     }
     if (this._config?.checklist && hasChecklist(source.text)) {
-      const overrides = this._localChecks(source);
+      const writable = this._canWriteBack(source);
       for (const block of parseNoteBlocks(source.text)) {
         if (block.type === "markdown") {
           body.append(this._markdownElement(block.text));
@@ -1631,17 +1670,20 @@ export class PinboardCard extends HTMLElement {
         list.className = "checklist";
         for (const item of block.items) {
           const label = document.createElement("label");
-          label.className = "check";
+          label.className = `check${writable ? "" : " static"}`;
           const input = document.createElement("input");
           input.type = "checkbox";
-          input.checked = overrides?.[item.line] ?? item.checked;
+          input.checked = item.checked;
+          input.disabled = !writable;
           const text = document.createElement("span");
           text.textContent = item.text;
           label.classList.toggle("done", input.checked);
-          input.addEventListener("change", () => {
-            label.classList.toggle("done", input.checked);
-            void this._toggleCheck(source, item.line, input.checked);
-          });
+          if (writable) {
+            input.addEventListener("change", () => {
+              label.classList.toggle("done", input.checked);
+              void this._toggleCheck(source, item.line, input.checked);
+            });
+          }
           label.append(input, text);
           list.append(label);
         }
@@ -1650,6 +1692,162 @@ export class PinboardCard extends HTMLElement {
       return;
     }
     body.append(this._markdownElement(source.text));
+  }
+
+  private _renderTodo(body: HTMLElement, source: NoteSource): void {
+    const config = this._config;
+    const hass = this._hass;
+    if (!config || !hass) return;
+    const t = (key: string) => translate(this._lang, key);
+    const items = this._todoEntity === source.todo ? this._todoItems : [];
+    const open = items.filter((item) => item.status !== "completed");
+    const done = items.filter((item) => item.status === "completed");
+
+    const row = (item: TodoItem) => {
+      const label = document.createElement("label");
+      label.className = `check${item.status === "completed" ? " done" : ""}${this._todoBusy.has(item.uid) ? " busy" : ""}`;
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = item.status === "completed";
+      input.disabled = this._todoBusy.has(item.uid);
+      const text = document.createElement("span");
+      text.textContent = item.summary;
+      input.addEventListener("change", () => {
+        label.classList.toggle("done", input.checked);
+        void this._setTodoStatus(source.todo, item, input.checked);
+      });
+      label.append(input, text);
+      return label;
+    };
+
+    if (!items.length) {
+      const div = document.createElement("div");
+      div.className = "note-empty";
+      const strong = document.createElement("span");
+      strong.textContent = t("todoEmpty");
+      const small = document.createElement("small");
+      small.textContent = t("todoEmptyHelp");
+      div.append(strong, small);
+      body.append(div);
+    } else {
+      const list = document.createElement("div");
+      list.className = "checklist";
+      open.forEach((item) => list.append(row(item)));
+      body.append(list);
+      if (done.length && config.todo_show_completed) {
+        const heading = document.createElement("div");
+        heading.className = "todo-section";
+        heading.textContent = `${t("todoDone")} · ${done.length}`;
+        const doneList = document.createElement("div");
+        doneList.className = "checklist";
+        done.forEach((item) => doneList.append(row(item)));
+        body.append(heading, doneList);
+      }
+    }
+
+    if (config.todo_add) {
+      const add = document.createElement("div");
+      add.className = "todo-add";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = t("todoAdd");
+      input.setAttribute("aria-label", t("todoAdd"));
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("aria-label", t("todoAdd"));
+      button.innerHTML = `<ha-icon icon="mdi:plus"></ha-icon>`;
+      const submit = () => {
+        const value = input.value.trim();
+        if (!value) return;
+        input.value = "";
+        void this._addTodoItem(source.todo, value);
+      };
+      button.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        submit();
+      });
+      input.addEventListener("keydown", (ev) => {
+        ev.stopPropagation();
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          submit();
+        }
+      });
+      input.addEventListener("click", (ev) => ev.stopPropagation());
+      add.append(input, button);
+      body.append(add);
+    }
+  }
+
+  private _ensureTodo(slide: Slide): void {
+    const entity = slide.todo_entity;
+    if (!entity || !this._hass) {
+      if (this._todoEntity) this._unsubscribeTodo();
+      return;
+    }
+    if (entity === this._todoEntity) return;
+    this._unsubscribeTodo();
+    this._todoEntity = entity;
+    const apply = (items: TodoItem[]) => {
+      if (this._todoEntity !== entity) return;
+      const key = JSON.stringify(items.map((i) => [i.uid, i.summary, i.status]));
+      if (key === this._todoKey) return;
+      this._todoKey = key;
+      this._todoItems = items;
+      this._todoBusy.clear();
+      if (this._els && this._slide.todo_entity === entity && !this._editing) {
+        this._renderNote(this._currentFace, this._noteSource(this._slide));
+        this._updateScrollState(this._currentFace);
+      }
+    };
+    if (this._hass.connection) {
+      this._todoUnsub = this._hass.connection.subscribeMessage<{ items?: TodoItem[] }>(
+        (message) => apply(message.items ?? []),
+        { type: "todo/item/subscribe", entity_id: entity },
+      );
+      this._todoUnsub.catch(() => undefined);
+    } else {
+      void this._hass
+        .callWS<{ items?: TodoItem[] }>({ type: "todo/item/list", entity_id: entity })
+        .then((result) => apply(result.items ?? []))
+        .catch(() => undefined);
+    }
+  }
+
+  private _unsubscribeTodo(): void {
+    const pending = this._todoUnsub;
+    this._todoUnsub = undefined;
+    this._todoEntity = "";
+    this._todoItems = [];
+    this._todoKey = "";
+    this._todoBusy.clear();
+    if (pending) pending.then((unsub) => unsub()).catch(() => undefined);
+  }
+
+  private async _setTodoStatus(entity: string, item: TodoItem, completed: boolean): Promise<void> {
+    if (!this._hass) return;
+    this._todoBusy.add(item.uid);
+    try {
+      await this._hass.callService("todo", "update_item", {
+        entity_id: entity,
+        item: item.uid,
+        status: completed ? "completed" : "needs_action",
+      });
+    } catch (err) {
+      console.warn("Pinboard: could not update the to-do item", err);
+      this._todoBusy.delete(item.uid);
+      this._todoKey = "";
+      this._renderNote(this._currentFace, this._noteSource(this._slide));
+    }
+  }
+
+  private async _addTodoItem(entity: string, summary: string): Promise<void> {
+    if (!this._hass) return;
+    try {
+      await this._hass.callService("todo", "add_item", { entity_id: entity, item: summary });
+    } catch (err) {
+      console.warn("Pinboard: could not add the to-do item", err);
+    }
   }
 
   private _markdownElement(text: string): HTMLElement {
@@ -1670,42 +1868,16 @@ export class PinboardCard extends HTMLElement {
     return Boolean(this._config?.checklist_writeback) && source.editable && !source.templated && Boolean(this._hass);
   }
 
-  private _checkKey(source: NoteSource): string {
-    return `${CHECKLIST_STORAGE_PREFIX}${hashText(source.text)}`;
-  }
-
-  /** Ticks remembered in this browser for notes that cannot be written back. */
-  private _localChecks(source: NoteSource): Record<number, boolean> | undefined {
-    if (this._canWriteBack(source)) return undefined;
-    try {
-      const raw = window.localStorage.getItem(this._checkKey(source));
-      return raw ? (JSON.parse(raw) as Record<number, boolean>) : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
   private async _toggleCheck(source: NoteSource, line: number, checked: boolean): Promise<void> {
-    if (this._canWriteBack(source) && this._hass) {
-      const value = toggleChecklistLine(source.raw, line, checked);
-      const optimistic = { ...source, raw: value, text: value };
-      this._lastNote = optimistic;
-      try {
-        await this._hass.callService(source.domain, "set_value", { entity_id: source.entityId, value });
-      } catch (err) {
-        console.warn("Pinboard: could not save the checklist", err);
-        this._lastNote = undefined;
-        this._applyHass();
-      }
-      return;
-    }
+    if (!this._canWriteBack(source) || !this._hass) return;
+    const value = toggleChecklistLine(source.raw, line, checked);
+    this._lastNote = { ...source, raw: value, text: value };
     try {
-      const key = this._checkKey(source);
-      const current = this._localChecks(source) ?? {};
-      current[line] = checked;
-      window.localStorage.setItem(key, JSON.stringify(current));
-    } catch {
-      /* private mode or blocked storage: the tick still shows until the next render */
+      await this._hass.callService(source.domain, "set_value", { entity_id: source.entityId, value });
+    } catch (err) {
+      console.warn("Pinboard: could not save the checklist", err);
+      this._lastNote = undefined;
+      this._applyHass();
     }
   }
 

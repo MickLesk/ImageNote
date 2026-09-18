@@ -147,18 +147,36 @@
       "input_text.door_photo": { entity_id: "input_text.door_photo", state: "./sample-3.svg", attributes: { max: 255, friendly_name: "Door photo" } },
       "sensor.pressure": { entity_id: "sensor.pressure", state: "1.6", attributes: { unit_of_measurement: "bar", friendly_name: "Boiler pressure" } },
       "input_text.memo": { entity_id: "input_text.memo", state: "", attributes: { max: 255, friendly_name: "Memo" } },
+      "todo.shopping": { entity_id: "todo.shopping", state: "2", attributes: { friendly_name: "Shopping list" }, last_changed: new Date(Date.now() - 600000).toISOString() },
       "input_text.shopping": { entity_id: "input_text.shopping", state: "- [x] Milk\n- [ ] Bread\n- [ ] Coffee beans", attributes: { max: 255, friendly_name: "Shopping" }, last_changed: new Date(Date.now() - 3 * 3600000).toISOString() },
       "input_text.fridge_note": { entity_id: "input_text.fridge_note", state: "Milk is running low – buy 2 litres on Friday.", attributes: { max: 255, friendly_name: "Fridge note" }, last_changed: new Date(Date.now() - 7 * 60000).toISOString() },
     };
     let language = "en";
     const listeners = new Set();
     const templateSubs = new Set();
+    const todoItems = [
+      { uid: "a1", summary: "Milk", status: "completed" },
+      { uid: "b2", summary: "Bread", status: "needs_action" },
+      { uid: "c3", summary: "Coffee beans", status: "needs_action" },
+    ];
+    const todoSubs = new Set();
+    const notifyTodo = () => todoSubs.forEach((f) => f({ items: todoItems.map((i) => ({ ...i })) }));
+    window.__todoItems = todoItems;
     const makeHass = () => ({
       states: { ...states },
       language,
       locale: { language },
       async callService(domain, service, data) {
         await new Promise((r) => setTimeout(r, 400));
+        if (domain === "todo" && service === "update_item") {
+          const item = todoItems.find((i) => i.uid === data.item || i.summary === data.item);
+          if (item && data.status) item.status = data.status;
+          notifyTodo();
+        }
+        if (domain === "todo" && service === "add_item") {
+          todoItems.push({ uid: "n" + Date.now(), summary: data.item, status: "needs_action" });
+          notifyTodo();
+        }
         if (service === "set_value") {
           states[data.entity_id] = { ...states[data.entity_id], state: data.value, last_changed: new Date().toISOString() };
           listeners.forEach((f) => f());
@@ -168,6 +186,11 @@
       connection: {
         // Just enough of render_template for the demo: {{ states('x') }} and {{ now().strftime(...) }}.
         async subscribeMessage(callback, msg) {
+          if (msg.type === "todo/item/subscribe") {
+            todoSubs.add(callback);
+            callback({ items: todoItems.map((i) => ({ ...i })) });
+            return async () => todoSubs.delete(callback);
+          }
           const render = () => msg.template
             .replace(/\{\{\s*states\('([^']+)'\)\s*\}\}/g, (_, id) => states[id]?.state ?? "unknown")
             .replace(/\{\{[^}]*\}\}/g, "…");
@@ -233,7 +256,8 @@
         { image: "./sample-1.svg", title: "Compost", note: "Turn it on Sunday." },
       ] } },
       { label: "Checklist from an input_text (writes back), sticky look", config: { type: "custom:pinboard-card", title: "Shopping", image: "./sample-2.svg", note_entity: "input_text.shopping", note_style: "sticky", default_side: "note" } },
-      { label: "Checklist in the config (ticks stay in this browser), template, colour, expiry", config: { type: "custom:pinboard-card", title: "Boiler", slides: [
+      { label: "To-do list page (todo.shopping), add items on the card", config: { type: "custom:pinboard-card", title: "", image: "./sample-1.svg", todo_entity: "todo.shopping", note: "Before the weekend:", default_side: "note" } },
+      { label: "Checklist in the config (read-only boxes), template, colour, expiry", config: { type: "custom:pinboard-card", title: "Boiler", slides: [
         { image: "./sample-1.svg" },
         { note: "Boiler is at **{{ states('sensor.boiler_temp') }} °C**.\n\n- [ ] Check pressure\n- [x] Bleed radiators\n- [ ] Order filter", color: "blue" },
         { note: "Parcel at the neighbour's until Friday.", color: "yellow", expires: "2020-01-01", title: "Old note" },

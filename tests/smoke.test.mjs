@@ -32,7 +32,7 @@ const card = (page, index) => page.locator("#grid > .cell > pinboard-card").nth(
 
 test("demo renders every card without page errors", async () => {
   const { page, context, errors } = await openDemo();
-  assert.equal(await page.locator("#grid > .cell > pinboard-card").count(), 18);
+  assert.equal(await page.locator("#grid > .cell > pinboard-card").count(), 19);
   assert.deepEqual(errors, []);
   assert.equal(await card(page, 0).locator(".face.current .title-overlay").innerText(), "Kitchen");
   assert.equal(await card(page, 0).locator(".stage").getAttribute("aria-pressed"), "false");
@@ -86,7 +86,7 @@ test("notes from an input_text entity can be edited on the card", async () => {
 
 test("hold and double tap run their actions instead of flipping", async () => {
   const { page, context } = await openDemo();
-  const actions = card(page, 17);
+  const actions = card(page, 18);
   await actions.scrollIntoViewIfNeeded();
   const box = await actions.locator(".stage").boundingBox();
   const x = box.x + box.width / 2;
@@ -281,7 +281,7 @@ test("layout: grid renders one tile per picture that flips on its own", async ()
   await context.close();
 });
 
-test("checklists tick, write back to input_text and stay local otherwise", async () => {
+test("checklists write back to input_text; config notes show read-only boxes", async () => {
   const { page, context } = await openDemo();
   const shopping = card(page, 11);
   const cur = () => shopping.locator(".face.current");
@@ -293,26 +293,42 @@ test("checklists tick, write back to input_text and stay local otherwise", async
   await page.waitForFunction(() => window.__hassStates?.()["input_text.shopping"].state.includes("- [x] Bread"));
   assert.equal(await shopping.locator(".stage").getAttribute("aria-pressed"), "true"); // still on the note, no flip
 
-  const boiler = card(page, 12);
+  // Checkboxes in a config note are read-only.
+  const boiler = card(page, 13);
   await boiler.locator(".stage").click();
   await page.waitForTimeout(800);
   const bc = () => boiler.locator(".face.current");
   assert.match(await bc().locator(".note-body").innerText(), /54\.5 °C/);
-  await bc().locator(".check input").nth(0).click();
-  await page.waitForTimeout(100);
-  const stored = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("pinboard:checks:")).length);
-  assert.equal(stored, 1);
-  await page.reload({ waitUntil: "networkidle" });
-  const boiler2 = card(page, 12);
-  await boiler2.locator(".stage").click();
-  await page.waitForTimeout(800);
-  assert.equal(await boiler2.locator(".face.current .check input").nth(0).isChecked(), true);
+  assert.equal(await bc().locator(".check input").nth(0).isDisabled(), true);
+  assert.equal(await bc().locator(".check.static").count(), 3);
+  await context.close();
+});
+
+test("a to-do list page ticks and adds items through the todo services", async () => {
+  const { page, context } = await openDemo();
+  const todo = card(page, 12);
+  await todo.scrollIntoViewIfNeeded();
+  const cur = () => todo.locator(".face.current");
+  assert.equal(await cur().locator(".layer-note .note-header .title").innerText(), "Shopping list");
+  assert.match(await cur().locator(".note-body").innerText(), /Before the weekend/);
+  assert.equal(await cur().locator(".checklist").nth(0).locator(".check").count(), 2); // open items first
+  assert.match(await cur().locator(".todo-section").innerText(), /Done · 1/i);
+  await cur().locator(".checklist").nth(0).locator(".check input").nth(0).click(); // Bread → completed
+  await page.waitForFunction(() => window.__todoItems.find((i) => i.summary === "Bread").status === "completed");
+  await page.waitForTimeout(200);
+  assert.match(await cur().locator(".todo-section").innerText(), /Done · 2/i);
+  await cur().locator(".todo-add input").fill("Butter");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.__todoItems.some((i) => i.summary === "Butter"));
+  await page.waitForTimeout(200);
+  assert.equal(await cur().locator(".checklist").nth(0).locator(".check").count(), 2); // Coffee beans + Butter
+  assert.equal(await todo.locator(".stage").getAttribute("aria-pressed"), "true"); // still on the note page
   await context.close();
 });
 
 test("expired pages are dimmed or hidden, colours and expiry dates show", async () => {
   const { page, context } = await openDemo();
-  const boiler = card(page, 12);
+  const boiler = card(page, 13);
   const cur = () => boiler.locator(".face.current");
   assert.equal(await boiler.locator(".dots button").count(), 4);
   await boiler.locator(".dots button").nth(2).click();
@@ -339,7 +355,7 @@ test("expired pages are dimmed or hidden, colours and expiry dates show", async 
 
 test("markers show labels and entity states, and open more-info", async () => {
   const { page, context } = await openDemo();
-  const boiler = card(page, 13);
+  const boiler = card(page, 14);
   await boiler.scrollIntoViewIfNeeded();
   const cur = () => boiler.locator(".face.current");
   assert.equal(await cur().locator(".marker").count(), 3);
@@ -359,7 +375,7 @@ test("markers show labels and entity states, and open more-info", async () => {
 
 test("a picture from an input_text gets a camera button that uploads and writes back", async () => {
   const { page, context } = await openDemo();
-  const door = card(page, 14);
+  const door = card(page, 15);
   await door.scrollIntoViewIfNeeded();
   const cur = () => door.locator(".face.current");
   assert.equal(await cur().locator("img").getAttribute("src"), "./sample-3.svg");
@@ -443,7 +459,7 @@ test("uploads are scaled down and cropped before they leave the browser", async 
 
 test("audio pages play a memo and offer recording for input_text entities", async () => {
   const { page, context } = await openDemo();
-  const memo = card(page, 15);
+  const memo = card(page, 16);
   await memo.scrollIntoViewIfNeeded();
   const cur = () => memo.locator(".face.current");
   assert.equal(await memo.locator(".dots button").count(), 3);
@@ -465,7 +481,7 @@ test("audio pages play a memo and offer recording for input_text entities", asyn
   assert.match(await cur().locator(".audio-time").innerText(), /0:0\d \/ 0:01/);
   assert.equal(await cur().locator(".record").isVisible(), false);
 
-  const box = card(page, 16);
+  const box = card(page, 17);
   await box.scrollIntoViewIfNeeded();
   const bc = () => box.locator(".face.current");
   assert.equal(await bc().evaluate((el) => el.classList.contains("kind-audio")), true);

@@ -5,6 +5,17 @@ All notable changes to Pinboard are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- To-do lists as pages: `todo_entity` shows a `todo.*` list as a checklist,
+  ticks and new items go to the list through Home Assistant's to-do services.
+
+### Changed
+
+- Checklists in notes from the card configuration are read-only. Ticks used
+  to be remembered per browser, which was easy to lose and never shared;
+  use a to-do list or an `input_text` note instead.
+
 ### Fixed
 
 - Swiping over a card with several pages turned the dashboard view instead of
