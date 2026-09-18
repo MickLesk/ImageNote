@@ -77,6 +77,10 @@
       "mdi:image-broken-variant": "M21 5v6.59l-3-3.01-4 4.01-4-4-4 4-3-3.01V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2m-3 6.42 3 3.01V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6.58l3 2.99 4-4 4 4 4-3.99Z",
       "mdi:pencil-outline": "M14.06 9.02l.92.92L5.92 19H5v-.92l9.06-9.06M17.66 3c-.25 0-.51.1-.7.29l-1.83 1.83 3.75 3.75 1.83-1.83a1 1 0 0 0 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.71-.29m-3.6 3.19L3 17.25V21h3.75L17.81 9.94l-3.75-3.75Z",
       "mdi:upload": "M9 16v-6H5l7-7 7 7h-4v6H9m-4 4v-2h14v2H5Z",
+      "mdi:chevron-left": "M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.42Z",
+      "mdi:chevron-right": "M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.42Z",
+      "mdi:plus": "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z",
+      "mdi:delete-outline": "M9 3v1H4v2h1v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6h1V4h-5V3H9m0 5h2v9H9V8m4 0h2v9h-2V8Z",
       "mdi:close": "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z",
     };
     customElements.define("ha-card", class extends HTMLElement {});
@@ -153,6 +157,11 @@
       { label: "Empty states", config: { type: "custom:imagenote-card", title: "Nothing yet" } },
       { label: "Broken picture + missing entity", config: { type: "custom:imagenote-card", title: "Broken", image: "./does-not-exist.jpg", note_entity: "input_text.missing" } },
       { label: "Natural size, hover flip", config: { type: "custom:imagenote-card", title: "Natural", image: "./sample-3.svg", aspect_ratio: "auto", hover_flip: true, note: "Hover me on a desktop." } },
+      { label: "Gallery: three pictures, each with its own note", config: { type: "custom:imagenote-card", title: "Garage", images: [
+        { image: "./sample-1.svg", title: "Bike", note: "Chain oiled in March." },
+        { image: "./sample-2.svg", note: "Tyres: 2.5 bar front, 2.8 bar rear." },
+        { image: "./sample-3.svg", title: "Tools", note_entity: "input_text.fridge_note" },
+      ] } },
       { label: "Hold → more-info, double tap → URL", config: { type: "custom:imagenote-card", title: "Actions", image: "./sample-2.svg", note_entity: "input_text.fridge_note", hold_action: { action: "more-info" }, double_tap_action: { action: "url", url_path: "https://example.com" } } },
     ];
     window.__events = [];

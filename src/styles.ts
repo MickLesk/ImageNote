@@ -122,12 +122,109 @@ ha-card {
   height: 100%;
   object-fit: var(--imagenote-fit, cover);
   background: var(--imagenote-placeholder-background);
+  transition: opacity 350ms ease;
 }
-.stage.natural .front img {
+.front img.layer-b {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+.front img.layer-b.active {
+  opacity: 1;
+}
+.front img.layer-a.inactive {
+  opacity: 0;
+}
+.stage.natural .front img.layer-a {
   height: auto;
 }
 .front img.hidden {
   display: none;
+}
+
+.nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 200ms ease, background-color 150ms ease;
+  z-index: 3;
+  padding: 0;
+}
+.nav.prev { left: 8px; }
+.nav.next { right: 8px; }
+.nav:hover,
+.nav:focus-visible {
+  background: rgba(0, 0, 0, 0.55);
+  outline: none;
+}
+.scene:hover .nav,
+.stage:focus-within .nav {
+  opacity: 1;
+}
+@media (hover: none) {
+  .nav { opacity: 0.8; }
+}
+.nav.hidden {
+  display: none !important;
+}
+.back .nav {
+  color: var(--primary-text-color);
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
+}
+
+.dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 10px;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  z-index: 3;
+  pointer-events: none;
+}
+.dots.hidden {
+  display: none;
+}
+.dots button {
+  appearance: none;
+  border: none;
+  padding: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 150ms ease, background-color 150ms ease;
+}
+.dots button.active {
+  background: #fff;
+  transform: scale(1.3);
+}
+.back .dots button {
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.25);
+  box-shadow: none;
+}
+.back .dots button.active {
+  background: var(--primary-color);
+}
+.title-overlay.with-dots {
+  padding-bottom: 26px;
 }
 .placeholder {
   position: absolute;

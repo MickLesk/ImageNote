@@ -32,25 +32,40 @@ export interface MediaValue {
   media_content_type?: string;
 }
 
-export interface ImageNoteCardConfig {
-  type: string;
+export interface PageConfig {
   title?: string;
   image?: string | MediaValue;
   image_entity?: string;
-  image_fit?: ImageFit;
-  aspect_ratio?: string;
   note?: string;
   note_entity?: string;
   note_attribute?: string;
+}
+
+export interface NormalizedPage {
+  title: string;
+  image: string | MediaValue | undefined;
+  image_entity: string;
+  note: string;
+  note_entity: string;
+  note_attribute: string;
+}
+
+export interface ImageNoteCardConfig extends PageConfig {
+  type: string;
+  images?: Array<PageConfig | string>;
+  image_fit?: ImageFit;
+  aspect_ratio?: string;
   transition?: Transition;
   direction?: Direction;
   default_side?: Side;
   duration?: number;
   auto_flip?: number;
+  auto_advance?: number;
   hover_flip?: boolean;
   show_hint?: boolean;
   show_title?: boolean;
   show_updated?: boolean;
+  show_navigation?: boolean;
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
   double_tap_action?: ActionConfig;
@@ -59,22 +74,20 @@ export interface ImageNoteCardConfig {
 export interface NormalizedConfig {
   type: string;
   title: string;
-  image: string | MediaValue | undefined;
-  image_entity: string;
+  pages: NormalizedPage[];
   image_fit: ImageFit;
   aspect_ratio: string;
-  note: string;
-  note_entity: string;
-  note_attribute: string;
   transition: Transition;
   direction: Direction;
   default_side: Side;
   duration: number;
   auto_flip: number;
+  auto_advance: number;
   hover_flip: boolean;
   show_hint: boolean;
   show_title: boolean;
   show_updated: boolean;
+  show_navigation: boolean;
   tap_action: ActionConfig;
   hold_action: ActionConfig;
   double_tap_action: ActionConfig;

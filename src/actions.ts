@@ -1,6 +1,7 @@
-import type { ActionConfig, HomeAssistant, NormalizedConfig } from "./types";
+import type { ActionConfig, HomeAssistant } from "./types";
 
 export type ActionKind = "tap" | "hold" | "double_tap";
+export type SwipeDirection = "left" | "right";
 
 /** Fires a Home Assistant frontend event on an element (bubbles through shadow roots). */
 function fireEvent(node: HTMLElement, type: string, detail?: unknown): void {
@@ -23,7 +24,7 @@ function confirmAction(config: ActionConfig, fallback: string): boolean {
 export async function runAction(
   node: HTMLElement,
   hass: HomeAssistant | undefined,
-  card: NormalizedConfig,
+  card: { note_entity: string; image_entity: string },
   config: ActionConfig,
   confirmText: string,
 ): Promise<boolean> {
@@ -94,11 +95,20 @@ export class GestureDetector {
   private _startX = 0;
   private _startY = 0;
   private _cancelled = false;
+  private _tracking = false;
+  private _swiped = false;
 
   constructor(
     private readonly _target: HTMLElement,
     private readonly _onAction: (kind: ActionKind) => void,
-    private readonly _options: { holdDelay: number; doubleTapWindow: number; hasDoubleTap: () => boolean; enabled: (ev: PointerEvent) => boolean },
+    private readonly _options: {
+      holdDelay: number;
+      doubleTapWindow: number;
+      swipeThreshold: number;
+      hasDoubleTap: () => boolean;
+      enabled: (ev: PointerEvent) => boolean;
+      onSwipe?: (direction: SwipeDirection) => void;
+    },
   ) {
     _target.addEventListener("pointerdown", this._onPointerDown);
     _target.addEventListener("pointerup", this._onPointerUp);
@@ -121,6 +131,8 @@ export class GestureDetector {
     if (!this._options.enabled(ev) || ev.button !== 0) return;
     this._cancelled = false;
     this._held = false;
+    this._tracking = true;
+    this._swiped = false;
     this._startX = ev.clientX;
     this._startY = ev.clientY;
     window.clearTimeout(this._holdTimer);
@@ -131,14 +143,24 @@ export class GestureDetector {
   };
 
   private readonly _onPointerMove = (ev: PointerEvent): void => {
-    if (this._holdTimer === undefined) return;
-    if (Math.abs(ev.clientX - this._startX) > 10 || Math.abs(ev.clientY - this._startY) > 10) {
+    if (!this._tracking || this._swiped) return;
+    const dx = ev.clientX - this._startX;
+    const dy = ev.clientY - this._startY;
+    if (Math.abs(dx) >= this._options.swipeThreshold && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      this._swiped = true;
+      this._cancel();
+      this._options.onSwipe?.(dx < 0 ? "left" : "right");
+      return;
+    }
+    // Any real movement is not a tap or a hold any more.
+    if (this._holdTimer !== undefined && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
       this._cancel();
     }
   };
 
   private readonly _onPointerCancel = (): void => {
     this._cancel();
+    this._tracking = false;
   };
 
   private readonly _onContextMenu = (ev: Event): void => {
@@ -147,8 +169,8 @@ export class GestureDetector {
   };
 
   private readonly _onPointerUp = (ev: PointerEvent): void => {
-    if (this._holdTimer === undefined && !this._held) return;
-    if (ev.button !== 0) return;
+    if (!this._tracking || ev.button !== 0) return;
+    this._tracking = false;
     window.clearTimeout(this._holdTimer);
     this._holdTimer = undefined;
     if (this._cancelled || this._held) {

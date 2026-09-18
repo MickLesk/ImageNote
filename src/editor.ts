@@ -1,11 +1,20 @@
-import { ASPECT_RATIOS, DEFAULTS, DIRECTIONS, IMAGE_FITS, MEDIA_SOURCE_PREFIX, MEDIA_EXPIRES_SECONDS, SIDES, TRANSITIONS, VERSION } from "./const";
+import {
+  ASPECT_RATIOS,
+  DEFAULTS,
+  DIRECTIONS,
+  IMAGE_FITS,
+  MEDIA_EXPIRES_SECONDS,
+  MEDIA_SOURCE_PREFIX,
+  SIDES,
+  TRANSITIONS,
+  VERSION,
+} from "./const";
+import { configPages } from "./config";
 import { resolveLanguage, translate } from "./i18n";
 import { EDITOR_STYLES } from "./styles";
-import type { HomeAssistant, ImageNoteCardConfig, ResolvedMedia } from "./types";
+import type { HomeAssistant, ImageNoteCardConfig, PageConfig, ResolvedMedia } from "./types";
 
 type FormSchema = Record<string, unknown> & { name: string };
-
-const UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
 
 interface HaFormElement extends HTMLElement {
   hass?: HomeAssistant;
@@ -15,7 +24,15 @@ interface HaFormElement extends HTMLElement {
   computeHelper?: (schema: FormSchema) => string;
 }
 
-const PICTURE_TEMPLATE = `
+const UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
+const PAGE_KEYS: Array<keyof PageConfig> = ["title", "image", "image_entity", "note", "note_entity", "note_attribute"];
+
+const TEMPLATE = `
+<div class="pages">
+  <div class="pages-label"></div>
+  <div class="pages-help"></div>
+  <div class="chips"></div>
+</div>
 <div class="picture">
   <div class="preview"><img alt="" draggable="false" /><ha-icon icon="mdi:image-outline"></ha-icon></div>
   <div class="picture-actions">
@@ -24,13 +41,60 @@ const PICTURE_TEMPLATE = `
     <div class="buttons">
       <button class="btn primary upload" type="button"><ha-icon icon="mdi:upload"></ha-icon><span></span></button>
       <button class="btn clear" type="button"><ha-icon icon="mdi:close"></ha-icon><span></span></button>
+      <button class="btn remove-page" type="button"><ha-icon icon="mdi:delete-outline"></ha-icon><span></span></button>
     </div>
     <div class="status"></div>
     <input class="file" type="file" accept="image/*" hidden />
   </div>
-</div>`;
+</div>
+<ha-form class="page-form"></ha-form>
+<div class="divider"></div>
+<ha-form class="card-form"></ha-form>
+<div class="version">ImageNote ${VERSION}</div>`;
 
-const PICTURE_STYLES = `
+const STYLES = `
+.pages {
+  margin-bottom: 16px;
+}
+.pages-label,
+.picture-label {
+  font-weight: 500;
+}
+.pages-help,
+.picture-help {
+  font-size: 0.85em;
+  color: var(--secondary-text-color);
+  margin-top: 2px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.chip {
+  appearance: none;
+  font: inherit;
+  font-size: 0.9em;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+  background: transparent;
+  color: var(--primary-text-color);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip ha-icon {
+  --mdc-icon-size: 16px;
+}
+.chip.active {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: var(--text-primary-color, #fff);
+}
 .picture {
   display: flex;
   gap: 16px;
@@ -73,13 +137,6 @@ const PICTURE_STYLES = `
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-.picture-label {
-  font-weight: 500;
-}
-.picture-help {
-  font-size: 0.85em;
-  color: var(--secondary-text-color);
 }
 .buttons {
   display: flex;
@@ -125,6 +182,11 @@ const PICTURE_STYLES = `
 .status.error {
   color: var(--error-color, #db4437);
 }
+.divider {
+  height: 1px;
+  background: var(--divider-color, rgba(0, 0, 0, 0.12));
+  margin: 20px 0;
+}
 @media (max-width: 480px) {
   .picture { flex-direction: column; }
   .preview { width: 100%; min-height: 140px; }
@@ -136,14 +198,18 @@ export class ImageNoteCardEditor extends HTMLElement {
   private _config?: ImageNoteCardConfig;
   private _hass?: HomeAssistant;
   private _lang = "en";
-  private _form?: HaFormElement;
   private _built = false;
+  private _pageIndex = 0;
+  private _pageForm?: HaFormElement;
+  private _cardForm?: HaFormElement;
+  private _chips?: HTMLElement;
   private _previewImg?: HTMLImageElement;
   private _preview?: HTMLElement;
   private _fileInput?: HTMLInputElement;
   private _status?: HTMLElement;
   private _clearButton?: HTMLButtonElement;
   private _uploadButton?: HTMLButtonElement;
+  private _removePageButton?: HTMLButtonElement;
   private _uploading = false;
   private _previewToken = 0;
 
@@ -154,6 +220,8 @@ export class ImageNoteCardEditor extends HTMLElement {
 
   setConfig(config: ImageNoteCardConfig): void {
     this._config = { ...config };
+    const total = configPages(this._config).length;
+    if (this._pageIndex >= total) this._pageIndex = total - 1;
     this._render();
   }
 
@@ -162,9 +230,8 @@ export class ImageNoteCardEditor extends HTMLElement {
     const lang = resolveLanguage(hass);
     const langChanged = lang !== this._lang;
     this._lang = lang;
-    if (this._form) {
-      this._form.hass = hass;
-    }
+    if (this._pageForm) this._pageForm.hass = hass;
+    if (this._cardForm) this._cardForm.hass = hass;
     if (langChanged) {
       this._render();
     } else {
@@ -174,6 +241,66 @@ export class ImageNoteCardEditor extends HTMLElement {
 
   get hass(): HomeAssistant | undefined {
     return this._hass;
+  }
+
+  // ---------------------------------------------------------------- pages
+
+  private _pages(): PageConfig[] {
+    return this._config ? configPages(this._config) : [{}];
+  }
+
+  private _page(): PageConfig {
+    return this._pages()[this._pageIndex] ?? {};
+  }
+
+  /** Writes a page back into the config: into `images` when there are several, flat otherwise. */
+  private _withPage(index: number, page: PageConfig): ImageNoteCardConfig {
+    const config = { ...(this._config ?? { type: "" }) } as ImageNoteCardConfig;
+    const pages = this._pages().map((p) => ({ ...p }));
+    pages[index] = cleanPage(page);
+    return this._withPages(config, pages);
+  }
+
+  private _withPages(config: ImageNoteCardConfig, pages: PageConfig[]): ImageNoteCardConfig {
+    const next: Record<string, unknown> = { ...config };
+    for (const key of PAGE_KEYS) {
+      if (key !== "title") delete next[key];
+    }
+    if (pages.length <= 1) {
+      delete next.images;
+      const only = cleanPage(pages[0] ?? {});
+      for (const key of PAGE_KEYS) {
+        if (key === "title") {
+          // A single page keeps the card title; a page title would be redundant.
+          if (only.title && !next.title) next.title = only.title;
+          continue;
+        }
+        if (only[key] !== undefined) next[key] = only[key];
+      }
+    } else {
+      next.images = pages.map(cleanPage);
+    }
+    return next as unknown as ImageNoteCardConfig;
+  }
+
+  private _addPage(): void {
+    const pages = this._pages().map((p) => ({ ...p }));
+    pages.push({});
+    this._pageIndex = pages.length - 1;
+    this._emit(this._withPages(this._config ?? { type: "" }, pages));
+  }
+
+  private _removePage(): void {
+    const pages = this._pages().map((p) => ({ ...p }));
+    if (pages.length <= 1) return;
+    pages.splice(this._pageIndex, 1);
+    this._pageIndex = Math.min(this._pageIndex, pages.length - 1);
+    this._emit(this._withPages(this._config ?? { type: "" }, pages));
+  }
+
+  private _selectPage(index: number): void {
+    this._pageIndex = index;
+    this._render();
   }
 
   // ---------------------------------------------------------------- rendering
@@ -193,16 +320,21 @@ export class ImageNoteCardEditor extends HTMLElement {
 
   private _build(): void {
     this._ensureForm();
-    this._root.innerHTML = `<style>${EDITOR_STYLES}${PICTURE_STYLES}</style>${PICTURE_TEMPLATE}<ha-form></ha-form><div class="version">ImageNote ${VERSION}</div>`;
-    this._form = this._root.querySelector<HaFormElement>("ha-form") ?? undefined;
-    this._preview = this._root.querySelector<HTMLElement>(".preview") ?? undefined;
-    this._previewImg = this._root.querySelector<HTMLImageElement>(".preview img") ?? undefined;
-    this._fileInput = this._root.querySelector<HTMLInputElement>(".file") ?? undefined;
-    this._status = this._root.querySelector<HTMLElement>(".status") ?? undefined;
-    this._clearButton = this._root.querySelector<HTMLButtonElement>(".clear") ?? undefined;
-    this._uploadButton = this._root.querySelector<HTMLButtonElement>(".upload") ?? undefined;
+    this._root.innerHTML = `<style>${EDITOR_STYLES}${STYLES}</style>${TEMPLATE}`;
+    const q = <T extends Element>(selector: string) => this._root.querySelector<T>(selector) ?? undefined;
+    this._pageForm = q<HaFormElement>(".page-form");
+    this._cardForm = q<HaFormElement>(".card-form");
+    this._chips = q<HTMLElement>(".chips");
+    this._preview = q<HTMLElement>(".preview");
+    this._previewImg = q<HTMLImageElement>(".preview img");
+    this._fileInput = q<HTMLInputElement>(".file");
+    this._status = q<HTMLElement>(".status");
+    this._clearButton = q<HTMLButtonElement>(".clear");
+    this._uploadButton = q<HTMLButtonElement>(".upload");
+    this._removePageButton = q<HTMLButtonElement>(".remove-page");
 
-    this._form?.addEventListener("value-changed", this._onValueChanged as EventListener);
+    this._pageForm?.addEventListener("value-changed", this._onPageValueChanged as EventListener);
+    this._cardForm?.addEventListener("value-changed", this._onCardValueChanged as EventListener);
     this._uploadButton?.addEventListener("click", () => this._fileInput?.click());
     this._fileInput?.addEventListener("change", () => {
       const file = this._fileInput?.files?.[0];
@@ -210,8 +342,9 @@ export class ImageNoteCardEditor extends HTMLElement {
       if (this._fileInput) this._fileInput.value = "";
     });
     this._clearButton?.addEventListener("click", () => {
-      this._emit({ ...this._config, image: undefined, image_entity: undefined } as ImageNoteCardConfig);
+      this._emit(this._withPage(this._pageIndex, { ...this._page(), image: undefined, image_entity: undefined }));
     });
+    this._removePageButton?.addEventListener("click", () => this._removePage());
     this._previewImg?.addEventListener("error", () => {
       this._preview?.classList.remove("has-image");
     });
@@ -221,38 +354,72 @@ export class ImageNoteCardEditor extends HTMLElement {
   private _render(): void {
     if (!this._config) return;
     if (!this._built) this._build();
-    const form = this._form;
-    if (!form) return;
-    const t = (key: string) => translate(this._lang, key);
+    const t = (key: string, vars?: Record<string, string | number>) => translate(this._lang, key, vars);
+    const setText = (selector: string, text: string) => {
+      const el = this._root.querySelector(selector);
+      if (el) el.textContent = text;
+    };
+    setText(".pages-label", t("editor_pages"));
+    setText(".pages-help", t("editor_pages_help"));
+    setText(".picture-label", t("editor_image"));
+    setText(".picture-help", t("editor_image_help"));
+    setText(".upload span", t("editor_upload"));
+    setText(".clear span", t("editor_clear"));
+    setText(".remove-page span", t("editor_remove_page"));
 
-    const label = this._root.querySelector(".picture-label");
-    const help = this._root.querySelector(".picture-help");
-    if (label) label.textContent = t("editor_image");
-    if (help) help.textContent = t("editor_image_help");
-    const uploadLabel = this._root.querySelector(".upload span");
-    if (uploadLabel) uploadLabel.textContent = t("editor_upload");
-    const clearLabel = this._root.querySelector(".clear span");
-    if (clearLabel) clearLabel.textContent = t("editor_clear");
+    const pages = this._pages();
+    if (this._chips) {
+      this._chips.replaceChildren();
+      pages.forEach((_, index) => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = `chip${index === this._pageIndex ? " active" : ""}`;
+        chip.textContent = t("editor_page_label", { index: index + 1 });
+        chip.addEventListener("click", () => this._selectPage(index));
+        this._chips?.append(chip);
+      });
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "chip add";
+      add.innerHTML = `<ha-icon icon="mdi:plus"></ha-icon><span></span>`;
+      add.querySelector("span")!.textContent = t("editor_add_page");
+      add.addEventListener("click", () => this._addPage());
+      this._chips.append(add);
+    }
+    this._removePageButton?.classList.toggle("hidden", pages.length <= 1);
 
-    form.hass = this._hass;
-    form.schema = this._schema();
-    form.data = this._formData();
-    form.computeLabel = (schema) =>
-      schema.name === "actions_help" ? t("editor_actions_help") : t(`editor_${schema.name}`);
-    form.computeHelper = (schema) => {
+    const computeHelper = (schema: FormSchema) => {
       const key = `editor_${schema.name}_help`;
       const text = t(key);
       return text === key ? "" : text;
     };
+    const computeLabel = (schema: FormSchema) =>
+      schema.name === "actions_help" ? t("editor_actions_help") : t(`editor_${schema.name}`);
+
+    if (this._pageForm) {
+      this._pageForm.hass = this._hass;
+      this._pageForm.schema = this._pageSchema(pages.length > 1);
+      this._pageForm.data = this._pageData();
+      this._pageForm.computeLabel = computeLabel;
+      this._pageForm.computeHelper = computeHelper;
+    }
+    if (this._cardForm) {
+      this._cardForm.hass = this._hass;
+      this._cardForm.schema = this._cardSchema();
+      this._cardForm.data = this._cardData();
+      this._cardForm.computeLabel = computeLabel;
+      this._cardForm.computeHelper = computeHelper;
+    }
     this._updatePreview();
   }
 
-  private _schema(): FormSchema[] {
+  private _pageSchema(multiple: boolean): FormSchema[] {
     const t = (key: string) => translate(this._lang, key);
-    const options = (values: readonly string[], prefix: string) =>
-      values.map((value) => ({ value, label: t(`${prefix}_${value}`) }));
-    return [
-      { name: "title", selector: { text: {} } },
+    const schema: FormSchema[] = [];
+    if (multiple) {
+      schema.push({ name: "page_title", selector: { text: {} } });
+    }
+    schema.push(
       { name: "image", selector: { text: {} } },
       {
         name: "image_entity",
@@ -267,7 +434,7 @@ export class ImageNoteCardEditor extends HTMLElement {
         flatten: true,
         icon: "mdi:text-box-edit-outline",
         title: t("editor_note_source"),
-        expanded: Boolean(this._config?.note_entity),
+        expanded: Boolean(this._page().note_entity),
         schema: [
           { name: "note_entity", selector: { entity: {} } },
           {
@@ -275,9 +442,18 @@ export class ImageNoteCardEditor extends HTMLElement {
             selector: { attribute: {} },
             context: { filter_entity: "note_entity" },
           },
-          { name: "show_updated", selector: { boolean: {} } },
         ],
       },
+    );
+    return schema;
+  }
+
+  private _cardSchema(): FormSchema[] {
+    const t = (key: string) => translate(this._lang, key);
+    const options = (values: readonly string[], prefix: string) =>
+      values.map((value) => ({ value, label: t(`${prefix}_${value}`) }));
+    return [
+      { name: "title", selector: { text: {} } },
       {
         name: "appearance",
         type: "expandable",
@@ -321,6 +497,8 @@ export class ImageNoteCardEditor extends HTMLElement {
             schema: [
               { name: "show_title", selector: { boolean: {} } },
               { name: "show_hint", selector: { boolean: {} } },
+              { name: "show_updated", selector: { boolean: {} } },
+              { name: "show_navigation", selector: { boolean: {} } },
             ],
           },
         ],
@@ -341,6 +519,10 @@ export class ImageNoteCardEditor extends HTMLElement {
                 name: "auto_flip",
                 selector: { number: { min: 0, max: 3600, step: 1, mode: "box", unit_of_measurement: "s" } },
               },
+              {
+                name: "auto_advance",
+                selector: { number: { min: 0, max: 3600, step: 1, mode: "box", unit_of_measurement: "s" } },
+              },
               { name: "hover_flip", selector: { boolean: {} } },
             ],
           },
@@ -352,28 +534,56 @@ export class ImageNoteCardEditor extends HTMLElement {
     ];
   }
 
-  private _formData(): Record<string, unknown> {
-    const config = this._config ?? ({} as ImageNoteCardConfig);
+  private _pageData(): Record<string, unknown> {
+    const page = this._page();
     const image =
-      typeof config.image === "object" && config.image !== null
-        ? config.image.media_content_id
-        : config.image ?? "";
+      typeof page.image === "object" && page.image !== null ? page.image.media_content_id : page.image ?? "";
     return {
-      ...DEFAULTS,
-      ...config,
+      page_title: page.title ?? "",
       image,
+      image_entity: page.image_entity ?? "",
+      note: page.note ?? "",
+      note_entity: page.note_entity ?? "",
+      note_attribute: page.note_attribute ?? "",
     };
+  }
+
+  private _cardData(): Record<string, unknown> {
+    const config = this._config ?? ({ type: "" } as ImageNoteCardConfig);
+    const data: Record<string, unknown> = { ...DEFAULTS };
+    for (const [key, value] of Object.entries(config)) {
+      if (key === "images" || (PAGE_KEYS as string[]).includes(key) && key !== "title") continue;
+      data[key] = value;
+    }
+    return data;
   }
 
   // ---------------------------------------------------------------- events
 
-  private readonly _onValueChanged = (ev: CustomEvent<{ value: Record<string, unknown> }>): void => {
+  private readonly _onPageValueChanged = (ev: CustomEvent<{ value: Record<string, unknown> }>): void => {
+    ev.stopPropagation();
+    if (!this._config) return;
+    const value = ev.detail.value ?? {};
+    const page: PageConfig = { ...this._page() };
+    for (const [key, raw] of Object.entries(value)) {
+      const target = key === "page_title" ? "title" : key;
+      if (!(PAGE_KEYS as string[]).includes(target)) continue;
+      if (raw === undefined || raw === null || raw === "") {
+        delete page[target as keyof PageConfig];
+      } else {
+        (page as Record<string, unknown>)[target] = raw;
+      }
+    }
+    this._emit(this._withPage(this._pageIndex, page));
+  };
+
+  private readonly _onCardValueChanged = (ev: CustomEvent<{ value: Record<string, unknown> }>): void => {
     ev.stopPropagation();
     if (!this._config) return;
     const value = ev.detail.value ?? {};
     const next: Record<string, unknown> = { ...this._config };
     for (const [key, raw] of Object.entries(value)) {
-      if (key === "type") continue;
+      if (key === "type" || key === "images" || ((PAGE_KEYS as string[]).includes(key) && key !== "title")) continue;
       const fallback = (DEFAULTS as Record<string, unknown>)[key];
       const isDefault =
         key in DEFAULTS &&
@@ -394,10 +604,7 @@ export class ImageNoteCardEditor extends HTMLElement {
       if (value !== undefined && value !== null && value !== "") cleaned[key] = value;
     }
     this._config = cleaned as unknown as ImageNoteCardConfig;
-    if (this._form) {
-      this._form.data = this._formData();
-    }
-    this._updatePreview();
+    this._render();
     this.dispatchEvent(
       new CustomEvent("config-changed", {
         detail: { config: this._config },
@@ -438,8 +645,8 @@ export class ImageNoteCardEditor extends HTMLElement {
       }
       const media = (await response.json()) as { id: string };
       const url = `/api/image/serve/${media.id}/original`;
+      this._emit(this._withPage(this._pageIndex, { ...this._page(), image: url, image_entity: undefined }));
       this._setStatus(t("editor_upload_done"), false);
-      this._emit({ ...this._config, image: url, image_entity: undefined } as ImageNoteCardConfig);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this._setStatus(`${t("editor_upload_failed")}: ${message}`, true);
@@ -458,8 +665,8 @@ export class ImageNoteCardEditor extends HTMLElement {
   private _updatePreview(): void {
     const img = this._previewImg;
     const preview = this._preview;
-    const config = this._config;
-    if (!img || !preview || !config) return;
+    if (!img || !preview || !this._config) return;
+    const page = this._page();
     const token = ++this._previewToken;
 
     const apply = (src: string) => {
@@ -471,16 +678,16 @@ export class ImageNoteCardEditor extends HTMLElement {
         img.removeAttribute("src");
         preview.classList.remove("has-image");
       }
-      this._clearButton?.classList.toggle("hidden", !src && !config.image_entity);
+      this._clearButton?.classList.toggle("hidden", !src && !page.image_entity);
     };
 
-    if (config.image_entity && this._hass) {
-      const entity = this._hass.states[config.image_entity];
+    if (page.image_entity && this._hass) {
+      const entity = this._hass.states[page.image_entity];
       const picture = entity?.attributes.entity_picture;
       apply(typeof picture === "string" ? picture : "");
       return;
     }
-    const image = config.image;
+    const image = page.image;
     const mediaId =
       typeof image === "object" && image !== null
         ? image.media_content_id
@@ -504,4 +711,13 @@ export class ImageNoteCardEditor extends HTMLElement {
       .then((result) => apply(result.url))
       .catch(() => apply(""));
   }
+}
+
+function cleanPage(page: PageConfig): PageConfig {
+  const out: Record<string, unknown> = {};
+  for (const key of PAGE_KEYS) {
+    const value = page[key];
+    if (value !== undefined && value !== null && value !== "") out[key] = value;
+  }
+  return out as PageConfig;
 }

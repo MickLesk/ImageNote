@@ -22,6 +22,9 @@ message for the wall panel.
 - **Edit the note on the card** — link an `input_text` or `text` entity and a
   pencil appears on the note side. Changes are saved with `set_value`, so
   automations and other dashboards see them immediately.
+- **Several pictures per card** — each with its own note. Swipe, use the
+  arrows, the dots or the arrow keys to move between them, or let the card
+  advance on its own.
 - **Five transitions** — `flip` (3D, default), `fade`, `slide`, `cube`, `none`;
   horizontal or vertical. Respects `prefers-reduced-motion`.
 - **Fits every layout** — fixed aspect ratios or the picture's natural size,
@@ -82,6 +85,23 @@ auto_flip: 20
 show_hint: false
 ```
 
+Several pictures, each with its own note:
+
+```yaml
+type: custom:imagenote-card
+title: Garage
+images:
+  - image: /local/pictures/bike.jpg
+    title: Bike
+    note: Chain oiled in March.
+  - image: /local/pictures/car.jpg
+    note: "Tyres: 2.5 bar front, 2.8 bar rear."
+  - image: /local/pictures/tools.jpg
+    title: Tools
+    note_entity: input_text.garage_tools
+auto_advance: 15
+```
+
 Picture from an entity, note from an attribute:
 
 ```yaml
@@ -100,6 +120,7 @@ direction: vertical
 | --- | --- | --- |
 | `title` | – | Shown on the picture and above the note. |
 | `image` | – | Picture URL, `/local/` path, `/api/image/serve/…` URL or `media-source://` id. Uploads from the editor land here. |
+| `images` | – | A list of pictures, each an object with `image`, `image_entity`, `title`, `note`, `note_entity`, `note_attribute` (or just a URL string). When set, the top-level picture and note fields are ignored. A picture without `title` uses the card title. |
 | `image_entity` | – | Use the picture of an `image`, `camera` or `person` entity instead of `image`. |
 | `image_fit` | `cover` | `cover` fills the card and crops, `contain` shows the whole picture. |
 | `aspect_ratio` | `16:9` | `16:9`, `4:3`, `1:1`, `9:16`, any `w:h`, or `auto` for the picture's natural size. |
@@ -111,6 +132,8 @@ direction: vertical
 | `duration` | `700` | Animation length in milliseconds. |
 | `default_side` | `image` | Which side is shown first: `image` or `note`. |
 | `auto_flip` | `0` | Turn the card over automatically every *n* seconds. `0` disables it. |
+| `auto_advance` | `0` | With several pictures: show the next one every *n* seconds. `0` disables it. |
+| `show_navigation` | `true` | With several pictures: show the arrows and dots. Swiping and the arrow keys always work. |
 | `hover_flip` | `false` | Show the note while the pointer hovers over the card (mouse devices only). |
 | `show_hint` | `true` | Show the small “Note” / “Photo” badge in the corner. |
 | `show_title` | `true` | Show the title overlay on the picture. |

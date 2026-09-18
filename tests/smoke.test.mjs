@@ -32,7 +32,7 @@ const card = (page, index) => page.locator("imagenote-card").nth(index);
 
 test("demo renders every card without page errors", async () => {
   const { page, context, errors } = await openDemo();
-  assert.equal(await page.locator("imagenote-card").count(), 9);
+  assert.equal(await page.locator("imagenote-card").count(), 10);
   assert.deepEqual(errors, []);
   assert.equal(await card(page, 0).locator(".title-overlay").innerText(), "Kitchen");
   assert.equal(await card(page, 0).locator(".stage").getAttribute("aria-pressed"), "false");
@@ -84,7 +84,7 @@ test("notes from an input_text entity can be edited on the card", async () => {
 
 test("hold and double tap run their actions instead of flipping", async () => {
   const { page, context } = await openDemo();
-  const actions = card(page, 8);
+  const actions = card(page, 9);
   const box = await actions.locator(".stage").boundingBox();
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
@@ -111,6 +111,72 @@ test("hold and double tap run their actions instead of flipping", async () => {
   await page.mouse.click(x, y);
   await page.waitForTimeout(400);
   assert.equal(await actions.locator(".stage").getAttribute("aria-pressed"), "true");
+  await context.close();
+});
+
+test("a gallery moves between pictures with arrows, dots, keys and swipes", async () => {
+  const { page, context } = await openDemo();
+  const gallery = card(page, 8);
+  const stage = gallery.locator(".stage");
+  const front = gallery.locator(".front");
+  assert.equal(await front.locator(".dots button").count(), 3);
+  assert.equal(await front.locator(".title-overlay").innerText(), "Bike");
+
+  await front.locator(".nav.next").click();
+  assert.equal(await front.locator(".title-overlay").innerText(), "Garage");
+  assert.equal(await front.locator(".dots button.active").evaluate((el) => Array.from(el.parentNode.children).indexOf(el)), 1);
+  assert.equal(await stage.getAttribute("aria-pressed"), "false");
+
+  await stage.focus();
+  await page.keyboard.press("ArrowRight");
+  assert.equal(await front.locator(".title-overlay").innerText(), "Tools");
+  await stage.click();
+  await page.waitForTimeout(300);
+  assert.match(await gallery.locator(".note-body").innerText(), /Milk is running low/);
+  await gallery.locator(".back .dots button").first().click();
+  await page.waitForTimeout(100);
+  assert.match(await gallery.locator(".note-body").innerText(), /Chain oiled/);
+  assert.equal(await stage.getAttribute("aria-pressed"), "true");
+  await stage.click();
+  await page.waitForTimeout(800);
+
+  // Swipe left on the picture goes to the next picture without flipping.
+  const box = await stage.boundingBox();
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width * 0.7, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.5, y, { steps: 5 });
+  await page.mouse.move(box.x + box.width * 0.3, y, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  assert.equal(await front.locator(".title-overlay").innerText(), "Garage");
+  assert.equal(await stage.getAttribute("aria-pressed"), "false");
+  await context.close();
+});
+
+test("the editor adds and removes pictures", async () => {
+  const { page, context } = await openDemo();
+  const editor = page.locator("imagenote-card-editor");
+  const configs = [];
+  await page.evaluate(() => {
+    window.__configs = [];
+    document.querySelector("imagenote-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
+  });
+  await editor.locator(".chip.add").click();
+  let latest = await page.evaluate(() => window.__configs.at(-1));
+  assert.equal(latest.images.length, 2);
+  assert.equal(latest.images[0].image, "./sample-2.svg");
+  assert.equal(latest.images[0].note_entity, "input_text.fridge_note");
+  assert.equal(latest.image, undefined);
+  assert.equal(latest.title, "Fridge");
+  assert.equal(await editor.locator(".chip.active").innerText(), "Picture 2");
+
+  await editor.locator(".remove-page").click();
+  latest = await page.evaluate(() => window.__configs.at(-1));
+  assert.equal(latest.images, undefined);
+  assert.equal(latest.image, "./sample-2.svg");
+  assert.equal(latest.note_entity, "input_text.fridge_note");
+  configs.push(latest);
   await context.close();
 });
 

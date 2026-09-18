@@ -22,4 +22,8 @@ All notable changes to ImageNote are documented here. The format follows
   Home Assistant actions (more-info, toggle, navigate, url, perform-action)
   plus `flip`.
 - "Updated … ago" line on the note side when the note comes from an entity.
+- Several pictures per card through `images`, each with its own note and
+  title. Arrows, dots, swipe and arrow keys move between them; `auto_advance`
+  runs a slideshow; pictures crossfade. The editor manages the pictures as
+  tabs.
 - Browser smoke tests with Playwright, run in CI.

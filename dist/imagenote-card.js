@@ -20,23 +20,22 @@ var FLIP_ACTION = { action: "flip" };
 var NONE_ACTION = { action: "none" };
 var HOLD_DELAY_MS = 500;
 var DOUBLE_TAP_WINDOW_MS = 250;
+var SWIPE_THRESHOLD_PX = 40;
 var DEFAULTS = {
   title: "",
-  image_entity: "",
   image_fit: "cover",
   aspect_ratio: "16:9",
-  note: "",
-  note_entity: "",
-  note_attribute: "",
   transition: "flip",
   direction: "horizontal",
   default_side: "image",
   duration: 700,
   auto_flip: 0,
+  auto_advance: 0,
   hover_flip: false,
   show_hint: true,
   show_title: true,
   show_updated: true,
+  show_navigation: true,
   tap_action: FLIP_ACTION,
   hold_action: NONE_ACTION,
   double_tap_action: NONE_ACTION
@@ -129,6 +128,8 @@ var GestureDetector = class {
   _startX = 0;
   _startY = 0;
   _cancelled = false;
+  _tracking = false;
+  _swiped = false;
   destroy() {
     window.clearTimeout(this._holdTimer);
     window.clearTimeout(this._tapTimer);
@@ -142,6 +143,8 @@ var GestureDetector = class {
     if (!this._options.enabled(ev) || ev.button !== 0) return;
     this._cancelled = false;
     this._held = false;
+    this._tracking = true;
+    this._swiped = false;
     this._startX = ev.clientX;
     this._startY = ev.clientY;
     window.clearTimeout(this._holdTimer);
@@ -151,20 +154,29 @@ var GestureDetector = class {
     }, this._options.holdDelay);
   };
   _onPointerMove = (ev) => {
-    if (this._holdTimer === void 0) return;
-    if (Math.abs(ev.clientX - this._startX) > 10 || Math.abs(ev.clientY - this._startY) > 10) {
+    if (!this._tracking || this._swiped) return;
+    const dx = ev.clientX - this._startX;
+    const dy = ev.clientY - this._startY;
+    if (Math.abs(dx) >= this._options.swipeThreshold && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      this._swiped = true;
+      this._cancel();
+      this._options.onSwipe?.(dx < 0 ? "left" : "right");
+      return;
+    }
+    if (this._holdTimer !== void 0 && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
       this._cancel();
     }
   };
   _onPointerCancel = () => {
     this._cancel();
+    this._tracking = false;
   };
   _onContextMenu = (ev) => {
     if (this._holdTimer !== void 0 || this._held) ev.preventDefault();
   };
   _onPointerUp = (ev) => {
-    if (this._holdTimer === void 0 && !this._held) return;
-    if (ev.button !== 0) return;
+    if (!this._tracking || ev.button !== 0) return;
+    this._tracking = false;
     window.clearTimeout(this._holdTimer);
     this._holdTimer = void 0;
     if (this._cancelled || this._held) {
@@ -233,36 +245,73 @@ function validateConfig(config) {
   if (c.default_side !== void 0 && !SIDES.includes(c.default_side)) {
     throw new Error(`ImageNote: unknown default_side "${String(c.default_side)}" (use ${SIDES.join(", ")})`);
   }
+  validatePage(c, "");
+  if (c.images !== void 0) {
+    if (!Array.isArray(c.images)) {
+      throw new Error("ImageNote: images must be a list");
+    }
+    c.images.forEach((entry, index) => {
+      if (typeof entry === "string") return;
+      if (!entry || typeof entry !== "object") {
+        throw new Error(`ImageNote: images[${index}] must be a URL or an object`);
+      }
+      validatePage(entry, `images[${index}].`);
+    });
+  }
+}
+function validatePage(c, prefix) {
   if (c.note_entity !== void 0 && c.note_entity !== "" && typeof c.note_entity !== "string") {
-    throw new Error("ImageNote: note_entity must be an entity id");
+    throw new Error(`ImageNote: ${prefix}note_entity must be an entity id`);
   }
   if (c.image_entity !== void 0 && c.image_entity !== "" && typeof c.image_entity !== "string") {
-    throw new Error("ImageNote: image_entity must be an entity id");
+    throw new Error(`ImageNote: ${prefix}image_entity must be an entity id`);
   }
   if (c.image !== void 0 && c.image !== null && typeof c.image !== "string" && !(typeof c.image === "object" && typeof c.image.media_content_id === "string")) {
-    throw new Error("ImageNote: image must be a URL, a media-source id or a media object");
+    throw new Error(`ImageNote: ${prefix}image must be a URL, a media-source id or a media object`);
   }
+}
+function normalizePage(page) {
+  return {
+    title: str(page.title).trim(),
+    image: page.image === null || page.image === "" ? void 0 : page.image,
+    image_entity: str(page.image_entity).trim(),
+    note: str(page.note),
+    note_entity: str(page.note_entity).trim(),
+    note_attribute: str(page.note_attribute).trim()
+  };
+}
+function configPages(config) {
+  if (Array.isArray(config.images) && config.images.length > 0) {
+    return config.images.map((entry) => typeof entry === "string" ? { image: entry } : entry);
+  }
+  return [
+    {
+      image: config.image,
+      image_entity: config.image_entity,
+      note: config.note,
+      note_entity: config.note_entity,
+      note_attribute: config.note_attribute
+    }
+  ];
 }
 function normalizeConfig(config) {
   return {
     type: config.type,
     title: str(config.title).trim(),
-    image: config.image === null || config.image === "" ? void 0 : config.image,
-    image_entity: str(config.image_entity).trim(),
+    pages: configPages(config).map(normalizePage),
     image_fit: pick(config.image_fit, IMAGE_FITS, DEFAULTS.image_fit),
     aspect_ratio: str(config.aspect_ratio, DEFAULTS.aspect_ratio).trim() || DEFAULTS.aspect_ratio,
-    note: str(config.note),
-    note_entity: str(config.note_entity).trim(),
-    note_attribute: str(config.note_attribute).trim(),
     transition: pick(config.transition, TRANSITIONS, DEFAULTS.transition),
     direction: pick(config.direction, DIRECTIONS, DEFAULTS.direction),
     default_side: pick(config.default_side, SIDES, DEFAULTS.default_side),
     duration: num(config.duration, DEFAULTS.duration, 0, 1e4),
     auto_flip: num(config.auto_flip, DEFAULTS.auto_flip, 0, 86400),
+    auto_advance: num(config.auto_advance, DEFAULTS.auto_advance, 0, 86400),
     hover_flip: bool(config.hover_flip, DEFAULTS.hover_flip),
     show_hint: bool(config.show_hint, DEFAULTS.show_hint),
     show_title: bool(config.show_title, DEFAULTS.show_title),
     show_updated: bool(config.show_updated, DEFAULTS.show_updated),
+    show_navigation: bool(config.show_navigation, DEFAULTS.show_navigation),
     tap_action: action(config.tap_action, DEFAULTS.tap_action),
     hold_action: action(config.hold_action, DEFAULTS.hold_action),
     double_tap_action: action(config.double_tap_action, DEFAULTS.double_tap_action)
@@ -277,28 +326,6 @@ function parseAspectRatio(value) {
   }
   const single = Number(text);
   return Number.isFinite(single) && single > 0 ? single : null;
-}
-
-// src/time.ts
-var UNITS = [
-  ["year", 365 * 24 * 3600],
-  ["month", 30 * 24 * 3600],
-  ["week", 7 * 24 * 3600],
-  ["day", 24 * 3600],
-  ["hour", 3600],
-  ["minute", 60]
-];
-function formatRelativeTime(date, language, now = /* @__PURE__ */ new Date()) {
-  const seconds = Math.round((date.getTime() - now.getTime()) / 1e3);
-  if (!Number.isFinite(seconds)) return "";
-  const formatter = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
-  const abs = Math.abs(seconds);
-  for (const [unit, size] of UNITS) {
-    if (abs >= size) {
-      return formatter.format(Math.round(seconds / size), unit);
-    }
-  }
-  return formatter.format(0, "second");
 }
 
 // src/i18n.ts
@@ -321,6 +348,9 @@ var en = {
   imageError: "The picture could not be loaded",
   charsLeft: "{count} characters left",
   updated: "Updated {time}",
+  page: "Picture {index} of {total}",
+  nextPicture: "Next picture",
+  previousPicture: "Previous picture",
   confirm: "Are you sure?",
   editor_title: "Title",
   editor_title_help: "Shown on the picture and above the note. Optional.",
@@ -353,6 +383,16 @@ var en = {
   editor_auto_flip_help: "0 disables automatic flipping.",
   editor_hover_flip: "Flip on hover (desktop)",
   editor_show_updated: "Show when the note was last changed",
+  editor_show_navigation: "Show arrows and dots for several pictures",
+  editor_auto_advance: "Next picture every",
+  editor_auto_advance_help: "0 disables the slideshow.",
+  editor_pages: "Pictures",
+  editor_pages_help: "Each picture carries its own note. Swipe or use the arrows on the card to move between them.",
+  editor_add_page: "Add picture",
+  editor_remove_page: "Remove this picture",
+  editor_page_label: "Picture {index}",
+  editor_page_title: "Title for this picture (optional)",
+  editor_page_title_help: "Falls back to the card title.",
   editor_hold_action: "Hold action",
   editor_double_tap_action: "Double tap action",
   editor_actions_help: "Tapping flips the card. Hold and double tap can open more info, navigate, open a URL, toggle an entity or perform an action.",
@@ -390,6 +430,9 @@ var de = {
   imageError: "Das Bild konnte nicht geladen werden",
   charsLeft: "{count} Zeichen übrig",
   updated: "Geändert {time}",
+  page: "Bild {index} von {total}",
+  nextPicture: "Nächstes Bild",
+  previousPicture: "Vorheriges Bild",
   confirm: "Bist du sicher?",
   editor_title: "Titel",
   editor_title_help: "Wird auf dem Bild und über der Notiz angezeigt. Optional.",
@@ -422,6 +465,16 @@ var de = {
   editor_auto_flip_help: "0 deaktiviert das automatische Umdrehen.",
   editor_hover_flip: "Beim Überfahren umdrehen (Desktop)",
   editor_show_updated: "Anzeigen, wann die Notiz zuletzt geändert wurde",
+  editor_show_navigation: "Pfeile und Punkte bei mehreren Bildern anzeigen",
+  editor_auto_advance: "Nächstes Bild alle",
+  editor_auto_advance_help: "0 deaktiviert die Diashow.",
+  editor_pages: "Bilder",
+  editor_pages_help: "Jedes Bild hat seine eigene Notiz. Auf der Karte wischen oder die Pfeile nutzen, um zwischen den Bildern zu wechseln.",
+  editor_add_page: "Bild hinzufügen",
+  editor_remove_page: "Dieses Bild entfernen",
+  editor_page_label: "Bild {index}",
+  editor_page_title: "Titel für dieses Bild (optional)",
+  editor_page_title_help: "Sonst gilt der Kartentitel.",
   editor_hold_action: "Aktion bei langem Drücken",
   editor_double_tap_action: "Aktion bei Doppeltipp",
   editor_actions_help: "Tippen dreht die Karte um. Langes Drücken und Doppeltipp können „Mehr Infos“ öffnen, navigieren, eine URL öffnen, eine Entität umschalten oder eine Aktion ausführen.",
@@ -582,12 +635,109 @@ ha-card {
   height: 100%;
   object-fit: var(--imagenote-fit, cover);
   background: var(--imagenote-placeholder-background);
+  transition: opacity 350ms ease;
 }
-.stage.natural .front img {
+.front img.layer-b {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+.front img.layer-b.active {
+  opacity: 1;
+}
+.front img.layer-a.inactive {
+  opacity: 0;
+}
+.stage.natural .front img.layer-a {
   height: auto;
 }
 .front img.hidden {
   display: none;
+}
+
+.nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 200ms ease, background-color 150ms ease;
+  z-index: 3;
+  padding: 0;
+}
+.nav.prev { left: 8px; }
+.nav.next { right: 8px; }
+.nav:hover,
+.nav:focus-visible {
+  background: rgba(0, 0, 0, 0.55);
+  outline: none;
+}
+.scene:hover .nav,
+.stage:focus-within .nav {
+  opacity: 1;
+}
+@media (hover: none) {
+  .nav { opacity: 0.8; }
+}
+.nav.hidden {
+  display: none !important;
+}
+.back .nav {
+  color: var(--primary-text-color);
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
+}
+
+.dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 10px;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  z-index: 3;
+  pointer-events: none;
+}
+.dots.hidden {
+  display: none;
+}
+.dots button {
+  appearance: none;
+  border: none;
+  padding: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 150ms ease, background-color 150ms ease;
+}
+.dots button.active {
+  background: #fff;
+  transform: scale(1.3);
+}
+.back .dots button {
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.25);
+  box-shadow: none;
+}
+.back .dots button.active {
+  background: var(--primary-color);
+}
+.title-overlay.with-dots {
+  padding-bottom: 26px;
 }
 .placeholder {
   position: absolute;
@@ -883,20 +1033,50 @@ var EDITOR_STYLES = `
 }
 `;
 
+// src/time.ts
+var UNITS = [
+  ["year", 365 * 24 * 3600],
+  ["month", 30 * 24 * 3600],
+  ["week", 7 * 24 * 3600],
+  ["day", 24 * 3600],
+  ["hour", 3600],
+  ["minute", 60]
+];
+function formatRelativeTime(date, language, now = /* @__PURE__ */ new Date()) {
+  const seconds = Math.round((date.getTime() - now.getTime()) / 1e3);
+  if (!Number.isFinite(seconds)) return "";
+  const formatter = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
+  const abs = Math.abs(seconds);
+  for (const [unit, size] of UNITS) {
+    if (abs >= size) {
+      return formatter.format(Math.round(seconds / size), unit);
+    }
+  }
+  return formatter.format(0, "second");
+}
+
 // src/card.ts
+var CHEVRON_LEFT = "mdi:chevron-left";
+var CHEVRON_RIGHT = "mdi:chevron-right";
+var NAV_TEMPLATE = `
+  <button class="nav prev" type="button"><ha-icon icon="${CHEVRON_LEFT}"></ha-icon></button>
+  <button class="nav next" type="button"><ha-icon icon="${CHEVRON_RIGHT}"></ha-icon></button>
+  <div class="dots"></div>`;
 var TEMPLATE = `
 <style>${CARD_STYLES}</style>
 <ha-card>
   <div class="stage" tabindex="0" role="button" aria-pressed="false">
     <div class="scene">
       <div class="face front">
-        <img alt="" draggable="false" />
+        <img class="layer-a" alt="" draggable="false" />
+        <img class="layer-b" alt="" draggable="false" />
         <div class="placeholder">
           <ha-icon icon="mdi:image-plus-outline"></ha-icon>
           <strong></strong>
           <small></small>
         </div>
         <div class="title-overlay"></div>
+        ${NAV_TEMPLATE}
         <div class="badge front-badge"><ha-icon icon="mdi:note-text-outline"></ha-icon><span></span></div>
       </div>
       <div class="face back">
@@ -916,6 +1096,7 @@ var TEMPLATE = `
             <button class="btn primary save" type="button"></button>
           </div>
         </div>
+        ${NAV_TEMPLATE}
         <div class="badge back-badge"><ha-icon icon="mdi:image-outline"></ha-icon><span></span></div>
       </div>
     </div>
@@ -941,14 +1122,17 @@ var ImageNoteCard = class extends HTMLElement {
   _hass;
   _lang = "en";
   _side = "image";
+  _index = 0;
   _editing = false;
   _saving = false;
   _els;
-  _imageFailed = false;
-  _mediaPending = false;
+  _activeLayer = "a";
+  _resolved = /* @__PURE__ */ new Map();
   _resolveToken = 0;
+  _mediaPending = false;
   _refreshTimer;
   _autoFlipTimer;
+  _autoAdvanceTimer;
   _resizeObserver;
   _motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   _hoverQuery = window.matchMedia("(hover: hover)");
@@ -966,14 +1150,14 @@ var ImageNoteCard = class extends HTMLElement {
   connectedCallback() {
     this._motionQuery.addEventListener("change", this._onMotionChange);
     this._observeResize();
-    this._startAutoFlip();
+    this._startTimers();
     this._startMetaTimer();
   }
   disconnectedCallback() {
     this._motionQuery.removeEventListener("change", this._onMotionChange);
     this._resizeObserver?.disconnect();
     this._resizeObserver = void 0;
-    this._stopAutoFlip();
+    this._stopTimers();
     window.clearTimeout(this._refreshTimer);
     window.clearInterval(this._metaTimer);
     this._metaTimer = void 0;
@@ -982,17 +1166,18 @@ var ImageNoteCard = class extends HTMLElement {
     validateConfig(config);
     this._config = normalizeConfig(config);
     this._side = this._config.default_side;
+    this._index = 0;
     this._editing = false;
     this._saving = false;
     this._lastNote = void 0;
     this._lastImageSrc = void 0;
-    this._imageFailed = false;
+    this._resolved.clear();
+    this._activeLayer = "a";
     this._build();
     this._applyConfig();
-    this._resolveImage();
-    this._applyHass();
+    this._showPage(0, true);
     this._observeResize();
-    this._startAutoFlip();
+    this._startTimers();
   }
   set hass(hass) {
     this._hass = hass;
@@ -1019,7 +1204,24 @@ var ImageNoteCard = class extends HTMLElement {
   flip(side) {
     if (this._editing) return;
     this._setSide(side ?? (this._side === "image" ? "note" : "image"));
-    this._restartAutoFlip();
+    this._restartTimers();
+  }
+  /** Go to a picture by index (wraps around), or one step with "next" / "prev". */
+  goTo(target) {
+    const config = this._config;
+    if (!config || this._editing) return;
+    const total = config.pages.length;
+    if (total < 2) return;
+    let index;
+    if (target === "next") index = (this._index + 1) % total;
+    else if (target === "prev") index = (this._index - 1 + total) % total;
+    else index = (Math.trunc(target) % total + total) % total;
+    if (index === this._index) return;
+    this._showPage(index);
+    this._restartTimers();
+  }
+  get page() {
+    return this._config?.pages[this._index];
   }
   // ---------------------------------------------------------------- rendering
   _build() {
@@ -1035,7 +1237,8 @@ var ImageNoteCard = class extends HTMLElement {
       scene: q(".scene"),
       front: q(".front"),
       back: q(".back"),
-      img: q("img"),
+      imgA: q("img.layer-a"),
+      imgB: q("img.layer-b"),
       placeholder: q(".placeholder"),
       placeholderTitle: q(".placeholder strong"),
       placeholderHelp: q(".placeholder small"),
@@ -1055,25 +1258,37 @@ var ImageNoteCard = class extends HTMLElement {
       errorText: q(".error-text"),
       counter: q(".counter"),
       saveButton: q(".save"),
-      cancelButton: q(".cancel")
+      cancelButton: q(".cancel"),
+      navButtons: Array.from(this._root.querySelectorAll(".nav")),
+      dots: Array.from(this._root.querySelectorAll(".dots"))
     };
     const els = this._els;
     this._gestures?.destroy();
     this._gestures = new GestureDetector(els.stage, (kind) => void this._handleGesture(kind), {
       holdDelay: HOLD_DELAY_MS,
       doubleTapWindow: DOUBLE_TAP_WINDOW_MS,
+      swipeThreshold: SWIPE_THRESHOLD_PX,
       hasDoubleTap: () => this._config?.double_tap_action.action !== "none",
-      enabled: (ev) => this._gestureAllowed(ev)
+      enabled: (ev) => this._gestureAllowed(ev),
+      onSwipe: (direction) => this._onSwipe(direction)
     });
     els.stage.addEventListener("keydown", this._onStageKeydown);
     els.stage.addEventListener("mouseenter", this._onMouseEnter);
     els.stage.addEventListener("mouseleave", this._onMouseLeave);
-    els.img.addEventListener("error", this._onImageError);
-    els.img.addEventListener("load", this._onImageLoad);
+    for (const img of [els.imgA, els.imgB]) {
+      img.addEventListener("error", () => this._onImageError(img));
+      img.addEventListener("load", () => this._onImageLoad(img));
+    }
     els.editButton.addEventListener("click", (ev) => {
       ev.stopPropagation();
       this._startEdit();
     });
+    for (const button of els.navButtons) {
+      button.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.goTo(button.classList.contains("next") ? "next" : "prev");
+      });
+    }
     els.noteEditor.addEventListener("click", (ev) => ev.stopPropagation());
     els.noteEditor.addEventListener("keydown", (ev) => ev.stopPropagation());
     els.textarea.addEventListener("input", () => this._updateCounter());
@@ -1088,7 +1303,33 @@ var ImageNoteCard = class extends HTMLElement {
     });
     els.cancelButton.addEventListener("click", () => this._cancelEdit());
     els.saveButton.addEventListener("click", () => void this._saveEdit());
+    this._buildDots();
     this._applyStrings();
+  }
+  _buildDots() {
+    const els = this._els;
+    const config = this._config;
+    if (!els || !config) return;
+    const total = config.pages.length;
+    const show = total > 1 && config.show_navigation;
+    for (const container of els.dots) {
+      container.replaceChildren();
+      container.classList.toggle("hidden", !show);
+      if (!show) continue;
+      for (let i = 0; i < total; i++) {
+        const dot = document.createElement("button");
+        dot.type = "button";
+        dot.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          this.goTo(i);
+        });
+        container.append(dot);
+      }
+    }
+    for (const button of els.navButtons) {
+      button.classList.toggle("hidden", !show);
+    }
+    els.titleOverlay.classList.toggle("with-dots", show);
   }
   _applyConfig() {
     const els = this._els;
@@ -1105,14 +1346,20 @@ var ImageNoteCard = class extends HTMLElement {
     this.style.setProperty("--imagenote-fit", config.image_fit);
     this._applyTransition();
     els.scene.classList.toggle("hover-flip", config.hover_flip);
-    const showTitle = config.show_title && config.title !== "";
-    els.titleOverlay.textContent = config.title;
-    els.titleOverlay.classList.toggle("hidden", !showTitle);
-    els.noteTitle.textContent = config.title || translate(this._lang, "note");
-    els.noteHeader.classList.toggle("no-title", config.title === "");
     els.frontBadge.classList.toggle("hidden", !config.show_hint);
     els.backBadge.classList.toggle("hidden", !config.show_hint);
     this._applySide();
+  }
+  _applyTitles() {
+    const els = this._els;
+    const config = this._config;
+    if (!els || !config) return;
+    const title = this.page?.title || config.title;
+    const showTitle = config.show_title && title !== "";
+    els.titleOverlay.textContent = title;
+    els.titleOverlay.classList.toggle("hidden", !showTitle);
+    els.noteTitle.textContent = title || translate(this._lang, "note");
+    els.noteHeader.classList.toggle("no-title", title === "");
   }
   _applyTransition() {
     const els = this._els;
@@ -1136,9 +1383,12 @@ var ImageNoteCard = class extends HTMLElement {
     els.editButton.setAttribute("aria-label", t("editNote"));
     els.cancelButton.textContent = t("cancel");
     els.saveButton.textContent = this._saving ? t("saving") : t("save");
-    if (this._config && !this._config.title) {
-      els.noteTitle.textContent = t("note");
+    for (const button of els.navButtons) {
+      const label = t(button.classList.contains("next") ? "nextPicture" : "previousPicture");
+      button.title = label;
+      button.setAttribute("aria-label", label);
     }
+    this._applyTitles();
     this._updatePlaceholder();
     this._applySide();
     this._lastNote = void 0;
@@ -1146,33 +1396,61 @@ var ImageNoteCard = class extends HTMLElement {
   }
   _applySide() {
     const els = this._els;
-    if (!els) return;
+    const config = this._config;
+    if (!els || !config) return;
     const flipped = this._side === "note";
     els.scene.classList.toggle("flipped", flipped);
     els.stage.setAttribute("aria-pressed", String(flipped));
-    const title = this._config?.title ? `${this._config.title} – ` : "";
-    els.stage.setAttribute(
-      "aria-label",
-      title + translate(this._lang, flipped ? "showPhoto" : "showNote")
-    );
+    const title = this.page?.title || config.title;
+    const parts = [];
+    if (title) parts.push(title);
+    if (config.pages.length > 1) {
+      parts.push(translate(this._lang, "page", { index: this._index + 1, total: config.pages.length }));
+    }
+    parts.push(translate(this._lang, flipped ? "showPhoto" : "showNote"));
+    els.stage.setAttribute("aria-label", parts.join(" – "));
   }
   _setSide(side) {
     if (side === this._side) return;
     this._side = side;
     this._applySide();
     this.dispatchEvent(
-      new CustomEvent("imagenote-flip", { detail: { side }, bubbles: true, composed: true })
+      new CustomEvent("imagenote-flip", { detail: { side, index: this._index }, bubbles: true, composed: true })
     );
   }
-  // ---------------------------------------------------------------- picture
-  _imageSourceFromEntity() {
+  // ---------------------------------------------------------------- pages
+  _showPage(index, initial = false) {
+    const els = this._els;
     const config = this._config;
-    if (!config?.image_entity || !this._hass) return void 0;
-    const entity = this._hass.states[config.image_entity];
+    if (!els || !config) return;
+    this._index = index;
+    for (const container of els.dots) {
+      Array.from(container.children).forEach((dot, i) => dot.classList.toggle("active", i === index));
+    }
+    this._applyTitles();
+    this._applySide();
+    this._lastNote = void 0;
+    this._lastImageSrc = void 0;
+    this._resolveImage();
+    this._applyHass();
+    if (!initial) {
+      this.dispatchEvent(
+        new CustomEvent("imagenote-page", { detail: { index }, bubbles: true, composed: true })
+      );
+    }
+  }
+  _onSwipe(direction) {
+    if (!this._config || this._config.pages.length < 2 || this._editing) return;
+    this.goTo(direction === "left" ? "next" : "prev");
+  }
+  // ---------------------------------------------------------------- picture
+  _imageSourceFromEntity(page) {
+    if (!page.image_entity || !this._hass) return void 0;
+    const entity = this._hass.states[page.image_entity];
     if (!entity) return void 0;
     const picture = entity.attributes.entity_picture;
     if (typeof picture !== "string" || !picture) return void 0;
-    const domain = config.image_entity.split(".")[0];
+    const domain = page.image_entity.split(".")[0];
     if (domain === "image" || domain === "camera") {
       const join = picture.includes("?") ? "&" : "?";
       return `${picture}${join}state=${encodeURIComponent(entity.state)}`;
@@ -1180,35 +1458,40 @@ var ImageNoteCard = class extends HTMLElement {
     return picture;
   }
   _resolveImage() {
-    const config = this._config;
-    if (!config) return;
+    const page = this.page;
+    if (!page) return;
+    const index = this._index;
     const token = ++this._resolveToken;
     window.clearTimeout(this._refreshTimer);
-    this._imageFailed = false;
     this._mediaPending = false;
-    const fromEntity = this._imageSourceFromEntity();
-    if (config.image_entity) {
-      this._setImage(fromEntity ?? "");
+    if (page.image_entity) {
+      this._setImage(this._imageSourceFromEntity(page) ?? "", false);
       return;
     }
-    const image = config.image;
+    const image = page.image;
     if (!image) {
-      this._setImage("");
+      this._setImage("", false);
       return;
     }
     let mediaId;
     if (typeof image === "string") {
       if (!isMediaSourceId(image)) {
-        this._setImage(image);
+        this._setImage(image, false);
         return;
       }
       mediaId = image;
     } else {
       mediaId = image.media_content_id;
     }
+    const cached = this._resolved.get(index);
+    if (cached && !cached.failed && cached.expiresAt > Date.now()) {
+      this._setImage(cached.url, false);
+      this._scheduleRefresh(cached.expiresAt);
+      return;
+    }
     if (!this._hass) {
       this._mediaPending = true;
-      this._setImage("");
+      this._setImage("", false);
       return;
     }
     void this._hass.callWS({
@@ -1216,75 +1499,120 @@ var ImageNoteCard = class extends HTMLElement {
       media_content_id: mediaId,
       expires: MEDIA_EXPIRES_SECONDS
     }).then((result) => {
+      const expiresAt = Date.now() + MEDIA_REFRESH_MS;
+      this._resolved.set(index, { url: result.url, failed: false, expiresAt });
       if (token !== this._resolveToken) return;
-      this._setImage(result.url);
-      this._refreshTimer = window.setTimeout(() => this._resolveImage(), MEDIA_REFRESH_MS);
+      this._setImage(result.url, false);
+      this._scheduleRefresh(expiresAt);
     }).catch(() => {
+      this._resolved.set(index, { url: "", failed: true, expiresAt: 0 });
       if (token !== this._resolveToken) return;
-      this._imageFailed = true;
-      this._setImage("");
+      this._setImage("", true);
     });
   }
-  _setImage(src) {
+  _scheduleRefresh(expiresAt) {
+    window.clearTimeout(this._refreshTimer);
+    const delay = Math.max(1e3, expiresAt - Date.now());
+    this._refreshTimer = window.setTimeout(() => this._resolveImage(), delay);
+  }
+  _setImage(src, failed) {
     const els = this._els;
     if (!els) return;
-    if (src === this._lastImageSrc && !this._imageFailed) {
+    if (src === this._lastImageSrc && !failed) {
       return;
     }
     this._lastImageSrc = src;
-    if (src) {
-      els.img.src = src;
-      els.img.classList.remove("hidden");
-    } else {
-      els.img.removeAttribute("src");
-      els.img.classList.add("hidden");
+    const previous = this._activeLayer === "a" ? els.imgA : els.imgB;
+    if (!src) {
+      previous.removeAttribute("src");
+      previous.classList.add("hidden");
+      this._updatePlaceholder(failed);
+      return;
     }
-    this._updatePlaceholder();
+    const nextLayer = this._activeLayer === "a" ? "b" : "a";
+    const next = nextLayer === "a" ? els.imgA : els.imgB;
+    if (!previous.getAttribute("src")) {
+      previous.classList.remove("hidden");
+      previous.src = src;
+      this._updatePlaceholder(false, true);
+      return;
+    }
+    next.classList.remove("hidden");
+    next.dataset.pending = "1";
+    next.src = src;
+    this._updatePlaceholder(false, true);
   }
-  _updatePlaceholder() {
+  _swapLayers(loaded) {
     const els = this._els;
     if (!els) return;
-    const hasImage = Boolean(this._lastImageSrc) && !this._imageFailed;
+    const layer = loaded === els.imgA ? "a" : "b";
+    this._activeLayer = layer;
+    els.imgA.classList.toggle("inactive", layer !== "a");
+    els.imgB.classList.toggle("active", layer === "b");
+    const other = layer === "a" ? els.imgB : els.imgA;
+    window.setTimeout(() => {
+      if (this._activeLayer === layer) {
+        other.removeAttribute("src");
+        other.classList.add("hidden");
+      }
+    }, 400);
+  }
+  _updatePlaceholder(failed = false, loading = false) {
+    const els = this._els;
+    if (!els) return;
+    const hasImage = Boolean(this._lastImageSrc) && !failed;
     els.placeholder.classList.toggle("hidden", hasImage);
-    els.img.classList.toggle("hidden", !hasImage);
+    if (!hasImage) {
+      els.imgA.classList.add("hidden");
+      els.imgB.classList.add("hidden");
+    }
     const t = (key) => translate(this._lang, key);
-    if (this._imageFailed) {
+    if (failed) {
       els.placeholderIcon.setAttribute("icon", "mdi:image-broken-variant");
       els.placeholderTitle.textContent = t("imageError");
       els.placeholderHelp.textContent = "";
-    } else {
+    } else if (!loading) {
       els.placeholderIcon.setAttribute("icon", "mdi:image-plus-outline");
       els.placeholderTitle.textContent = t("noImage");
       els.placeholderHelp.textContent = t("noImageHelp");
     }
   }
-  _onImageError = () => {
-    if (!this._lastImageSrc) return;
-    this._imageFailed = true;
-    this._updatePlaceholder();
-  };
-  _onImageLoad = () => {
-    this._imageFailed = false;
-    this._updatePlaceholder();
+  _onImageError(img) {
+    if (!img.getAttribute("src")) return;
+    if (img.dataset.pending) {
+      delete img.dataset.pending;
+      img.removeAttribute("src");
+      img.classList.add("hidden");
+    }
+    this._updatePlaceholder(true);
+  }
+  _onImageLoad(img) {
+    if (img.dataset.pending) {
+      delete img.dataset.pending;
+      this._swapLayers(img);
+    }
+    this._updatePlaceholder(false);
     this._updateDepth();
-  };
+  }
   // ---------------------------------------------------------------- note
   _noteSource() {
     const config = this._config;
-    const empty = { text: "", editable: false, error: "", max: null, domain: "", changed: "" };
-    if (!config) return empty;
-    if (!config.note_entity) {
-      return { ...empty, text: config.note };
+    const page = this.page;
+    const empty = { text: "", editable: false, error: "", max: null, domain: "", changed: "", entityId: "" };
+    if (!config || !page) return empty;
+    if (!page.note_entity) {
+      return { ...empty, text: page.note };
     }
-    const entity = this._hass?.states[config.note_entity];
+    const entity = this._hass?.states[page.note_entity];
     if (!entity) {
       return {
         ...empty,
-        error: this._hass ? translate(this._lang, "entityMissing", { entity: config.note_entity }) : ""
+        entityId: page.note_entity,
+        error: this._hass ? translate(this._lang, "entityMissing", { entity: page.note_entity }) : ""
       };
     }
-    const domain = config.note_entity.split(".")[0];
-    const attr = config.note_attribute;
+    const domain = page.note_entity.split(".")[0];
+    const attr = page.note_attribute;
     let text;
     if (attr) {
       const raw = entity.attributes[attr];
@@ -1299,22 +1627,23 @@ var ImageNoteCard = class extends HTMLElement {
       error: "",
       max,
       domain,
-      changed: config.show_updated ? entity.last_changed ?? "" : ""
+      changed: config.show_updated ? entity.last_changed ?? "" : "",
+      entityId: page.note_entity
     };
   }
   _applyHass() {
     const els = this._els;
-    if (!els || !this._config) return;
-    if (this._config.image_entity) {
-      const src = this._imageSourceFromEntity() ?? "";
+    const page = this.page;
+    if (!els || !this._config || !page) return;
+    if (page.image_entity) {
+      const src = this._imageSourceFromEntity(page) ?? "";
       if (src !== this._lastImageSrc) {
-        this._imageFailed = false;
-        this._setImage(src);
+        this._setImage(src, false);
       }
     }
     const source = this._noteSource();
     const last = this._lastNote;
-    if (last && last.text === source.text && last.editable === source.editable && last.error === source.error && last.max === source.max && last.changed === source.changed) {
+    if (last && last.text === source.text && last.editable === source.editable && last.error === source.error && last.max === source.max && last.changed === source.changed && last.entityId === source.entityId) {
       return;
     }
     this._lastNote = source;
@@ -1396,7 +1725,7 @@ var ImageNoteCard = class extends HTMLElement {
     const source = this._lastNote ?? this._noteSource();
     if (!els || !source.editable || !this._hass) return;
     this._editing = true;
-    this._stopAutoFlip();
+    this._stopTimers();
     this._setSide("note");
     els.scene.classList.add("editing");
     els.noteBody.style.display = "none";
@@ -1430,7 +1759,7 @@ var ImageNoteCard = class extends HTMLElement {
     els.editButton.classList.toggle("hidden", !source.editable);
     this._renderNote(source);
     this._renderMeta();
-    this._startAutoFlip();
+    this._startTimers();
     els.stage.focus({ preventScroll: true });
   }
   _cancelEdit() {
@@ -1439,8 +1768,7 @@ var ImageNoteCard = class extends HTMLElement {
   }
   async _saveEdit() {
     const els = this._els;
-    const config = this._config;
-    if (!els || !config || !this._hass || !this._editing || this._saving) return;
+    if (!els || !this._hass || !this._editing || this._saving) return;
     const source = this._lastNote ?? this._noteSource();
     const value = els.textarea.value;
     if (value === source.text) {
@@ -1454,7 +1782,7 @@ var ImageNoteCard = class extends HTMLElement {
     els.errorText.textContent = "";
     try {
       await this._hass.callService(source.domain, "set_value", {
-        entity_id: config.note_entity,
+        entity_id: source.entityId,
         value
       });
       this._lastNote = { ...source, text: value };
@@ -1492,7 +1820,8 @@ var ImageNoteCard = class extends HTMLElement {
   }
   async _handleGesture(kind) {
     const config = this._config;
-    if (!config || this._editing) return;
+    const page = this.page;
+    if (!config || !page || this._editing) return;
     if (kind === "tap") {
       const root = this._root;
       const selection = root.getSelection ? root.getSelection() : window.getSelection();
@@ -1500,7 +1829,13 @@ var ImageNoteCard = class extends HTMLElement {
     }
     const action2 = kind === "hold" ? config.hold_action : kind === "double_tap" ? config.double_tap_action : config.tap_action;
     try {
-      const shouldFlip = await runAction(this, this._hass, config, action2, translate(this._lang, "confirm"));
+      const shouldFlip = await runAction(
+        this,
+        this._hass,
+        { note_entity: page.note_entity, image_entity: page.image_entity },
+        action2,
+        translate(this._lang, "confirm")
+      );
       if (shouldFlip) this.flip();
     } catch (err) {
       console.warn("ImageNote: action failed", err);
@@ -1512,6 +1847,12 @@ var ImageNoteCard = class extends HTMLElement {
     if (ev.key === "Enter" || ev.key === " ") {
       ev.preventDefault();
       void this._handleGesture("tap");
+    } else if (ev.key === "ArrowRight") {
+      ev.preventDefault();
+      this.goTo("next");
+    } else if (ev.key === "ArrowLeft") {
+      ev.preventDefault();
+      this.goTo("prev");
     }
   };
   _onMouseEnter = () => {
@@ -1526,24 +1867,32 @@ var ImageNoteCard = class extends HTMLElement {
     this._applyTransition();
   };
   // ---------------------------------------------------------------- timers & layout
-  _startAutoFlip() {
-    this._stopAutoFlip();
-    const seconds = this._config?.auto_flip ?? 0;
-    if (!this.isConnected || seconds <= 0) return;
-    this._autoFlipTimer = window.setInterval(() => {
-      if (this._editing) return;
-      this._setSide(this._side === "image" ? "note" : "image");
-    }, seconds * 1e3);
-  }
-  _stopAutoFlip() {
-    if (this._autoFlipTimer !== void 0) {
-      window.clearInterval(this._autoFlipTimer);
-      this._autoFlipTimer = void 0;
+  _startTimers() {
+    this._stopTimers();
+    const config = this._config;
+    if (!this.isConnected || !config) return;
+    if (config.auto_flip > 0) {
+      this._autoFlipTimer = window.setInterval(() => {
+        if (this._editing) return;
+        this._setSide(this._side === "image" ? "note" : "image");
+      }, config.auto_flip * 1e3);
+    }
+    if (config.auto_advance > 0 && config.pages.length > 1) {
+      this._autoAdvanceTimer = window.setInterval(() => {
+        if (this._editing) return;
+        this._showPage((this._index + 1) % config.pages.length);
+      }, config.auto_advance * 1e3);
     }
   }
-  _restartAutoFlip() {
-    if (this._autoFlipTimer !== void 0) {
-      this._startAutoFlip();
+  _stopTimers() {
+    window.clearInterval(this._autoFlipTimer);
+    window.clearInterval(this._autoAdvanceTimer);
+    this._autoFlipTimer = void 0;
+    this._autoAdvanceTimer = void 0;
+  }
+  _restartTimers() {
+    if (this._autoFlipTimer !== void 0 || this._autoAdvanceTimer !== void 0) {
+      this._startTimers();
     }
   }
   _observeResize() {
@@ -1567,7 +1916,13 @@ var ImageNoteCard = class extends HTMLElement {
 
 // src/editor.ts
 var UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
-var PICTURE_TEMPLATE = `
+var PAGE_KEYS = ["title", "image", "image_entity", "note", "note_entity", "note_attribute"];
+var TEMPLATE2 = `
+<div class="pages">
+  <div class="pages-label"></div>
+  <div class="pages-help"></div>
+  <div class="chips"></div>
+</div>
 <div class="picture">
   <div class="preview"><img alt="" draggable="false" /><ha-icon icon="mdi:image-outline"></ha-icon></div>
   <div class="picture-actions">
@@ -1576,12 +1931,59 @@ var PICTURE_TEMPLATE = `
     <div class="buttons">
       <button class="btn primary upload" type="button"><ha-icon icon="mdi:upload"></ha-icon><span></span></button>
       <button class="btn clear" type="button"><ha-icon icon="mdi:close"></ha-icon><span></span></button>
+      <button class="btn remove-page" type="button"><ha-icon icon="mdi:delete-outline"></ha-icon><span></span></button>
     </div>
     <div class="status"></div>
     <input class="file" type="file" accept="image/*" hidden />
   </div>
-</div>`;
-var PICTURE_STYLES = `
+</div>
+<ha-form class="page-form"></ha-form>
+<div class="divider"></div>
+<ha-form class="card-form"></ha-form>
+<div class="version">ImageNote ${VERSION}</div>`;
+var STYLES = `
+.pages {
+  margin-bottom: 16px;
+}
+.pages-label,
+.picture-label {
+  font-weight: 500;
+}
+.pages-help,
+.picture-help {
+  font-size: 0.85em;
+  color: var(--secondary-text-color);
+  margin-top: 2px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.chip {
+  appearance: none;
+  font: inherit;
+  font-size: 0.9em;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+  background: transparent;
+  color: var(--primary-text-color);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip ha-icon {
+  --mdc-icon-size: 16px;
+}
+.chip.active {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: var(--text-primary-color, #fff);
+}
 .picture {
   display: flex;
   gap: 16px;
@@ -1624,13 +2026,6 @@ var PICTURE_STYLES = `
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-.picture-label {
-  font-weight: 500;
-}
-.picture-help {
-  font-size: 0.85em;
-  color: var(--secondary-text-color);
 }
 .buttons {
   display: flex;
@@ -1676,6 +2071,11 @@ var PICTURE_STYLES = `
 .status.error {
   color: var(--error-color, #db4437);
 }
+.divider {
+  height: 1px;
+  background: var(--divider-color, rgba(0, 0, 0, 0.12));
+  margin: 20px 0;
+}
 @media (max-width: 480px) {
   .picture { flex-direction: column; }
   .preview { width: 100%; min-height: 140px; }
@@ -1686,14 +2086,18 @@ var ImageNoteCardEditor = class extends HTMLElement {
   _config;
   _hass;
   _lang = "en";
-  _form;
   _built = false;
+  _pageIndex = 0;
+  _pageForm;
+  _cardForm;
+  _chips;
   _previewImg;
   _preview;
   _fileInput;
   _status;
   _clearButton;
   _uploadButton;
+  _removePageButton;
   _uploading = false;
   _previewToken = 0;
   constructor() {
@@ -1702,6 +2106,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
   }
   setConfig(config) {
     this._config = { ...config };
+    const total = configPages(this._config).length;
+    if (this._pageIndex >= total) this._pageIndex = total - 1;
     this._render();
   }
   set hass(hass) {
@@ -1709,9 +2115,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
     const lang = resolveLanguage(hass);
     const langChanged = lang !== this._lang;
     this._lang = lang;
-    if (this._form) {
-      this._form.hass = hass;
-    }
+    if (this._pageForm) this._pageForm.hass = hass;
+    if (this._cardForm) this._cardForm.hass = hass;
     if (langChanged) {
       this._render();
     } else {
@@ -1720,6 +2125,57 @@ var ImageNoteCardEditor = class extends HTMLElement {
   }
   get hass() {
     return this._hass;
+  }
+  // ---------------------------------------------------------------- pages
+  _pages() {
+    return this._config ? configPages(this._config) : [{}];
+  }
+  _page() {
+    return this._pages()[this._pageIndex] ?? {};
+  }
+  /** Writes a page back into the config: into `images` when there are several, flat otherwise. */
+  _withPage(index, page) {
+    const config = { ...this._config ?? { type: "" } };
+    const pages = this._pages().map((p) => ({ ...p }));
+    pages[index] = cleanPage(page);
+    return this._withPages(config, pages);
+  }
+  _withPages(config, pages) {
+    const next = { ...config };
+    for (const key of PAGE_KEYS) {
+      if (key !== "title") delete next[key];
+    }
+    if (pages.length <= 1) {
+      delete next.images;
+      const only = cleanPage(pages[0] ?? {});
+      for (const key of PAGE_KEYS) {
+        if (key === "title") {
+          if (only.title && !next.title) next.title = only.title;
+          continue;
+        }
+        if (only[key] !== void 0) next[key] = only[key];
+      }
+    } else {
+      next.images = pages.map(cleanPage);
+    }
+    return next;
+  }
+  _addPage() {
+    const pages = this._pages().map((p) => ({ ...p }));
+    pages.push({});
+    this._pageIndex = pages.length - 1;
+    this._emit(this._withPages(this._config ?? { type: "" }, pages));
+  }
+  _removePage() {
+    const pages = this._pages().map((p) => ({ ...p }));
+    if (pages.length <= 1) return;
+    pages.splice(this._pageIndex, 1);
+    this._pageIndex = Math.min(this._pageIndex, pages.length - 1);
+    this._emit(this._withPages(this._config ?? { type: "" }, pages));
+  }
+  _selectPage(index) {
+    this._pageIndex = index;
+    this._render();
   }
   // ---------------------------------------------------------------- rendering
   _ensureForm() {
@@ -1732,15 +2188,20 @@ var ImageNoteCardEditor = class extends HTMLElement {
   }
   _build() {
     this._ensureForm();
-    this._root.innerHTML = `<style>${EDITOR_STYLES}${PICTURE_STYLES}</style>${PICTURE_TEMPLATE}<ha-form></ha-form><div class="version">ImageNote ${VERSION}</div>`;
-    this._form = this._root.querySelector("ha-form") ?? void 0;
-    this._preview = this._root.querySelector(".preview") ?? void 0;
-    this._previewImg = this._root.querySelector(".preview img") ?? void 0;
-    this._fileInput = this._root.querySelector(".file") ?? void 0;
-    this._status = this._root.querySelector(".status") ?? void 0;
-    this._clearButton = this._root.querySelector(".clear") ?? void 0;
-    this._uploadButton = this._root.querySelector(".upload") ?? void 0;
-    this._form?.addEventListener("value-changed", this._onValueChanged);
+    this._root.innerHTML = `<style>${EDITOR_STYLES}${STYLES}</style>${TEMPLATE2}`;
+    const q = (selector) => this._root.querySelector(selector) ?? void 0;
+    this._pageForm = q(".page-form");
+    this._cardForm = q(".card-form");
+    this._chips = q(".chips");
+    this._preview = q(".preview");
+    this._previewImg = q(".preview img");
+    this._fileInput = q(".file");
+    this._status = q(".status");
+    this._clearButton = q(".clear");
+    this._uploadButton = q(".upload");
+    this._removePageButton = q(".remove-page");
+    this._pageForm?.addEventListener("value-changed", this._onPageValueChanged);
+    this._cardForm?.addEventListener("value-changed", this._onCardValueChanged);
     this._uploadButton?.addEventListener("click", () => this._fileInput?.click());
     this._fileInput?.addEventListener("change", () => {
       const file = this._fileInput?.files?.[0];
@@ -1748,8 +2209,9 @@ var ImageNoteCardEditor = class extends HTMLElement {
       if (this._fileInput) this._fileInput.value = "";
     });
     this._clearButton?.addEventListener("click", () => {
-      this._emit({ ...this._config, image: void 0, image_entity: void 0 });
+      this._emit(this._withPage(this._pageIndex, { ...this._page(), image: void 0, image_entity: void 0 }));
     });
+    this._removePageButton?.addEventListener("click", () => this._removePage());
     this._previewImg?.addEventListener("error", () => {
       this._preview?.classList.remove("has-image");
     });
@@ -1758,33 +2220,67 @@ var ImageNoteCardEditor = class extends HTMLElement {
   _render() {
     if (!this._config) return;
     if (!this._built) this._build();
-    const form = this._form;
-    if (!form) return;
-    const t = (key) => translate(this._lang, key);
-    const label = this._root.querySelector(".picture-label");
-    const help = this._root.querySelector(".picture-help");
-    if (label) label.textContent = t("editor_image");
-    if (help) help.textContent = t("editor_image_help");
-    const uploadLabel = this._root.querySelector(".upload span");
-    if (uploadLabel) uploadLabel.textContent = t("editor_upload");
-    const clearLabel = this._root.querySelector(".clear span");
-    if (clearLabel) clearLabel.textContent = t("editor_clear");
-    form.hass = this._hass;
-    form.schema = this._schema();
-    form.data = this._formData();
-    form.computeLabel = (schema) => schema.name === "actions_help" ? t("editor_actions_help") : t(`editor_${schema.name}`);
-    form.computeHelper = (schema) => {
+    const t = (key, vars) => translate(this._lang, key, vars);
+    const setText = (selector, text) => {
+      const el = this._root.querySelector(selector);
+      if (el) el.textContent = text;
+    };
+    setText(".pages-label", t("editor_pages"));
+    setText(".pages-help", t("editor_pages_help"));
+    setText(".picture-label", t("editor_image"));
+    setText(".picture-help", t("editor_image_help"));
+    setText(".upload span", t("editor_upload"));
+    setText(".clear span", t("editor_clear"));
+    setText(".remove-page span", t("editor_remove_page"));
+    const pages = this._pages();
+    if (this._chips) {
+      this._chips.replaceChildren();
+      pages.forEach((_, index) => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = `chip${index === this._pageIndex ? " active" : ""}`;
+        chip.textContent = t("editor_page_label", { index: index + 1 });
+        chip.addEventListener("click", () => this._selectPage(index));
+        this._chips?.append(chip);
+      });
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "chip add";
+      add.innerHTML = `<ha-icon icon="mdi:plus"></ha-icon><span></span>`;
+      add.querySelector("span").textContent = t("editor_add_page");
+      add.addEventListener("click", () => this._addPage());
+      this._chips.append(add);
+    }
+    this._removePageButton?.classList.toggle("hidden", pages.length <= 1);
+    const computeHelper = (schema) => {
       const key = `editor_${schema.name}_help`;
       const text = t(key);
       return text === key ? "" : text;
     };
+    const computeLabel = (schema) => schema.name === "actions_help" ? t("editor_actions_help") : t(`editor_${schema.name}`);
+    if (this._pageForm) {
+      this._pageForm.hass = this._hass;
+      this._pageForm.schema = this._pageSchema(pages.length > 1);
+      this._pageForm.data = this._pageData();
+      this._pageForm.computeLabel = computeLabel;
+      this._pageForm.computeHelper = computeHelper;
+    }
+    if (this._cardForm) {
+      this._cardForm.hass = this._hass;
+      this._cardForm.schema = this._cardSchema();
+      this._cardForm.data = this._cardData();
+      this._cardForm.computeLabel = computeLabel;
+      this._cardForm.computeHelper = computeHelper;
+    }
     this._updatePreview();
   }
-  _schema() {
+  _pageSchema(multiple) {
     const t = (key) => translate(this._lang, key);
-    const options = (values, prefix) => values.map((value) => ({ value, label: t(`${prefix}_${value}`) }));
-    return [
-      { name: "title", selector: { text: {} } },
+    const schema = [];
+    if (multiple) {
+      schema.push({ name: "page_title", selector: { text: {} } });
+    }
+    schema.push(
       { name: "image", selector: { text: {} } },
       {
         name: "image_entity",
@@ -1799,17 +2295,24 @@ var ImageNoteCardEditor = class extends HTMLElement {
         flatten: true,
         icon: "mdi:text-box-edit-outline",
         title: t("editor_note_source"),
-        expanded: Boolean(this._config?.note_entity),
+        expanded: Boolean(this._page().note_entity),
         schema: [
           { name: "note_entity", selector: { entity: {} } },
           {
             name: "note_attribute",
             selector: { attribute: {} },
             context: { filter_entity: "note_entity" }
-          },
-          { name: "show_updated", selector: { boolean: {} } }
+          }
         ]
-      },
+      }
+    );
+    return schema;
+  }
+  _cardSchema() {
+    const t = (key) => translate(this._lang, key);
+    const options = (values, prefix) => values.map((value) => ({ value, label: t(`${prefix}_${value}`) }));
+    return [
+      { name: "title", selector: { text: {} } },
       {
         name: "appearance",
         type: "expandable",
@@ -1852,7 +2355,9 @@ var ImageNoteCardEditor = class extends HTMLElement {
             flatten: true,
             schema: [
               { name: "show_title", selector: { boolean: {} } },
-              { name: "show_hint", selector: { boolean: {} } }
+              { name: "show_hint", selector: { boolean: {} } },
+              { name: "show_updated", selector: { boolean: {} } },
+              { name: "show_navigation", selector: { boolean: {} } }
             ]
           }
         ]
@@ -1873,6 +2378,10 @@ var ImageNoteCardEditor = class extends HTMLElement {
                 name: "auto_flip",
                 selector: { number: { min: 0, max: 3600, step: 1, mode: "box", unit_of_measurement: "s" } }
               },
+              {
+                name: "auto_advance",
+                selector: { number: { min: 0, max: 3600, step: 1, mode: "box", unit_of_measurement: "s" } }
+              },
               { name: "hover_flip", selector: { boolean: {} } }
             ]
           },
@@ -1883,23 +2392,51 @@ var ImageNoteCardEditor = class extends HTMLElement {
       }
     ];
   }
-  _formData() {
-    const config = this._config ?? {};
-    const image = typeof config.image === "object" && config.image !== null ? config.image.media_content_id : config.image ?? "";
+  _pageData() {
+    const page = this._page();
+    const image = typeof page.image === "object" && page.image !== null ? page.image.media_content_id : page.image ?? "";
     return {
-      ...DEFAULTS,
-      ...config,
-      image
+      page_title: page.title ?? "",
+      image,
+      image_entity: page.image_entity ?? "",
+      note: page.note ?? "",
+      note_entity: page.note_entity ?? "",
+      note_attribute: page.note_attribute ?? ""
     };
   }
+  _cardData() {
+    const config = this._config ?? { type: "" };
+    const data = { ...DEFAULTS };
+    for (const [key, value] of Object.entries(config)) {
+      if (key === "images" || PAGE_KEYS.includes(key) && key !== "title") continue;
+      data[key] = value;
+    }
+    return data;
+  }
   // ---------------------------------------------------------------- events
-  _onValueChanged = (ev) => {
+  _onPageValueChanged = (ev) => {
+    ev.stopPropagation();
+    if (!this._config) return;
+    const value = ev.detail.value ?? {};
+    const page = { ...this._page() };
+    for (const [key, raw] of Object.entries(value)) {
+      const target = key === "page_title" ? "title" : key;
+      if (!PAGE_KEYS.includes(target)) continue;
+      if (raw === void 0 || raw === null || raw === "") {
+        delete page[target];
+      } else {
+        page[target] = raw;
+      }
+    }
+    this._emit(this._withPage(this._pageIndex, page));
+  };
+  _onCardValueChanged = (ev) => {
     ev.stopPropagation();
     if (!this._config) return;
     const value = ev.detail.value ?? {};
     const next = { ...this._config };
     for (const [key, raw] of Object.entries(value)) {
-      if (key === "type") continue;
+      if (key === "type" || key === "images" || PAGE_KEYS.includes(key) && key !== "title") continue;
       const fallback = DEFAULTS[key];
       const isDefault = key in DEFAULTS && (raw === fallback || typeof raw === "object" && raw !== null && JSON.stringify(raw) === JSON.stringify(fallback));
       if (raw === void 0 || raw === null || raw === "" || isDefault) {
@@ -1916,10 +2453,7 @@ var ImageNoteCardEditor = class extends HTMLElement {
       if (value !== void 0 && value !== null && value !== "") cleaned[key] = value;
     }
     this._config = cleaned;
-    if (this._form) {
-      this._form.data = this._formData();
-    }
-    this._updatePreview();
+    this._render();
     this.dispatchEvent(
       new CustomEvent("config-changed", {
         detail: { config: this._config },
@@ -1958,8 +2492,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
       }
       const media = await response.json();
       const url = `/api/image/serve/${media.id}/original`;
+      this._emit(this._withPage(this._pageIndex, { ...this._page(), image: url, image_entity: void 0 }));
       this._setStatus(t("editor_upload_done"), false);
-      this._emit({ ...this._config, image: url, image_entity: void 0 });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this._setStatus(`${t("editor_upload_failed")}: ${message}`, true);
@@ -1976,8 +2510,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
   _updatePreview() {
     const img = this._previewImg;
     const preview = this._preview;
-    const config = this._config;
-    if (!img || !preview || !config) return;
+    if (!img || !preview || !this._config) return;
+    const page = this._page();
     const token = ++this._previewToken;
     const apply = (src) => {
       if (token !== this._previewToken) return;
@@ -1988,15 +2522,15 @@ var ImageNoteCardEditor = class extends HTMLElement {
         img.removeAttribute("src");
         preview.classList.remove("has-image");
       }
-      this._clearButton?.classList.toggle("hidden", !src && !config.image_entity);
+      this._clearButton?.classList.toggle("hidden", !src && !page.image_entity);
     };
-    if (config.image_entity && this._hass) {
-      const entity = this._hass.states[config.image_entity];
+    if (page.image_entity && this._hass) {
+      const entity = this._hass.states[page.image_entity];
       const picture = entity?.attributes.entity_picture;
       apply(typeof picture === "string" ? picture : "");
       return;
     }
-    const image = config.image;
+    const image = page.image;
     const mediaId = typeof image === "object" && image !== null ? image.media_content_id : typeof image === "string" && image.startsWith(MEDIA_SOURCE_PREFIX) ? image : void 0;
     if (!mediaId) {
       apply(typeof image === "string" ? image : "");
@@ -2013,6 +2547,14 @@ var ImageNoteCardEditor = class extends HTMLElement {
     }).then((result) => apply(result.url)).catch(() => apply(""));
   }
 };
+function cleanPage(page) {
+  const out = {};
+  for (const key of PAGE_KEYS) {
+    const value = page[key];
+    if (value !== void 0 && value !== null && value !== "") out[key] = value;
+  }
+  return out;
+}
 
 // src/imagenote-card.ts
 if (!customElements.get(CARD_TYPE)) {

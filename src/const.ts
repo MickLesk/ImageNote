@@ -27,23 +27,23 @@ export const NONE_ACTION: ActionConfig = { action: "none" };
 export const HOLD_DELAY_MS = 500;
 export const DOUBLE_TAP_WINDOW_MS = 250;
 
-export const DEFAULTS: Omit<NormalizedConfig, "type" | "image"> = {
+export const SWIPE_THRESHOLD_PX = 40;
+
+export const DEFAULTS: Omit<NormalizedConfig, "type" | "pages"> = {
   title: "",
-  image_entity: "",
   image_fit: "cover",
   aspect_ratio: "16:9",
-  note: "",
-  note_entity: "",
-  note_attribute: "",
   transition: "flip",
   direction: "horizontal",
   default_side: "image",
   duration: 700,
   auto_flip: 0,
+  auto_advance: 0,
   hover_flip: false,
   show_hint: true,
   show_title: true,
   show_updated: true,
+  show_navigation: true,
   tap_action: FLIP_ACTION,
   hold_action: NONE_ACTION,
   double_tap_action: NONE_ACTION,

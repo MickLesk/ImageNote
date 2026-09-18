@@ -8,17 +8,19 @@ import {
   MEDIA_SOURCE_PREFIX,
   NOTE_ENTITY_DOMAINS,
   SAMPLE_IMAGE,
+  SWIPE_THRESHOLD_PX,
 } from "./const";
-import { GestureDetector, runAction, type ActionKind } from "./actions";
+import { GestureDetector, runAction, type ActionKind, type SwipeDirection } from "./actions";
 import { normalizeConfig, parseAspectRatio, validateConfig } from "./config";
-import { formatRelativeTime } from "./time";
 import { resolveLanguage, translate } from "./i18n";
 import { CARD_STYLES } from "./styles";
+import { formatRelativeTime } from "./time";
 import type {
   HassEntity,
   HomeAssistant,
   ImageNoteCardConfig,
   NormalizedConfig,
+  NormalizedPage,
   ResolvedMedia,
   Side,
   Transition,
@@ -30,7 +32,8 @@ interface Elements {
   scene: HTMLElement;
   front: HTMLElement;
   back: HTMLElement;
-  img: HTMLImageElement;
+  imgA: HTMLImageElement;
+  imgB: HTMLImageElement;
   placeholder: HTMLElement;
   placeholderTitle: HTMLElement;
   placeholderHelp: HTMLElement;
@@ -51,6 +54,8 @@ interface Elements {
   counter: HTMLElement;
   saveButton: HTMLButtonElement;
   cancelButton: HTMLButtonElement;
+  navButtons: HTMLButtonElement[];
+  dots: HTMLElement[];
 }
 
 interface NoteSource {
@@ -60,7 +65,22 @@ interface NoteSource {
   max: number | null;
   domain: string;
   changed: string;
+  entityId: string;
 }
+
+interface ResolvedImage {
+  url: string;
+  failed: boolean;
+  expiresAt: number;
+}
+
+const CHEVRON_LEFT = "mdi:chevron-left";
+const CHEVRON_RIGHT = "mdi:chevron-right";
+
+const NAV_TEMPLATE = `
+  <button class="nav prev" type="button"><ha-icon icon="${CHEVRON_LEFT}"></ha-icon></button>
+  <button class="nav next" type="button"><ha-icon icon="${CHEVRON_RIGHT}"></ha-icon></button>
+  <div class="dots"></div>`;
 
 const TEMPLATE = `
 <style>${CARD_STYLES}</style>
@@ -68,13 +88,15 @@ const TEMPLATE = `
   <div class="stage" tabindex="0" role="button" aria-pressed="false">
     <div class="scene">
       <div class="face front">
-        <img alt="" draggable="false" />
+        <img class="layer-a" alt="" draggable="false" />
+        <img class="layer-b" alt="" draggable="false" />
         <div class="placeholder">
           <ha-icon icon="mdi:image-plus-outline"></ha-icon>
           <strong></strong>
           <small></small>
         </div>
         <div class="title-overlay"></div>
+        ${NAV_TEMPLATE}
         <div class="badge front-badge"><ha-icon icon="mdi:note-text-outline"></ha-icon><span></span></div>
       </div>
       <div class="face back">
@@ -94,6 +116,7 @@ const TEMPLATE = `
             <button class="btn primary save" type="button"></button>
           </div>
         </div>
+        ${NAV_TEMPLATE}
         <div class="badge back-badge"><ha-icon icon="mdi:image-outline"></ha-icon><span></span></div>
       </div>
     </div>
@@ -123,14 +146,17 @@ export class ImageNoteCard extends HTMLElement {
   private _hass?: HomeAssistant;
   private _lang = "en";
   private _side: Side = "image";
+  private _index = 0;
   private _editing = false;
   private _saving = false;
   private _els?: Elements;
-  private _imageFailed = false;
-  private _mediaPending = false;
+  private _activeLayer: "a" | "b" = "a";
+  private _resolved = new Map<number, ResolvedImage>();
   private _resolveToken = 0;
+  private _mediaPending = false;
   private _refreshTimer?: number;
   private _autoFlipTimer?: number;
+  private _autoAdvanceTimer?: number;
   private _resizeObserver?: ResizeObserver;
   private readonly _motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
   private readonly _hoverQuery = window.matchMedia("(hover: hover)");
@@ -151,7 +177,7 @@ export class ImageNoteCard extends HTMLElement {
   connectedCallback(): void {
     this._motionQuery.addEventListener("change", this._onMotionChange);
     this._observeResize();
-    this._startAutoFlip();
+    this._startTimers();
     this._startMetaTimer();
   }
 
@@ -159,7 +185,7 @@ export class ImageNoteCard extends HTMLElement {
     this._motionQuery.removeEventListener("change", this._onMotionChange);
     this._resizeObserver?.disconnect();
     this._resizeObserver = undefined;
-    this._stopAutoFlip();
+    this._stopTimers();
     window.clearTimeout(this._refreshTimer);
     window.clearInterval(this._metaTimer);
     this._metaTimer = undefined;
@@ -169,17 +195,18 @@ export class ImageNoteCard extends HTMLElement {
     validateConfig(config);
     this._config = normalizeConfig(config);
     this._side = this._config.default_side;
+    this._index = 0;
     this._editing = false;
     this._saving = false;
     this._lastNote = undefined;
     this._lastImageSrc = undefined;
-    this._imageFailed = false;
+    this._resolved.clear();
+    this._activeLayer = "a";
     this._build();
     this._applyConfig();
-    this._resolveImage();
-    this._applyHass();
+    this._showPage(0, true);
     this._observeResize();
-    this._startAutoFlip();
+    this._startTimers();
   }
 
   set hass(hass: HomeAssistant) {
@@ -211,7 +238,26 @@ export class ImageNoteCard extends HTMLElement {
   flip(side?: Side): void {
     if (this._editing) return;
     this._setSide(side ?? (this._side === "image" ? "note" : "image"));
-    this._restartAutoFlip();
+    this._restartTimers();
+  }
+
+  /** Go to a picture by index (wraps around), or one step with "next" / "prev". */
+  goTo(target: number | "next" | "prev"): void {
+    const config = this._config;
+    if (!config || this._editing) return;
+    const total = config.pages.length;
+    if (total < 2) return;
+    let index: number;
+    if (target === "next") index = (this._index + 1) % total;
+    else if (target === "prev") index = (this._index - 1 + total) % total;
+    else index = ((Math.trunc(target) % total) + total) % total;
+    if (index === this._index) return;
+    this._showPage(index);
+    this._restartTimers();
+  }
+
+  get page(): NormalizedPage | undefined {
+    return this._config?.pages[this._index];
   }
 
   // ---------------------------------------------------------------- rendering
@@ -229,7 +275,8 @@ export class ImageNoteCard extends HTMLElement {
       scene: q(".scene"),
       front: q(".front"),
       back: q(".back"),
-      img: q("img"),
+      imgA: q("img.layer-a"),
+      imgB: q("img.layer-b"),
       placeholder: q(".placeholder"),
       placeholderTitle: q(".placeholder strong"),
       placeholderHelp: q(".placeholder small"),
@@ -250,6 +297,8 @@ export class ImageNoteCard extends HTMLElement {
       counter: q(".counter"),
       saveButton: q(".save"),
       cancelButton: q(".cancel"),
+      navButtons: Array.from(this._root.querySelectorAll<HTMLButtonElement>(".nav")),
+      dots: Array.from(this._root.querySelectorAll<HTMLElement>(".dots")),
     };
     const els = this._els;
 
@@ -257,18 +306,28 @@ export class ImageNoteCard extends HTMLElement {
     this._gestures = new GestureDetector(els.stage, (kind) => void this._handleGesture(kind), {
       holdDelay: HOLD_DELAY_MS,
       doubleTapWindow: DOUBLE_TAP_WINDOW_MS,
+      swipeThreshold: SWIPE_THRESHOLD_PX,
       hasDoubleTap: () => this._config?.double_tap_action.action !== "none",
       enabled: (ev) => this._gestureAllowed(ev),
+      onSwipe: (direction) => this._onSwipe(direction),
     });
     els.stage.addEventListener("keydown", this._onStageKeydown);
     els.stage.addEventListener("mouseenter", this._onMouseEnter);
     els.stage.addEventListener("mouseleave", this._onMouseLeave);
-    els.img.addEventListener("error", this._onImageError);
-    els.img.addEventListener("load", this._onImageLoad);
+    for (const img of [els.imgA, els.imgB]) {
+      img.addEventListener("error", () => this._onImageError(img));
+      img.addEventListener("load", () => this._onImageLoad(img));
+    }
     els.editButton.addEventListener("click", (ev) => {
       ev.stopPropagation();
       this._startEdit();
     });
+    for (const button of els.navButtons) {
+      button.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this.goTo(button.classList.contains("next") ? "next" : "prev");
+      });
+    }
     els.noteEditor.addEventListener("click", (ev) => ev.stopPropagation());
     els.noteEditor.addEventListener("keydown", (ev) => ev.stopPropagation());
     els.textarea.addEventListener("input", () => this._updateCounter());
@@ -284,7 +343,34 @@ export class ImageNoteCard extends HTMLElement {
     els.cancelButton.addEventListener("click", () => this._cancelEdit());
     els.saveButton.addEventListener("click", () => void this._saveEdit());
 
+    this._buildDots();
     this._applyStrings();
+  }
+
+  private _buildDots(): void {
+    const els = this._els;
+    const config = this._config;
+    if (!els || !config) return;
+    const total = config.pages.length;
+    const show = total > 1 && config.show_navigation;
+    for (const container of els.dots) {
+      container.replaceChildren();
+      container.classList.toggle("hidden", !show);
+      if (!show) continue;
+      for (let i = 0; i < total; i++) {
+        const dot = document.createElement("button");
+        dot.type = "button";
+        dot.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          this.goTo(i);
+        });
+        container.append(dot);
+      }
+    }
+    for (const button of els.navButtons) {
+      button.classList.toggle("hidden", !show);
+    }
+    els.titleOverlay.classList.toggle("with-dots", show);
   }
 
   private _applyConfig(): void {
@@ -304,16 +390,21 @@ export class ImageNoteCard extends HTMLElement {
     this._applyTransition();
 
     els.scene.classList.toggle("hover-flip", config.hover_flip);
-
-    const showTitle = config.show_title && config.title !== "";
-    els.titleOverlay.textContent = config.title;
-    els.titleOverlay.classList.toggle("hidden", !showTitle);
-    els.noteTitle.textContent = config.title || translate(this._lang, "note");
-    els.noteHeader.classList.toggle("no-title", config.title === "");
     els.frontBadge.classList.toggle("hidden", !config.show_hint);
     els.backBadge.classList.toggle("hidden", !config.show_hint);
-
     this._applySide();
+  }
+
+  private _applyTitles(): void {
+    const els = this._els;
+    const config = this._config;
+    if (!els || !config) return;
+    const title = this.page?.title || config.title;
+    const showTitle = config.show_title && title !== "";
+    els.titleOverlay.textContent = title;
+    els.titleOverlay.classList.toggle("hidden", !showTitle);
+    els.noteTitle.textContent = title || translate(this._lang, "note");
+    els.noteHeader.classList.toggle("no-title", title === "");
   }
 
   private _applyTransition(): void {
@@ -339,9 +430,12 @@ export class ImageNoteCard extends HTMLElement {
     els.editButton.setAttribute("aria-label", t("editNote"));
     els.cancelButton.textContent = t("cancel");
     els.saveButton.textContent = this._saving ? t("saving") : t("save");
-    if (this._config && !this._config.title) {
-      els.noteTitle.textContent = t("note");
+    for (const button of els.navButtons) {
+      const label = t(button.classList.contains("next") ? "nextPicture" : "previousPicture");
+      button.title = label;
+      button.setAttribute("aria-label", label);
     }
+    this._applyTitles();
     this._updatePlaceholder();
     this._applySide();
     // Re-render the note so empty-state texts follow the language.
@@ -351,15 +445,19 @@ export class ImageNoteCard extends HTMLElement {
 
   private _applySide(): void {
     const els = this._els;
-    if (!els) return;
+    const config = this._config;
+    if (!els || !config) return;
     const flipped = this._side === "note";
     els.scene.classList.toggle("flipped", flipped);
     els.stage.setAttribute("aria-pressed", String(flipped));
-    const title = this._config?.title ? `${this._config.title} – ` : "";
-    els.stage.setAttribute(
-      "aria-label",
-      title + translate(this._lang, flipped ? "showPhoto" : "showNote"),
-    );
+    const title = this.page?.title || config.title;
+    const parts: string[] = [];
+    if (title) parts.push(title);
+    if (config.pages.length > 1) {
+      parts.push(translate(this._lang, "page", { index: this._index + 1, total: config.pages.length }));
+    }
+    parts.push(translate(this._lang, flipped ? "showPhoto" : "showNote"));
+    els.stage.setAttribute("aria-label", parts.join(" – "));
   }
 
   private _setSide(side: Side): void {
@@ -367,20 +465,47 @@ export class ImageNoteCard extends HTMLElement {
     this._side = side;
     this._applySide();
     this.dispatchEvent(
-      new CustomEvent("imagenote-flip", { detail: { side }, bubbles: true, composed: true }),
+      new CustomEvent("imagenote-flip", { detail: { side, index: this._index }, bubbles: true, composed: true }),
     );
+  }
+
+  // ---------------------------------------------------------------- pages
+
+  private _showPage(index: number, initial = false): void {
+    const els = this._els;
+    const config = this._config;
+    if (!els || !config) return;
+    this._index = index;
+    for (const container of els.dots) {
+      Array.from(container.children).forEach((dot, i) => dot.classList.toggle("active", i === index));
+    }
+    this._applyTitles();
+    this._applySide();
+    this._lastNote = undefined;
+    this._lastImageSrc = undefined;
+    this._resolveImage();
+    this._applyHass();
+    if (!initial) {
+      this.dispatchEvent(
+        new CustomEvent("imagenote-page", { detail: { index }, bubbles: true, composed: true }),
+      );
+    }
+  }
+
+  private _onSwipe(direction: SwipeDirection): void {
+    if (!this._config || this._config.pages.length < 2 || this._editing) return;
+    this.goTo(direction === "left" ? "next" : "prev");
   }
 
   // ---------------------------------------------------------------- picture
 
-  private _imageSourceFromEntity(): string | undefined {
-    const config = this._config;
-    if (!config?.image_entity || !this._hass) return undefined;
-    const entity = this._hass.states[config.image_entity];
+  private _imageSourceFromEntity(page: NormalizedPage): string | undefined {
+    if (!page.image_entity || !this._hass) return undefined;
+    const entity = this._hass.states[page.image_entity];
     if (!entity) return undefined;
     const picture = entity.attributes.entity_picture;
     if (typeof picture !== "string" || !picture) return undefined;
-    const domain = config.image_entity.split(".")[0];
+    const domain = page.image_entity.split(".")[0];
     if (domain === "image" || domain === "camera") {
       // Cache-bust when the entity updates so the card shows the latest frame.
       const join = picture.includes("?") ? "&" : "?";
@@ -390,29 +515,28 @@ export class ImageNoteCard extends HTMLElement {
   }
 
   private _resolveImage(): void {
-    const config = this._config;
-    if (!config) return;
+    const page = this.page;
+    if (!page) return;
+    const index = this._index;
     const token = ++this._resolveToken;
     window.clearTimeout(this._refreshTimer);
-    this._imageFailed = false;
     this._mediaPending = false;
 
-    const fromEntity = this._imageSourceFromEntity();
-    if (config.image_entity) {
-      this._setImage(fromEntity ?? "");
+    if (page.image_entity) {
+      this._setImage(this._imageSourceFromEntity(page) ?? "", false);
       return;
     }
 
-    const image = config.image;
+    const image = page.image;
     if (!image) {
-      this._setImage("");
+      this._setImage("", false);
       return;
     }
 
     let mediaId: string | undefined;
     if (typeof image === "string") {
       if (!isMediaSourceId(image)) {
-        this._setImage(image);
+        this._setImage(image, false);
         return;
       }
       mediaId = image;
@@ -420,9 +544,16 @@ export class ImageNoteCard extends HTMLElement {
       mediaId = image.media_content_id;
     }
 
+    const cached = this._resolved.get(index);
+    if (cached && !cached.failed && cached.expiresAt > Date.now()) {
+      this._setImage(cached.url, false);
+      this._scheduleRefresh(cached.expiresAt);
+      return;
+    }
+
     if (!this._hass) {
       this._mediaPending = true;
-      this._setImage("");
+      this._setImage("", false);
       return;
     }
 
@@ -433,84 +564,131 @@ export class ImageNoteCard extends HTMLElement {
         expires: MEDIA_EXPIRES_SECONDS,
       })
       .then((result) => {
+        const expiresAt = Date.now() + MEDIA_REFRESH_MS;
+        this._resolved.set(index, { url: result.url, failed: false, expiresAt });
         if (token !== this._resolveToken) return;
-        this._setImage(result.url);
-        this._refreshTimer = window.setTimeout(() => this._resolveImage(), MEDIA_REFRESH_MS);
+        this._setImage(result.url, false);
+        this._scheduleRefresh(expiresAt);
       })
       .catch(() => {
+        this._resolved.set(index, { url: "", failed: true, expiresAt: 0 });
         if (token !== this._resolveToken) return;
-        this._imageFailed = true;
-        this._setImage("");
+        this._setImage("", true);
       });
   }
 
-  private _setImage(src: string): void {
+  private _scheduleRefresh(expiresAt: number): void {
+    window.clearTimeout(this._refreshTimer);
+    const delay = Math.max(1000, expiresAt - Date.now());
+    this._refreshTimer = window.setTimeout(() => this._resolveImage(), delay);
+  }
+
+  private _setImage(src: string, failed: boolean): void {
     const els = this._els;
     if (!els) return;
-    if (src === this._lastImageSrc && !this._imageFailed) {
+    if (src === this._lastImageSrc && !failed) {
       return;
     }
     this._lastImageSrc = src;
-    if (src) {
-      els.img.src = src;
-      els.img.classList.remove("hidden");
-    } else {
-      els.img.removeAttribute("src");
-      els.img.classList.add("hidden");
+    const previous = this._activeLayer === "a" ? els.imgA : els.imgB;
+    if (!src) {
+      previous.removeAttribute("src");
+      previous.classList.add("hidden");
+      this._updatePlaceholder(failed);
+      return;
     }
-    this._updatePlaceholder();
+    // Crossfade: load into the inactive layer, then swap when it arrives.
+    const nextLayer = this._activeLayer === "a" ? "b" : "a";
+    const next = nextLayer === "a" ? els.imgA : els.imgB;
+    if (!previous.getAttribute("src")) {
+      // Nothing visible yet: load straight into the active layer.
+      previous.classList.remove("hidden");
+      previous.src = src;
+      this._updatePlaceholder(false, true);
+      return;
+    }
+    next.classList.remove("hidden");
+    next.dataset.pending = "1";
+    next.src = src;
+    this._updatePlaceholder(false, true);
   }
 
-  private _updatePlaceholder(): void {
+  private _swapLayers(loaded: HTMLImageElement): void {
     const els = this._els;
     if (!els) return;
-    const hasImage = Boolean(this._lastImageSrc) && !this._imageFailed;
+    const layer = loaded === els.imgA ? "a" : "b";
+    this._activeLayer = layer;
+    els.imgA.classList.toggle("inactive", layer !== "a");
+    els.imgB.classList.toggle("active", layer === "b");
+    const other = layer === "a" ? els.imgB : els.imgA;
+    window.setTimeout(() => {
+      if (this._activeLayer === layer) {
+        other.removeAttribute("src");
+        other.classList.add("hidden");
+      }
+    }, 400);
+  }
+
+  private _updatePlaceholder(failed = false, loading = false): void {
+    const els = this._els;
+    if (!els) return;
+    const hasImage = Boolean(this._lastImageSrc) && !failed;
     els.placeholder.classList.toggle("hidden", hasImage);
-    els.img.classList.toggle("hidden", !hasImage);
+    if (!hasImage) {
+      els.imgA.classList.add("hidden");
+      els.imgB.classList.add("hidden");
+    }
     const t = (key: string) => translate(this._lang, key);
-    if (this._imageFailed) {
+    if (failed) {
       els.placeholderIcon.setAttribute("icon", "mdi:image-broken-variant");
       els.placeholderTitle.textContent = t("imageError");
       els.placeholderHelp.textContent = "";
-    } else {
+    } else if (!loading) {
       els.placeholderIcon.setAttribute("icon", "mdi:image-plus-outline");
       els.placeholderTitle.textContent = t("noImage");
       els.placeholderHelp.textContent = t("noImageHelp");
     }
   }
 
-  private readonly _onImageError = (): void => {
-    if (!this._lastImageSrc) return;
-    this._imageFailed = true;
-    this._updatePlaceholder();
-  };
+  private _onImageError(img: HTMLImageElement): void {
+    if (!img.getAttribute("src")) return;
+    if (img.dataset.pending) {
+      delete img.dataset.pending;
+      img.removeAttribute("src");
+      img.classList.add("hidden");
+    }
+    this._updatePlaceholder(true);
+  }
 
-  private readonly _onImageLoad = (): void => {
-    this._imageFailed = false;
-    this._updatePlaceholder();
+  private _onImageLoad(img: HTMLImageElement): void {
+    if (img.dataset.pending) {
+      delete img.dataset.pending;
+      this._swapLayers(img);
+    }
+    this._updatePlaceholder(false);
     this._updateDepth();
-  };
+  }
 
   // ---------------------------------------------------------------- note
 
   private _noteSource(): NoteSource {
     const config = this._config;
-    const empty: NoteSource = { text: "", editable: false, error: "", max: null, domain: "", changed: "" };
-    if (!config) return empty;
-    if (!config.note_entity) {
-      return { ...empty, text: config.note };
+    const page = this.page;
+    const empty: NoteSource = { text: "", editable: false, error: "", max: null, domain: "", changed: "", entityId: "" };
+    if (!config || !page) return empty;
+    if (!page.note_entity) {
+      return { ...empty, text: page.note };
     }
-    const entity: HassEntity | undefined = this._hass?.states[config.note_entity];
+    const entity: HassEntity | undefined = this._hass?.states[page.note_entity];
     if (!entity) {
       return {
         ...empty,
-        error: this._hass
-          ? translate(this._lang, "entityMissing", { entity: config.note_entity })
-          : "",
+        entityId: page.note_entity,
+        error: this._hass ? translate(this._lang, "entityMissing", { entity: page.note_entity }) : "",
       };
     }
-    const domain = config.note_entity.split(".")[0];
-    const attr = config.note_attribute;
+    const domain = page.note_entity.split(".")[0];
+    const attr = page.note_attribute;
     let text: string;
     if (attr) {
       const raw = entity.attributes[attr];
@@ -526,18 +704,19 @@ export class ImageNoteCard extends HTMLElement {
       max,
       domain,
       changed: config.show_updated ? entity.last_changed ?? "" : "",
+      entityId: page.note_entity,
     };
   }
 
   private _applyHass(): void {
     const els = this._els;
-    if (!els || !this._config) return;
+    const page = this.page;
+    if (!els || !this._config || !page) return;
 
-    if (this._config.image_entity) {
-      const src = this._imageSourceFromEntity() ?? "";
+    if (page.image_entity) {
+      const src = this._imageSourceFromEntity(page) ?? "";
       if (src !== this._lastImageSrc) {
-        this._imageFailed = false;
-        this._setImage(src);
+        this._setImage(src, false);
       }
     }
 
@@ -549,7 +728,8 @@ export class ImageNoteCard extends HTMLElement {
       last.editable === source.editable &&
       last.error === source.error &&
       last.max === source.max &&
-      last.changed === source.changed
+      last.changed === source.changed &&
+      last.entityId === source.entityId
     ) {
       return;
     }
@@ -646,7 +826,7 @@ export class ImageNoteCard extends HTMLElement {
     const source = this._lastNote ?? this._noteSource();
     if (!els || !source.editable || !this._hass) return;
     this._editing = true;
-    this._stopAutoFlip();
+    this._stopTimers();
     this._setSide("note");
     els.scene.classList.add("editing");
     els.noteBody.style.display = "none";
@@ -681,7 +861,7 @@ export class ImageNoteCard extends HTMLElement {
     els.editButton.classList.toggle("hidden", !source.editable);
     this._renderNote(source);
     this._renderMeta();
-    this._startAutoFlip();
+    this._startTimers();
     els.stage.focus({ preventScroll: true });
   }
 
@@ -692,8 +872,7 @@ export class ImageNoteCard extends HTMLElement {
 
   private async _saveEdit(): Promise<void> {
     const els = this._els;
-    const config = this._config;
-    if (!els || !config || !this._hass || !this._editing || this._saving) return;
+    if (!els || !this._hass || !this._editing || this._saving) return;
     const source = this._lastNote ?? this._noteSource();
     const value = els.textarea.value;
     if (value === source.text) {
@@ -707,7 +886,7 @@ export class ImageNoteCard extends HTMLElement {
     els.errorText.textContent = "";
     try {
       await this._hass.callService(source.domain, "set_value", {
-        entity_id: config.note_entity,
+        entity_id: source.entityId,
         value,
       });
       // Show the new text immediately; the state update will confirm it shortly.
@@ -750,7 +929,8 @@ export class ImageNoteCard extends HTMLElement {
 
   private async _handleGesture(kind: ActionKind): Promise<void> {
     const config = this._config;
-    if (!config || this._editing) return;
+    const page = this.page;
+    if (!config || !page || this._editing) return;
     if (kind === "tap") {
       const root = this._root as ShadowRoot & { getSelection?: () => Selection | null };
       const selection = root.getSelection ? root.getSelection() : window.getSelection();
@@ -759,7 +939,13 @@ export class ImageNoteCard extends HTMLElement {
     const action =
       kind === "hold" ? config.hold_action : kind === "double_tap" ? config.double_tap_action : config.tap_action;
     try {
-      const shouldFlip = await runAction(this, this._hass, config, action, translate(this._lang, "confirm"));
+      const shouldFlip = await runAction(
+        this,
+        this._hass,
+        { note_entity: page.note_entity, image_entity: page.image_entity },
+        action,
+        translate(this._lang, "confirm"),
+      );
       if (shouldFlip) this.flip();
     } catch (err) {
       console.warn("ImageNote: action failed", err);
@@ -772,6 +958,12 @@ export class ImageNoteCard extends HTMLElement {
     if (ev.key === "Enter" || ev.key === " ") {
       ev.preventDefault();
       void this._handleGesture("tap");
+    } else if (ev.key === "ArrowRight") {
+      ev.preventDefault();
+      this.goTo("next");
+    } else if (ev.key === "ArrowLeft") {
+      ev.preventDefault();
+      this.goTo("prev");
     }
   };
 
@@ -791,26 +983,34 @@ export class ImageNoteCard extends HTMLElement {
 
   // ---------------------------------------------------------------- timers & layout
 
-  private _startAutoFlip(): void {
-    this._stopAutoFlip();
-    const seconds = this._config?.auto_flip ?? 0;
-    if (!this.isConnected || seconds <= 0) return;
-    this._autoFlipTimer = window.setInterval(() => {
-      if (this._editing) return;
-      this._setSide(this._side === "image" ? "note" : "image");
-    }, seconds * 1000);
-  }
-
-  private _stopAutoFlip(): void {
-    if (this._autoFlipTimer !== undefined) {
-      window.clearInterval(this._autoFlipTimer);
-      this._autoFlipTimer = undefined;
+  private _startTimers(): void {
+    this._stopTimers();
+    const config = this._config;
+    if (!this.isConnected || !config) return;
+    if (config.auto_flip > 0) {
+      this._autoFlipTimer = window.setInterval(() => {
+        if (this._editing) return;
+        this._setSide(this._side === "image" ? "note" : "image");
+      }, config.auto_flip * 1000);
+    }
+    if (config.auto_advance > 0 && config.pages.length > 1) {
+      this._autoAdvanceTimer = window.setInterval(() => {
+        if (this._editing) return;
+        this._showPage((this._index + 1) % config.pages.length);
+      }, config.auto_advance * 1000);
     }
   }
 
-  private _restartAutoFlip(): void {
-    if (this._autoFlipTimer !== undefined) {
-      this._startAutoFlip();
+  private _stopTimers(): void {
+    window.clearInterval(this._autoFlipTimer);
+    window.clearInterval(this._autoAdvanceTimer);
+    this._autoFlipTimer = undefined;
+    this._autoAdvanceTimer = undefined;
+  }
+
+  private _restartTimers(): void {
+    if (this._autoFlipTimer !== undefined || this._autoAdvanceTimer !== undefined) {
+      this._startTimers();
     }
   }
 
