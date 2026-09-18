@@ -66,6 +66,8 @@ export interface ImageNoteCardConfig extends PageConfig {
   show_title?: boolean;
   show_updated?: boolean;
   show_navigation?: boolean;
+  upload_target?: "image" | "media";
+  upload_folder?: string;
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
   double_tap_action?: ActionConfig;

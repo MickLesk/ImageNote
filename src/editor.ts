@@ -25,6 +25,8 @@ interface HaFormElement extends HTMLElement {
 }
 
 const UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
+const UPLOAD_TARGETS = ["image", "media"];
+const EDITOR_DEFAULTS: Record<string, unknown> = { upload_target: "image", upload_folder: "imagenote" };
 const PAGE_KEYS: Array<keyof PageConfig> = ["title", "image", "image_entity", "note", "note_entity", "note_attribute"];
 
 const TEMPLATE = `
@@ -42,6 +44,8 @@ const TEMPLATE = `
       <button class="btn primary upload" type="button"><ha-icon icon="mdi:upload"></ha-icon><span></span></button>
       <button class="btn clear" type="button"><ha-icon icon="mdi:close"></ha-icon><span></span></button>
       <button class="btn remove-page" type="button"><ha-icon icon="mdi:delete-outline"></ha-icon><span></span></button>
+      <button class="btn move-left" type="button"><ha-icon icon="mdi:arrow-left"></ha-icon><span></span></button>
+      <button class="btn move-right" type="button"><ha-icon icon="mdi:arrow-right"></ha-icon><span></span></button>
     </div>
     <div class="status"></div>
     <input class="file" type="file" accept="image/*" hidden />
@@ -210,6 +214,8 @@ export class ImageNoteCardEditor extends HTMLElement {
   private _clearButton?: HTMLButtonElement;
   private _uploadButton?: HTMLButtonElement;
   private _removePageButton?: HTMLButtonElement;
+  private _moveLeftButton?: HTMLButtonElement;
+  private _moveRightButton?: HTMLButtonElement;
   private _uploading = false;
   private _previewToken = 0;
 
@@ -298,6 +304,16 @@ export class ImageNoteCardEditor extends HTMLElement {
     this._emit(this._withPages(this._config ?? { type: "" }, pages));
   }
 
+  private _movePage(delta: number): void {
+    const pages = this._pages().map((p) => ({ ...p }));
+    const from = this._pageIndex;
+    const to = from + delta;
+    if (to < 0 || to >= pages.length) return;
+    [pages[from], pages[to]] = [pages[to], pages[from]];
+    this._pageIndex = to;
+    this._emit(this._withPages(this._config ?? { type: "" }, pages));
+  }
+
   private _selectPage(index: number): void {
     this._pageIndex = index;
     this._render();
@@ -332,6 +348,8 @@ export class ImageNoteCardEditor extends HTMLElement {
     this._clearButton = q<HTMLButtonElement>(".clear");
     this._uploadButton = q<HTMLButtonElement>(".upload");
     this._removePageButton = q<HTMLButtonElement>(".remove-page");
+    this._moveLeftButton = q<HTMLButtonElement>(".move-left");
+    this._moveRightButton = q<HTMLButtonElement>(".move-right");
 
     this._pageForm?.addEventListener("value-changed", this._onPageValueChanged as EventListener);
     this._cardForm?.addEventListener("value-changed", this._onCardValueChanged as EventListener);
@@ -345,6 +363,8 @@ export class ImageNoteCardEditor extends HTMLElement {
       this._emit(this._withPage(this._pageIndex, { ...this._page(), image: undefined, image_entity: undefined }));
     });
     this._removePageButton?.addEventListener("click", () => this._removePage());
+    this._moveLeftButton?.addEventListener("click", () => this._movePage(-1));
+    this._moveRightButton?.addEventListener("click", () => this._movePage(1));
     this._previewImg?.addEventListener("error", () => {
       this._preview?.classList.remove("has-image");
     });
@@ -366,6 +386,8 @@ export class ImageNoteCardEditor extends HTMLElement {
     setText(".upload span", t("editor_upload"));
     setText(".clear span", t("editor_clear"));
     setText(".remove-page span", t("editor_remove_page"));
+    setText(".move-left span", t("editor_move_left"));
+    setText(".move-right span", t("editor_move_right"));
 
     const pages = this._pages();
     if (this._chips) {
@@ -387,6 +409,8 @@ export class ImageNoteCardEditor extends HTMLElement {
       this._chips.append(add);
     }
     this._removePageButton?.classList.toggle("hidden", pages.length <= 1);
+    this._moveLeftButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex === 0);
+    this._moveRightButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex >= pages.length - 1);
 
     const computeHelper = (schema: FormSchema) => {
       const key = `editor_${schema.name}_help`;
@@ -504,6 +528,20 @@ export class ImageNoteCardEditor extends HTMLElement {
         ],
       },
       {
+        name: "upload_settings",
+        type: "expandable",
+        flatten: true,
+        icon: "mdi:folder-image",
+        title: t("editor_upload_settings"),
+        schema: [
+          {
+            name: "upload_target",
+            selector: { select: { mode: "dropdown", options: options(UPLOAD_TARGETS, "upload_target") } },
+          },
+          { name: "upload_folder", selector: { text: {} } },
+        ],
+      },
+      {
         name: "behaviour",
         type: "expandable",
         flatten: true,
@@ -550,7 +588,7 @@ export class ImageNoteCardEditor extends HTMLElement {
 
   private _cardData(): Record<string, unknown> {
     const config = this._config ?? ({ type: "" } as ImageNoteCardConfig);
-    const data: Record<string, unknown> = { ...DEFAULTS };
+    const data: Record<string, unknown> = { ...DEFAULTS, ...EDITOR_DEFAULTS };
     for (const [key, value] of Object.entries(config)) {
       if (key === "images" || (PAGE_KEYS as string[]).includes(key) && key !== "title") continue;
       data[key] = value;
@@ -584,9 +622,10 @@ export class ImageNoteCardEditor extends HTMLElement {
     const next: Record<string, unknown> = { ...this._config };
     for (const [key, raw] of Object.entries(value)) {
       if (key === "type" || key === "images" || ((PAGE_KEYS as string[]).includes(key) && key !== "title")) continue;
-      const fallback = (DEFAULTS as Record<string, unknown>)[key];
+      const fallback =
+        key in DEFAULTS ? (DEFAULTS as Record<string, unknown>)[key] : EDITOR_DEFAULTS[key];
       const isDefault =
-        key in DEFAULTS &&
+        (key in DEFAULTS || key in EDITOR_DEFAULTS) &&
         (raw === fallback ||
           (typeof raw === "object" && raw !== null && JSON.stringify(raw) === JSON.stringify(fallback)));
       if (raw === undefined || raw === null || raw === "" || isDefault) {
@@ -624,28 +663,9 @@ export class ImageNoteCardEditor extends HTMLElement {
     this._setStatus(t("editor_uploading"), false);
     if (this._uploadButton) this._uploadButton.disabled = true;
     try {
-      const body = new FormData();
-      body.append("file", file);
-      const init: RequestInit = { method: "POST", body };
-      let response: Response;
-      if (hass.fetchWithAuth) {
-        response = await hass.fetchWithAuth("/api/image/upload", init);
-      } else {
-        const token = hass.auth?.data?.access_token ?? "";
-        response = await fetch("/api/image/upload", {
-          ...init,
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      }
-      if (response.status === 413) {
-        throw new Error(t("editor_upload_too_large"));
-      }
-      if (!response.ok) {
-        throw new Error(`${response.status} ${response.statusText}`);
-      }
-      const media = (await response.json()) as { id: string };
-      const url = `/api/image/serve/${media.id}/original`;
-      this._emit(this._withPage(this._pageIndex, { ...this._page(), image: url, image_entity: undefined }));
+      const target = this._config?.upload_target === "media" ? "media" : "image";
+      const image = target === "media" ? await this._uploadToMedia(hass, file) : await this._uploadToImageStore(hass, file);
+      this._emit(this._withPage(this._pageIndex, { ...this._page(), image, image_entity: undefined }));
       this._setStatus(t("editor_upload_done"), false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -654,6 +674,49 @@ export class ImageNoteCardEditor extends HTMLElement {
       this._uploading = false;
       if (this._uploadButton) this._uploadButton.disabled = false;
     }
+  }
+
+  private async _fetch(hass: HomeAssistant, path: string, init: RequestInit): Promise<Response> {
+    if (hass.fetchWithAuth) {
+      return hass.fetchWithAuth(path, init);
+    }
+    const token = hass.auth?.data?.access_token ?? "";
+    return fetch(path, { ...init, headers: { Authorization: `Bearer ${token}` } });
+  }
+
+  private _checkResponse(response: Response): void {
+    const t = (key: string) => translate(this._lang, key);
+    if (response.status === 413) throw new Error(t("editor_upload_too_large"));
+    if (response.status === 401 || response.status === 403) throw new Error(t("editor_upload_forbidden"));
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  }
+
+  /** Home Assistant's own image store (/config/image), served by id. */
+  private async _uploadToImageStore(hass: HomeAssistant, file: File): Promise<string> {
+    const body = new FormData();
+    body.append("file", file);
+    const response = await this._fetch(hass, "/api/image/upload", { method: "POST", body });
+    this._checkResponse(response);
+    const media = (await response.json()) as { id: string };
+    return `/api/image/serve/${media.id}/original`;
+  }
+
+  /** The local media folder (/media/<folder>/), stored as a plain file. */
+  private async _uploadToMedia(hass: HomeAssistant, file: File): Promise<string> {
+    const folder = (this._config?.upload_folder ?? (EDITOR_DEFAULTS.upload_folder as string))
+      .trim()
+      .replace(/^\/+|\/+$/g, "");
+    const target = `${MEDIA_SOURCE_PREFIX}media_source/local${folder ? `/${folder}` : ""}`;
+    // A timestamp keeps two uploads of "photo.jpg" from overwriting each other.
+    const safeName = file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
+    const renamed = new File([file], `${Date.now()}-${safeName}`, { type: file.type });
+    const body = new FormData();
+    body.append("media_content_id", target);
+    body.append("file", renamed);
+    const response = await this._fetch(hass, "/api/media_source/local_source/upload", { method: "POST", body });
+    this._checkResponse(response);
+    const result = (await response.json()) as { media_content_id: string };
+    return result.media_content_id;
   }
 
   private _setStatus(text: string, isError: boolean): void {

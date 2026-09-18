@@ -140,6 +140,8 @@ direction: vertical
 | `auto_flip` | `0` | Turn the card over automatically every *n* seconds. `0` disables it. |
 | `auto_advance` | `0` | With several pictures: show the next one every *n* seconds. `0` disables it. |
 | `show_navigation` | `true` | With several pictures: show the arrows and dots. Swiping and the arrow keys always work. |
+| `upload_target` | `image` | Where the editor's upload button stores files: `image` (Home Assistant's image store) or `media` (the media folder). |
+| `upload_folder` | `imagenote` | With `upload_target: media`: the folder below `/media`. Created on the first upload. |
 | `hover_flip` | `false` | Show the note while the pointer hovers over the card (mouse devices only). |
 | `show_hint` | `true` | Show the small “Note” / “Photo” badge in the corner. |
 | `show_title` | `true` | Show the title overlay on the picture. |
@@ -199,11 +201,26 @@ The card uses your theme. These CSS variables can be overridden with
 
 ## How pictures are stored
 
-The editor's **Upload picture** button sends the file to Home Assistant's own
-image upload API (the same one used for person and area pictures). The file is
-kept in `/config/image/` and served from `/api/image/serve/<id>/original`.
-`media-source://` ids are resolved through the media source API and renewed
+The editor's **Upload picture** button has two targets, chosen under *Where
+uploads are stored*:
+
+| Target | Where the file ends up | Notes |
+| --- | --- | --- |
+| **Home Assistant image store** (default) | `/config/image/<id>/original` | The same API that person and area pictures use. Served by id from `/api/image/serve/<id>/original`, so the file name never leaks into the dashboard. The location is fixed by Home Assistant. |
+| **Media folder** | `/media/<folder>/<timestamp>-<name>` | A plain file you can see in the media browser, back up, and manage with Samba or the file editor. Uploading here needs an administrator account. The folder is configurable per card and created on demand. |
+
+Any picture that already exists in `/config/www/` can be used with a `/local/`
+path, and any file in `/media` with its `media-source://media_source/local/…`
+id. Media-source ids are resolved through the media source API and renewed
 before the signed URL expires.
+
+## Sizing
+
+In sections view the card fills the rows it is given (default 6 × 4, minimum
+4 × 2) and scrolls a long note behind a soft fade above the footer. In masonry
+view the card follows `aspect_ratio`. Below about 260 px width the badges
+shrink to icons and paddings tighten; below 160 px height the "Updated" line
+is hidden.
 
 ## Development
 

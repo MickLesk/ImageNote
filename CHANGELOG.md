@@ -26,4 +26,16 @@ All notable changes to ImageNote are documented here. The format follows
   title. Arrows, dots, swipe and arrow keys move between them; `auto_advance`
   runs a slideshow; pictures crossfade. The editor manages the pictures as
   tabs.
+- Upload target per card: Home Assistant's image store or a folder in
+  `/media`.
+- Pictures can be reordered in the editor.
 - Browser smoke tests with Playwright, run in CI.
+
+### Fixed
+
+- The card overflowed its rows in sections view because it kept its aspect
+  ratio instead of filling the height Home Assistant assigned.
+- The "Photo" badge and the dots no longer overlap a long note: the note side
+  now has a footer, the text scrolls above it behind a fade.
+- Small cards (layout editor preview, 4 columns) tighten paddings and shrink
+  the badges to icons instead of truncating everything.

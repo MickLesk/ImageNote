@@ -48,6 +48,7 @@ interface Elements {
   editButton: HTMLButtonElement;
   noteBody: HTMLElement;
   noteMeta: HTMLElement;
+  noteFooter: HTMLElement;
   noteEditor: HTMLElement;
   textarea: HTMLTextAreaElement;
   errorText: HTMLElement;
@@ -106,7 +107,6 @@ const TEMPLATE = `
           <button class="icon-button edit" type="button"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
         </div>
         <div class="note-body"></div>
-        <div class="note-meta"></div>
         <div class="note-editor">
           <textarea rows="4" spellcheck="true"></textarea>
           <div class="error-text"></div>
@@ -116,8 +116,14 @@ const TEMPLATE = `
             <button class="btn primary save" type="button"></button>
           </div>
         </div>
-        ${NAV_TEMPLATE}
-        <div class="badge back-badge"><ha-icon icon="mdi:image-outline"></ha-icon><span></span></div>
+        <div class="note-footer">
+          <div class="note-meta"></div>
+          <div class="spacer"></div>
+          <div class="dots"></div>
+          <div class="badge back-badge"><ha-icon icon="mdi:image-outline"></ha-icon><span></span></div>
+        </div>
+        <button class="nav prev" type="button"><ha-icon icon="${CHEVRON_LEFT}"></ha-icon></button>
+        <button class="nav next" type="button"><ha-icon icon="${CHEVRON_RIGHT}"></ha-icon></button>
       </div>
     </div>
   </div>
@@ -231,7 +237,7 @@ export class ImageNoteCard extends HTMLElement {
   }
 
   getGridOptions(): Record<string, number> {
-    return { columns: 6, rows: 4, min_columns: 3, min_rows: 2 };
+    return { columns: 6, rows: 4, min_columns: 4, min_rows: 2 };
   }
 
   /** Public helper so automations / other cards can flip the card programmatically. */
@@ -291,6 +297,7 @@ export class ImageNoteCard extends HTMLElement {
       editButton: q(".edit"),
       noteBody: q(".note-body"),
       noteMeta: q(".note-meta"),
+      noteFooter: q(".note-footer"),
       noteEditor: q(".note-editor"),
       textarea: q("textarea"),
       errorText: q(".error-text"),
@@ -342,6 +349,7 @@ export class ImageNoteCard extends HTMLElement {
     });
     els.cancelButton.addEventListener("click", () => this._cancelEdit());
     els.saveButton.addEventListener("click", () => void this._saveEdit());
+    els.noteBody.addEventListener("scroll", () => this._updateScrollState(), { passive: true });
 
     this._buildDots();
     this._applyStrings();
@@ -371,6 +379,7 @@ export class ImageNoteCard extends HTMLElement {
       button.classList.toggle("hidden", !show);
     }
     els.titleOverlay.classList.toggle("with-dots", show);
+    this._updateFooter();
   }
 
   private _applyConfig(): void {
@@ -393,6 +402,28 @@ export class ImageNoteCard extends HTMLElement {
     els.frontBadge.classList.toggle("hidden", !config.show_hint);
     els.backBadge.classList.toggle("hidden", !config.show_hint);
     this._applySide();
+    this._updateFooter();
+  }
+
+  private _updateFooter(): void {
+    const els = this._els;
+    const config = this._config;
+    if (!els || !config) return;
+    const hasMeta = !els.noteMeta.classList.contains("hidden") && els.noteMeta.textContent !== "";
+    const hasDots = config.pages.length > 1 && config.show_navigation;
+    els.noteFooter.classList.toggle("hidden", this._editing || (!hasMeta && !hasDots && !config.show_hint));
+    this._updateScrollState();
+  }
+
+  /** Marks the note side as scrollable so the footer can fade the text out above it. */
+  private _updateScrollState(): void {
+    const els = this._els;
+    if (!els) return;
+    const body = els.noteBody;
+    const scrollable = body.scrollHeight > body.clientHeight + 1;
+    const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
+    els.back.classList.toggle("scrollable", scrollable);
+    els.back.classList.toggle("at-end", atEnd);
   }
 
   private _applyTitles(): void {
@@ -739,6 +770,7 @@ export class ImageNoteCard extends HTMLElement {
       this._renderNote(source);
     }
     this._renderMeta();
+    requestAnimationFrame(() => this._updateScrollState());
   }
 
   private _renderMeta(): void {
@@ -748,11 +780,13 @@ export class ImageNoteCard extends HTMLElement {
     if (!changed || this._editing) {
       els.noteMeta.textContent = "";
       els.noteMeta.classList.add("hidden");
+      this._updateFooter();
       return;
     }
     const relative = formatRelativeTime(new Date(changed), this._lang);
     els.noteMeta.textContent = translate(this._lang, "updated", { time: relative });
     els.noteMeta.classList.remove("hidden");
+    this._updateFooter();
   }
 
   private _startMetaTimer(): void {
@@ -832,7 +866,7 @@ export class ImageNoteCard extends HTMLElement {
     els.noteBody.style.display = "none";
     els.editButton.classList.add("hidden");
     els.noteEditor.classList.add("visible");
-    els.noteMeta.classList.add("hidden");
+    els.noteFooter.classList.add("hidden");
     els.errorText.textContent = "";
     els.textarea.value = source.text;
     if (source.max) {
@@ -1017,7 +1051,10 @@ export class ImageNoteCard extends HTMLElement {
   private _observeResize(): void {
     if (!this._els || typeof ResizeObserver === "undefined") return;
     this._resizeObserver?.disconnect();
-    this._resizeObserver = new ResizeObserver(() => this._updateDepth());
+    this._resizeObserver = new ResizeObserver(() => {
+      this._updateDepth();
+      this._updateScrollState();
+    });
     this._resizeObserver.observe(this._els.stage);
   }
 

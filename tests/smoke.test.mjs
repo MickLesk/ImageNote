@@ -28,11 +28,11 @@ async function openDemo(options = {}) {
   return { page, context, errors };
 }
 
-const card = (page, index) => page.locator("imagenote-card").nth(index);
+const card = (page, index) => page.locator("#grid imagenote-card").nth(index);
 
 test("demo renders every card without page errors", async () => {
   const { page, context, errors } = await openDemo();
-  assert.equal(await page.locator("imagenote-card").count(), 10);
+  assert.equal(await page.locator("#grid imagenote-card").count(), 10);
   assert.deepEqual(errors, []);
   assert.equal(await card(page, 0).locator(".title-overlay").innerText(), "Kitchen");
   assert.equal(await card(page, 0).locator(".stage").getAttribute("aria-pressed"), "false");
@@ -177,6 +177,50 @@ test("the editor adds and removes pictures", async () => {
   assert.equal(latest.image, "./sample-2.svg");
   assert.equal(latest.note_entity, "input_text.fridge_note");
   configs.push(latest);
+  await context.close();
+});
+
+test("fixed-height hosts (sections view) are never overflowed", async () => {
+  const { page, context } = await openDemo();
+  const sizes = await page.evaluate(() =>
+    Array.from(document.querySelectorAll("#sections .host")).map((host) => {
+      const card = host.querySelector("imagenote-card");
+      const h = host.getBoundingClientRect();
+      const c = card.shadowRoot.querySelector("ha-card").getBoundingClientRect();
+      const back = card.shadowRoot.querySelector(".back").getBoundingClientRect();
+      return { host: [h.width, h.height], card: [c.width, c.height], back: [back.width, back.height] };
+    }),
+  );
+  for (const { host, card: c, back } of sizes) {
+    assert.deepEqual(c, host);
+    assert.deepEqual(back, host);
+  }
+  // The note side keeps its footer inside the card and scrolls long text.
+  const first = page.locator("#sections imagenote-card").first();
+  assert.equal(await first.locator(".back").evaluate((el) => el.classList.contains("scrollable")), true);
+  const footer = await first.locator(".note-footer").boundingBox();
+  const host = await page.locator("#sections .host").first().boundingBox();
+  assert.ok(footer.y + footer.height <= host.y + host.height + 0.5);
+  await context.close();
+});
+
+test("the editor reorders pictures", async () => {
+  const { page, context } = await openDemo();
+  const editor = page.locator("imagenote-card-editor");
+  await page.evaluate(() => {
+    window.__configs = [];
+    document.querySelector("imagenote-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
+  });
+  await editor.locator(".chip.add").click();
+  assert.equal(await editor.locator(".move-left").isVisible(), true);
+  assert.equal(await editor.locator(".move-right").isVisible(), false);
+  await editor.locator(".move-left").click();
+  const latest = await page.evaluate(() => window.__configs.at(-1));
+  assert.equal(latest.images.length, 2);
+  assert.equal(latest.images[1].image, "./sample-2.svg");
+  assert.equal(await editor.locator(".chip.active").innerText(), "Picture 1");
+  assert.equal(await editor.locator(".move-left").isVisible(), false);
+  assert.equal(await editor.locator(".move-right").isVisible(), true);
   await context.close();
 });
 

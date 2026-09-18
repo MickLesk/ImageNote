@@ -1,6 +1,7 @@
 export const CARD_STYLES = `
 :host {
   display: block;
+  height: 100%;
   --imagenote-duration: 700ms;
   --imagenote-easing: cubic-bezier(0.4, 0.05, 0.2, 1);
   --imagenote-radius: var(--ha-card-border-radius, 12px);
@@ -30,9 +31,11 @@ ha-card {
 }
 .stage.ratio {
   aspect-ratio: var(--imagenote-aspect, 16 / 9);
+  container-type: size;
 }
 .stage.natural {
   height: auto;
+  container-type: inline-size;
 }
 .stage:focus-visible::after {
   content: "";
@@ -316,7 +319,7 @@ ha-card {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 16px 16px;
+  padding: 0 16px 8px;
   line-height: 1.5;
   font-size: 0.98em;
   overscroll-behavior: contain;
@@ -342,11 +345,37 @@ ha-card {
   margin-top: 0;
 }
 
+.note-footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 10px 16px;
+  min-height: 24px;
+}
+.note-footer.hidden {
+  display: none;
+}
+.note-footer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -28px;
+  height: 28px;
+  background: linear-gradient(to bottom, transparent, var(--imagenote-note-background));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.back.scrollable:not(.at-end) .note-footer::before {
+  opacity: 1;
+}
 .note-meta {
-  padding: 0 16px 10px;
+  flex: 1;
+  min-width: 0;
   font-size: 0.75em;
   color: var(--secondary-text-color);
-  max-width: calc(100% - 110px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -354,6 +383,17 @@ ha-card {
 .note-meta.hidden,
 .note-meta:empty {
   display: none;
+}
+.note-footer .spacer {
+  flex: 1;
+}
+.back .dots {
+  position: static;
+  flex: none;
+}
+.back .badge {
+  position: static;
+  flex: none;
 }
 
 .icon-button {
@@ -506,6 +546,30 @@ ha-card {
   .scene.hover-flip:not(.editing):hover .badge {
     opacity: 0;
   }
+}
+
+/* ---------- small cards ---------- */
+@container (max-width: 260px) {
+  .badge span { display: none; }
+  .badge { padding: 5px; gap: 0; }
+  .title-overlay { font-size: 1em; padding: 24px 12px 10px; }
+  .title-overlay.with-dots { padding-bottom: 22px; }
+  .note-header { padding: 8px 8px 4px 12px; gap: 8px; }
+  .note-header .title { font-size: 1em; }
+  .note-header ha-icon { --mdc-icon-size: 20px; }
+  .note-body { padding: 0 12px 6px; font-size: 0.92em; line-height: 1.4; }
+  .note-footer { padding: 2px 8px 8px 12px; }
+  .nav { width: 28px; height: 28px; }
+  .nav ha-icon { --mdc-icon-size: 20px; }
+  .placeholder small { display: none; }
+}
+@container (max-height: 160px) {
+  .note-meta { display: none; }
+  .note-header { padding-top: 6px; padding-bottom: 2px; }
+  .note-body { padding-bottom: 4px; }
+  .note-footer { padding-top: 0; padding-bottom: 6px; }
+  .title-overlay { padding-top: 20px; }
+  .placeholder ha-icon { display: none; }
 }
 `;
 

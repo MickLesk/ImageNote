@@ -393,6 +393,16 @@ var en = {
   editor_page_label: "Picture {index}",
   editor_page_title: "Title for this picture (optional)",
   editor_page_title_help: "Falls back to the card title.",
+  editor_move_left: "Move left",
+  editor_move_right: "Move right",
+  editor_upload_settings: "Where uploads are stored",
+  editor_upload_target: "Storage",
+  editor_upload_target_help: "Home Assistant's image storage keeps files in /config/image and serves them by id. The media folder keeps them as normal files under /media, visible in the media browser and in backups.",
+  editor_upload_folder: "Folder in /media",
+  editor_upload_folder_help: "Created on the first upload. Leave empty for the top level.",
+  upload_target_image: "Home Assistant image storage (/config/image)",
+  upload_target_media: "Media folder (/media/…)",
+  editor_upload_forbidden: "Only administrators can upload to the media folder",
   editor_hold_action: "Hold action",
   editor_double_tap_action: "Double tap action",
   editor_actions_help: "Tapping flips the card. Hold and double tap can open more info, navigate, open a URL, toggle an entity or perform an action.",
@@ -475,6 +485,16 @@ var de = {
   editor_page_label: "Bild {index}",
   editor_page_title: "Titel für dieses Bild (optional)",
   editor_page_title_help: "Sonst gilt der Kartentitel.",
+  editor_move_left: "Nach links",
+  editor_move_right: "Nach rechts",
+  editor_upload_settings: "Speicherort für Uploads",
+  editor_upload_target: "Speicher",
+  editor_upload_target_help: "Der Bildspeicher von Home Assistant legt Dateien unter /config/image ab und liefert sie per ID aus. Der Medienordner speichert sie als normale Dateien unter /media, sichtbar im Medienbrowser und in Backups.",
+  editor_upload_folder: "Ordner in /media",
+  editor_upload_folder_help: "Wird beim ersten Upload angelegt. Leer lassen für die oberste Ebene.",
+  upload_target_image: "Bildspeicher von Home Assistant (/config/image)",
+  upload_target_media: "Medienordner (/media/…)",
+  editor_upload_forbidden: "Nur Administratoren können in den Medienordner hochladen",
   editor_hold_action: "Aktion bei langem Drücken",
   editor_double_tap_action: "Aktion bei Doppeltipp",
   editor_actions_help: "Tippen dreht die Karte um. Langes Drücken und Doppeltipp können „Mehr Infos“ öffnen, navigieren, eine URL öffnen, eine Entität umschalten oder eine Aktion ausführen.",
@@ -514,6 +534,7 @@ function translate(language, key, vars) {
 var CARD_STYLES = `
 :host {
   display: block;
+  height: 100%;
   --imagenote-duration: 700ms;
   --imagenote-easing: cubic-bezier(0.4, 0.05, 0.2, 1);
   --imagenote-radius: var(--ha-card-border-radius, 12px);
@@ -543,9 +564,11 @@ ha-card {
 }
 .stage.ratio {
   aspect-ratio: var(--imagenote-aspect, 16 / 9);
+  container-type: size;
 }
 .stage.natural {
   height: auto;
+  container-type: inline-size;
 }
 .stage:focus-visible::after {
   content: "";
@@ -829,7 +852,7 @@ ha-card {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 16px 16px;
+  padding: 0 16px 8px;
   line-height: 1.5;
   font-size: 0.98em;
   overscroll-behavior: contain;
@@ -855,11 +878,37 @@ ha-card {
   margin-top: 0;
 }
 
+.note-footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 10px 16px;
+  min-height: 24px;
+}
+.note-footer.hidden {
+  display: none;
+}
+.note-footer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -28px;
+  height: 28px;
+  background: linear-gradient(to bottom, transparent, var(--imagenote-note-background));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.back.scrollable:not(.at-end) .note-footer::before {
+  opacity: 1;
+}
 .note-meta {
-  padding: 0 16px 10px;
+  flex: 1;
+  min-width: 0;
   font-size: 0.75em;
   color: var(--secondary-text-color);
-  max-width: calc(100% - 110px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -867,6 +916,17 @@ ha-card {
 .note-meta.hidden,
 .note-meta:empty {
   display: none;
+}
+.note-footer .spacer {
+  flex: 1;
+}
+.back .dots {
+  position: static;
+  flex: none;
+}
+.back .badge {
+  position: static;
+  flex: none;
 }
 
 .icon-button {
@@ -1020,6 +1080,30 @@ ha-card {
     opacity: 0;
   }
 }
+
+/* ---------- small cards ---------- */
+@container (max-width: 260px) {
+  .badge span { display: none; }
+  .badge { padding: 5px; gap: 0; }
+  .title-overlay { font-size: 1em; padding: 24px 12px 10px; }
+  .title-overlay.with-dots { padding-bottom: 22px; }
+  .note-header { padding: 8px 8px 4px 12px; gap: 8px; }
+  .note-header .title { font-size: 1em; }
+  .note-header ha-icon { --mdc-icon-size: 20px; }
+  .note-body { padding: 0 12px 6px; font-size: 0.92em; line-height: 1.4; }
+  .note-footer { padding: 2px 8px 8px 12px; }
+  .nav { width: 28px; height: 28px; }
+  .nav ha-icon { --mdc-icon-size: 20px; }
+  .placeholder small { display: none; }
+}
+@container (max-height: 160px) {
+  .note-meta { display: none; }
+  .note-header { padding-top: 6px; padding-bottom: 2px; }
+  .note-body { padding-bottom: 4px; }
+  .note-footer { padding-top: 0; padding-bottom: 6px; }
+  .title-overlay { padding-top: 20px; }
+  .placeholder ha-icon { display: none; }
+}
 `;
 var EDITOR_STYLES = `
 :host {
@@ -1086,7 +1170,6 @@ var TEMPLATE = `
           <button class="icon-button edit" type="button"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
         </div>
         <div class="note-body"></div>
-        <div class="note-meta"></div>
         <div class="note-editor">
           <textarea rows="4" spellcheck="true"></textarea>
           <div class="error-text"></div>
@@ -1096,8 +1179,14 @@ var TEMPLATE = `
             <button class="btn primary save" type="button"></button>
           </div>
         </div>
-        ${NAV_TEMPLATE}
-        <div class="badge back-badge"><ha-icon icon="mdi:image-outline"></ha-icon><span></span></div>
+        <div class="note-footer">
+          <div class="note-meta"></div>
+          <div class="spacer"></div>
+          <div class="dots"></div>
+          <div class="badge back-badge"><ha-icon icon="mdi:image-outline"></ha-icon><span></span></div>
+        </div>
+        <button class="nav prev" type="button"><ha-icon icon="${CHEVRON_LEFT}"></ha-icon></button>
+        <button class="nav next" type="button"><ha-icon icon="${CHEVRON_RIGHT}"></ha-icon></button>
       </div>
     </div>
   </div>
@@ -1198,7 +1287,7 @@ var ImageNoteCard = class extends HTMLElement {
     return 4;
   }
   getGridOptions() {
-    return { columns: 6, rows: 4, min_columns: 3, min_rows: 2 };
+    return { columns: 6, rows: 4, min_columns: 4, min_rows: 2 };
   }
   /** Public helper so automations / other cards can flip the card programmatically. */
   flip(side) {
@@ -1253,6 +1342,7 @@ var ImageNoteCard = class extends HTMLElement {
       editButton: q(".edit"),
       noteBody: q(".note-body"),
       noteMeta: q(".note-meta"),
+      noteFooter: q(".note-footer"),
       noteEditor: q(".note-editor"),
       textarea: q("textarea"),
       errorText: q(".error-text"),
@@ -1303,6 +1393,7 @@ var ImageNoteCard = class extends HTMLElement {
     });
     els.cancelButton.addEventListener("click", () => this._cancelEdit());
     els.saveButton.addEventListener("click", () => void this._saveEdit());
+    els.noteBody.addEventListener("scroll", () => this._updateScrollState(), { passive: true });
     this._buildDots();
     this._applyStrings();
   }
@@ -1330,6 +1421,7 @@ var ImageNoteCard = class extends HTMLElement {
       button.classList.toggle("hidden", !show);
     }
     els.titleOverlay.classList.toggle("with-dots", show);
+    this._updateFooter();
   }
   _applyConfig() {
     const els = this._els;
@@ -1349,6 +1441,26 @@ var ImageNoteCard = class extends HTMLElement {
     els.frontBadge.classList.toggle("hidden", !config.show_hint);
     els.backBadge.classList.toggle("hidden", !config.show_hint);
     this._applySide();
+    this._updateFooter();
+  }
+  _updateFooter() {
+    const els = this._els;
+    const config = this._config;
+    if (!els || !config) return;
+    const hasMeta = !els.noteMeta.classList.contains("hidden") && els.noteMeta.textContent !== "";
+    const hasDots = config.pages.length > 1 && config.show_navigation;
+    els.noteFooter.classList.toggle("hidden", this._editing || !hasMeta && !hasDots && !config.show_hint);
+    this._updateScrollState();
+  }
+  /** Marks the note side as scrollable so the footer can fade the text out above it. */
+  _updateScrollState() {
+    const els = this._els;
+    if (!els) return;
+    const body = els.noteBody;
+    const scrollable = body.scrollHeight > body.clientHeight + 1;
+    const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 1;
+    els.back.classList.toggle("scrollable", scrollable);
+    els.back.classList.toggle("at-end", atEnd);
   }
   _applyTitles() {
     const els = this._els;
@@ -1652,6 +1764,7 @@ var ImageNoteCard = class extends HTMLElement {
       this._renderNote(source);
     }
     this._renderMeta();
+    requestAnimationFrame(() => this._updateScrollState());
   }
   _renderMeta() {
     const els = this._els;
@@ -1660,11 +1773,13 @@ var ImageNoteCard = class extends HTMLElement {
     if (!changed || this._editing) {
       els.noteMeta.textContent = "";
       els.noteMeta.classList.add("hidden");
+      this._updateFooter();
       return;
     }
     const relative = formatRelativeTime(new Date(changed), this._lang);
     els.noteMeta.textContent = translate(this._lang, "updated", { time: relative });
     els.noteMeta.classList.remove("hidden");
+    this._updateFooter();
   }
   _startMetaTimer() {
     window.clearInterval(this._metaTimer);
@@ -1731,7 +1846,7 @@ var ImageNoteCard = class extends HTMLElement {
     els.noteBody.style.display = "none";
     els.editButton.classList.add("hidden");
     els.noteEditor.classList.add("visible");
-    els.noteMeta.classList.add("hidden");
+    els.noteFooter.classList.add("hidden");
     els.errorText.textContent = "";
     els.textarea.value = source.text;
     if (source.max) {
@@ -1898,7 +2013,10 @@ var ImageNoteCard = class extends HTMLElement {
   _observeResize() {
     if (!this._els || typeof ResizeObserver === "undefined") return;
     this._resizeObserver?.disconnect();
-    this._resizeObserver = new ResizeObserver(() => this._updateDepth());
+    this._resizeObserver = new ResizeObserver(() => {
+      this._updateDepth();
+      this._updateScrollState();
+    });
     this._resizeObserver.observe(this._els.stage);
   }
   /** The cube transition needs half the stage size as its rotation depth. */
@@ -1916,6 +2034,8 @@ var ImageNoteCard = class extends HTMLElement {
 
 // src/editor.ts
 var UI_ACTIONS = ["more-info", "toggle", "navigate", "url", "perform-action", "none"];
+var UPLOAD_TARGETS = ["image", "media"];
+var EDITOR_DEFAULTS = { upload_target: "image", upload_folder: "imagenote" };
 var PAGE_KEYS = ["title", "image", "image_entity", "note", "note_entity", "note_attribute"];
 var TEMPLATE2 = `
 <div class="pages">
@@ -1932,6 +2052,8 @@ var TEMPLATE2 = `
       <button class="btn primary upload" type="button"><ha-icon icon="mdi:upload"></ha-icon><span></span></button>
       <button class="btn clear" type="button"><ha-icon icon="mdi:close"></ha-icon><span></span></button>
       <button class="btn remove-page" type="button"><ha-icon icon="mdi:delete-outline"></ha-icon><span></span></button>
+      <button class="btn move-left" type="button"><ha-icon icon="mdi:arrow-left"></ha-icon><span></span></button>
+      <button class="btn move-right" type="button"><ha-icon icon="mdi:arrow-right"></ha-icon><span></span></button>
     </div>
     <div class="status"></div>
     <input class="file" type="file" accept="image/*" hidden />
@@ -2098,6 +2220,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
   _clearButton;
   _uploadButton;
   _removePageButton;
+  _moveLeftButton;
+  _moveRightButton;
   _uploading = false;
   _previewToken = 0;
   constructor() {
@@ -2173,6 +2297,15 @@ var ImageNoteCardEditor = class extends HTMLElement {
     this._pageIndex = Math.min(this._pageIndex, pages.length - 1);
     this._emit(this._withPages(this._config ?? { type: "" }, pages));
   }
+  _movePage(delta) {
+    const pages = this._pages().map((p) => ({ ...p }));
+    const from = this._pageIndex;
+    const to = from + delta;
+    if (to < 0 || to >= pages.length) return;
+    [pages[from], pages[to]] = [pages[to], pages[from]];
+    this._pageIndex = to;
+    this._emit(this._withPages(this._config ?? { type: "" }, pages));
+  }
   _selectPage(index) {
     this._pageIndex = index;
     this._render();
@@ -2200,6 +2333,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
     this._clearButton = q(".clear");
     this._uploadButton = q(".upload");
     this._removePageButton = q(".remove-page");
+    this._moveLeftButton = q(".move-left");
+    this._moveRightButton = q(".move-right");
     this._pageForm?.addEventListener("value-changed", this._onPageValueChanged);
     this._cardForm?.addEventListener("value-changed", this._onCardValueChanged);
     this._uploadButton?.addEventListener("click", () => this._fileInput?.click());
@@ -2212,6 +2347,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
       this._emit(this._withPage(this._pageIndex, { ...this._page(), image: void 0, image_entity: void 0 }));
     });
     this._removePageButton?.addEventListener("click", () => this._removePage());
+    this._moveLeftButton?.addEventListener("click", () => this._movePage(-1));
+    this._moveRightButton?.addEventListener("click", () => this._movePage(1));
     this._previewImg?.addEventListener("error", () => {
       this._preview?.classList.remove("has-image");
     });
@@ -2232,6 +2369,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
     setText(".upload span", t("editor_upload"));
     setText(".clear span", t("editor_clear"));
     setText(".remove-page span", t("editor_remove_page"));
+    setText(".move-left span", t("editor_move_left"));
+    setText(".move-right span", t("editor_move_right"));
     const pages = this._pages();
     if (this._chips) {
       this._chips.replaceChildren();
@@ -2252,6 +2391,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
       this._chips.append(add);
     }
     this._removePageButton?.classList.toggle("hidden", pages.length <= 1);
+    this._moveLeftButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex === 0);
+    this._moveRightButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex >= pages.length - 1);
     const computeHelper = (schema) => {
       const key = `editor_${schema.name}_help`;
       const text = t(key);
@@ -2363,6 +2504,20 @@ var ImageNoteCardEditor = class extends HTMLElement {
         ]
       },
       {
+        name: "upload_settings",
+        type: "expandable",
+        flatten: true,
+        icon: "mdi:folder-image",
+        title: t("editor_upload_settings"),
+        schema: [
+          {
+            name: "upload_target",
+            selector: { select: { mode: "dropdown", options: options(UPLOAD_TARGETS, "upload_target") } }
+          },
+          { name: "upload_folder", selector: { text: {} } }
+        ]
+      },
+      {
         name: "behaviour",
         type: "expandable",
         flatten: true,
@@ -2406,7 +2561,7 @@ var ImageNoteCardEditor = class extends HTMLElement {
   }
   _cardData() {
     const config = this._config ?? { type: "" };
-    const data = { ...DEFAULTS };
+    const data = { ...DEFAULTS, ...EDITOR_DEFAULTS };
     for (const [key, value] of Object.entries(config)) {
       if (key === "images" || PAGE_KEYS.includes(key) && key !== "title") continue;
       data[key] = value;
@@ -2437,8 +2592,8 @@ var ImageNoteCardEditor = class extends HTMLElement {
     const next = { ...this._config };
     for (const [key, raw] of Object.entries(value)) {
       if (key === "type" || key === "images" || PAGE_KEYS.includes(key) && key !== "title") continue;
-      const fallback = DEFAULTS[key];
-      const isDefault = key in DEFAULTS && (raw === fallback || typeof raw === "object" && raw !== null && JSON.stringify(raw) === JSON.stringify(fallback));
+      const fallback = key in DEFAULTS ? DEFAULTS[key] : EDITOR_DEFAULTS[key];
+      const isDefault = (key in DEFAULTS || key in EDITOR_DEFAULTS) && (raw === fallback || typeof raw === "object" && raw !== null && JSON.stringify(raw) === JSON.stringify(fallback));
       if (raw === void 0 || raw === null || raw === "" || isDefault) {
         delete next[key];
       } else {
@@ -2471,28 +2626,9 @@ var ImageNoteCardEditor = class extends HTMLElement {
     this._setStatus(t("editor_uploading"), false);
     if (this._uploadButton) this._uploadButton.disabled = true;
     try {
-      const body = new FormData();
-      body.append("file", file);
-      const init = { method: "POST", body };
-      let response;
-      if (hass.fetchWithAuth) {
-        response = await hass.fetchWithAuth("/api/image/upload", init);
-      } else {
-        const token = hass.auth?.data?.access_token ?? "";
-        response = await fetch("/api/image/upload", {
-          ...init,
-          headers: { Authorization: `Bearer ${token}` }
-        });
-      }
-      if (response.status === 413) {
-        throw new Error(t("editor_upload_too_large"));
-      }
-      if (!response.ok) {
-        throw new Error(`${response.status} ${response.statusText}`);
-      }
-      const media = await response.json();
-      const url = `/api/image/serve/${media.id}/original`;
-      this._emit(this._withPage(this._pageIndex, { ...this._page(), image: url, image_entity: void 0 }));
+      const target = this._config?.upload_target === "media" ? "media" : "image";
+      const image = target === "media" ? await this._uploadToMedia(hass, file) : await this._uploadToImageStore(hass, file);
+      this._emit(this._withPage(this._pageIndex, { ...this._page(), image, image_entity: void 0 }));
       this._setStatus(t("editor_upload_done"), false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -2501,6 +2637,42 @@ var ImageNoteCardEditor = class extends HTMLElement {
       this._uploading = false;
       if (this._uploadButton) this._uploadButton.disabled = false;
     }
+  }
+  async _fetch(hass, path, init) {
+    if (hass.fetchWithAuth) {
+      return hass.fetchWithAuth(path, init);
+    }
+    const token = hass.auth?.data?.access_token ?? "";
+    return fetch(path, { ...init, headers: { Authorization: `Bearer ${token}` } });
+  }
+  _checkResponse(response) {
+    const t = (key) => translate(this._lang, key);
+    if (response.status === 413) throw new Error(t("editor_upload_too_large"));
+    if (response.status === 401 || response.status === 403) throw new Error(t("editor_upload_forbidden"));
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  }
+  /** Home Assistant's own image store (/config/image), served by id. */
+  async _uploadToImageStore(hass, file) {
+    const body = new FormData();
+    body.append("file", file);
+    const response = await this._fetch(hass, "/api/image/upload", { method: "POST", body });
+    this._checkResponse(response);
+    const media = await response.json();
+    return `/api/image/serve/${media.id}/original`;
+  }
+  /** The local media folder (/media/<folder>/), stored as a plain file. */
+  async _uploadToMedia(hass, file) {
+    const folder = (this._config?.upload_folder ?? EDITOR_DEFAULTS.upload_folder).trim().replace(/^\/+|\/+$/g, "");
+    const target = `${MEDIA_SOURCE_PREFIX}media_source/local${folder ? `/${folder}` : ""}`;
+    const safeName = file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
+    const renamed = new File([file], `${Date.now()}-${safeName}`, { type: file.type });
+    const body = new FormData();
+    body.append("media_content_id", target);
+    body.append("file", renamed);
+    const response = await this._fetch(hass, "/api/media_source/local_source/upload", { method: "POST", body });
+    this._checkResponse(response);
+    const result = await response.json();
+    return result.media_content_id;
   }
   _setStatus(text, isError) {
     if (!this._status) return;

@@ -61,6 +61,13 @@
   </div>
   <div class="grid" id="grid"></div>
 
+  <h2 style="font-size:13px;font-weight:500;margin:28px 0 8px;color:var(--secondary-text-color);text-transform:uppercase;letter-spacing:.06em">Sections view: fixed-height hosts (2 rows = 120px, 3 columns ≈ 245px)</h2>
+  <div id="sections" style="display:flex;gap:16px;align-items:flex-start">
+    <div class="host" style="height:120px;width:245px"></div>
+    <div class="host" style="height:120px;width:245px"></div>
+    <div class="host" style="height:232px;width:520px"></div>
+  </div>
+
   <div id="editor">
     <h2>Editor element (ha-form is stubbed as a JSON dump)</h2>
     <imagenote-card-editor></imagenote-card-editor>
@@ -77,6 +84,8 @@
       "mdi:upload": "M9 16v-6H5l7-7 7 7h-4v6H9m-4 4v-2h14v2H5Z",
       "mdi:chevron-left": "M15.41 16.58 10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.42Z",
       "mdi:chevron-right": "M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.42Z",
+      "mdi:arrow-left": "M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z",
+      "mdi:arrow-right": "M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z",
       "mdi:plus": "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2Z",
       "mdi:delete-outline": "M9 3v1H4v2h1v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6h1V4h-5V3H9m0 5h2v9H9V8m4 0h2v9h-2V8Z",
       "mdi:close": "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z",
@@ -181,6 +190,18 @@
       grid.append(cell);
       cards.push(card);
     }
+    const sectionConfigs = [
+      { type: "custom:imagenote-card", title: "BildNote", image: "./sample-2.svg", default_side: "note", note: "**Hallo!** Klick auf das Bild um etwas mehr zu sehen, BLABLABLA\n\nMarkdown funktionieren hier problemlos: Dies ist ein Test für **André**." },
+      { type: "custom:imagenote-card", title: "Kitchen", image: "./sample-1.svg", note_entity: "input_text.fridge_note", images: [{ image: "./sample-1.svg" }, { image: "./sample-3.svg" }] },
+      { type: "custom:imagenote-card", title: "Long note", image: "./sample-3.svg", default_side: "note", note_entity: "input_text.fridge_note", note: "" },
+    ];
+    document.querySelectorAll("#sections .host").forEach((host, i) => {
+      const card = document.createElement("imagenote-card");
+      card.setConfig(sectionConfigs[i]);
+      card.hass = makeHass();
+      host.append(card);
+      cards.push(card);
+    });
     const editor = document.querySelector("imagenote-card-editor");
     editor.setConfig(configs[1].config);
     editor.hass = makeHass();
