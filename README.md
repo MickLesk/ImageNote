@@ -13,6 +13,12 @@ Typical uses: the fridge with the shopping list on its back, the boiler with the
 last service date, a plant with its watering schedule, a family photo with a
 message for the wall panel.
 
+![Picture side, note side and a gallery of several pictures](docs/images/cards.png)
+
+<p align="center">
+  <img src="docs/images/flip.png" alt="The card halfway through its 3D flip" width="420">
+</p>
+
 ## Features
 
 - **Upload a picture from the editor** — stored by Home Assistant, no `www`
