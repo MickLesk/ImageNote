@@ -2,13 +2,13 @@ export const CARD_STYLES = `
 :host {
   display: block;
   height: 100%;
-  --imagenote-duration: 700ms;
-  --imagenote-easing: cubic-bezier(0.4, 0.05, 0.2, 1);
-  --imagenote-radius: var(--ha-card-border-radius, 12px);
-  --imagenote-note-background: var(--ha-card-background, var(--card-background-color, #fff));
-  --imagenote-badge-background: rgba(0, 0, 0, 0.55);
-  --imagenote-badge-color: #fff;
-  --imagenote-placeholder-background: var(--secondary-background-color, #f2f2f2);
+  --pinboard-duration: 700ms;
+  --pinboard-easing: cubic-bezier(0.4, 0.05, 0.2, 1);
+  --pinboard-radius: var(--ha-card-border-radius, 12px);
+  --pinboard-note-background: var(--ha-card-background, var(--card-background-color, #fff));
+  --pinboard-badge-background: rgba(0, 0, 0, 0.55);
+  --pinboard-badge-color: #fff;
+  --pinboard-placeholder-background: var(--secondary-background-color, #f2f2f2);
 }
 
 ha-card {
@@ -16,7 +16,7 @@ ha-card {
   overflow: hidden;
   height: 100%;
   box-sizing: border-box;
-  border-radius: var(--imagenote-radius);
+  border-radius: var(--pinboard-radius);
 }
 
 .hidden {
@@ -31,11 +31,11 @@ ha-card {
   min-height: 96px;
   perspective: 1400px;
   overflow: hidden;
-  border-radius: var(--imagenote-radius);
+  border-radius: var(--pinboard-radius);
   outline: none;
 }
 .stage.ratio {
-  aspect-ratio: var(--imagenote-aspect, 16 / 9);
+  aspect-ratio: var(--pinboard-aspect, 16 / 9);
   container-type: size;
 }
 .stage.natural {
@@ -59,7 +59,7 @@ ha-card {
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-  transition: transform var(--imagenote-duration) var(--imagenote-easing);
+  transition: transform var(--pinboard-duration) var(--pinboard-easing);
 }
 .stage.natural .scene {
   position: relative;
@@ -77,16 +77,16 @@ ha-card {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border-radius: var(--imagenote-radius);
+  border-radius: var(--pinboard-radius);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  background: var(--imagenote-note-background);
+  background: var(--pinboard-note-background);
 }
 .face.hidden-face {
   visibility: hidden;
 }
 .face.tinted .layer-note {
-  color: var(--imagenote-note-text, var(--primary-text-color));
+  color: var(--pinboard-note-text, var(--primary-text-color));
 }
 .face.tinted .note-header ha-icon,
 .face.tinted .icon-button,
@@ -96,12 +96,12 @@ ha-card {
   opacity: 0.75;
 }
 .face.sticky.kind-note {
-  --imagenote-note-background: var(--imagenote-sticky-color, #fff3a8);
-  --imagenote-note-text: #2b2b2b;
+  --pinboard-note-background: var(--pinboard-sticky-color, #fff3a8);
+  --pinboard-note-text: #2b2b2b;
   box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
 }
 .face.sticky.kind-note .layer-note {
-  color: var(--imagenote-note-text);
+  color: var(--pinboard-note-text);
   background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.35), rgba(0, 0, 0, 0) 60%);
 }
 .face.sticky.kind-note .layer-note::after {
@@ -149,10 +149,10 @@ ha-card {
   inset: auto;
 }
 .scene.mode-fade .face {
-  transition: opacity var(--imagenote-duration) ease;
+  transition: opacity var(--pinboard-duration) ease;
 }
 .scene.mode-slide .face {
-  transition: transform var(--imagenote-duration) var(--imagenote-easing);
+  transition: transform var(--pinboard-duration) var(--pinboard-easing);
 }
 
 /* ---------- layers ---------- */
@@ -266,9 +266,9 @@ ha-card {
 .record.active {
   background: var(--error-color, #db4437);
   color: #fff;
-  animation: imagenote-pulse 1.2s ease-in-out infinite;
+  animation: pinboard-pulse 1.2s ease-in-out infinite;
 }
-@keyframes imagenote-pulse {
+@keyframes pinboard-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(219, 68, 55, 0.5); }
   50% { box-shadow: 0 0 0 8px rgba(219, 68, 55, 0); }
 }
@@ -304,27 +304,27 @@ ha-card {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: var(--imagenote-fit, cover);
-  background: var(--imagenote-placeholder-background);
+  object-fit: var(--pinboard-fit, cover);
+  background: var(--pinboard-placeholder-background);
 }
 .stage.natural .face.current .layer-image img {
   height: auto;
 }
 /* ---------- ken burns ---------- */
-@keyframes imagenote-kenburns-a {
+@keyframes pinboard-kenburns-a {
   from { transform: scale(1) translate(0, 0); }
   to { transform: scale(1.12) translate(-2.5%, 1.5%); }
 }
-@keyframes imagenote-kenburns-b {
+@keyframes pinboard-kenburns-b {
   from { transform: scale(1.12) translate(2%, -2%); }
   to { transform: scale(1) translate(0, 0); }
 }
 .stage.ken-burns .face.kind-image.current img {
-  animation: imagenote-kenburns-a 22s ease-in-out infinite alternate;
+  animation: pinboard-kenburns-a 22s ease-in-out infinite alternate;
   will-change: transform;
 }
 .stage.ken-burns .face-b.kind-image.current img {
-  animation-name: imagenote-kenburns-b;
+  animation-name: pinboard-kenburns-b;
 }
 @media (prefers-reduced-motion: reduce) {
   .stage.ken-burns .face.kind-image.current img {
@@ -497,9 +497,9 @@ ha-card {
   padding: 16px;
   text-align: center;
   color: var(--secondary-text-color);
-  background: var(--imagenote-placeholder-background);
+  background: var(--pinboard-placeholder-background);
   border: 2px dashed var(--divider-color, rgba(0, 0, 0, 0.12));
-  border-radius: var(--imagenote-radius);
+  border-radius: var(--pinboard-radius);
   box-sizing: border-box;
 }
 .stage.natural .placeholder {
@@ -665,7 +665,7 @@ ha-card {
   right: 0;
   top: -28px;
   height: 28px;
-  background: linear-gradient(to bottom, transparent, var(--imagenote-note-background));
+  background: linear-gradient(to bottom, transparent, var(--pinboard-note-background));
   pointer-events: none;
   opacity: 0;
   transition: opacity 150ms ease;
@@ -886,8 +886,8 @@ ha-card {
   font-size: 0.78em;
   font-weight: 500;
   letter-spacing: 0.02em;
-  color: var(--imagenote-badge-color);
-  background: var(--imagenote-badge-background);
+  color: var(--pinboard-badge-color);
+  background: var(--pinboard-badge-background);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   opacity: 0.85;
@@ -918,7 +918,7 @@ ha-card {
 .tiles-card {
   display: flex;
   flex-direction: column;
-  padding: var(--imagenote-tile-gap, 8px);
+  padding: var(--pinboard-tile-gap, 8px);
   box-sizing: border-box;
 }
 .tiles-header {
@@ -931,19 +931,19 @@ ha-card {
   flex: 1;
   min-height: 0;
   display: grid;
-  gap: var(--imagenote-tile-gap, 8px);
-  grid-template-columns: repeat(auto-fill, minmax(min(var(--imagenote-tile-min, 150px), 100%), 1fr));
+  gap: var(--pinboard-tile-gap, 8px);
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--pinboard-tile-min, 150px), 100%), 1fr));
   grid-auto-rows: minmax(0, 1fr);
 }
 .tiles.fixed-columns {
-  grid-template-columns: repeat(var(--imagenote-columns, 2), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--pinboard-columns, 2), minmax(0, 1fr));
 }
-.tiles imagenote-card {
+.tiles pinboard-card {
   min-width: 0;
   min-height: 0;
   --ha-card-border-width: 0;
   --ha-card-box-shadow: none;
-  --ha-card-border-radius: calc(var(--imagenote-radius) - 4px);
+  --ha-card-border-radius: calc(var(--pinboard-radius) - 4px);
 }
 
 /* ---------- small cards ---------- */

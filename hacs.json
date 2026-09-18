@@ -1,6 +1,6 @@
 {
-  "name": "ImageNote",
+  "name": "Pinboard",
   "render_readme": true,
-  "filename": "imagenote-card.js",
+  "filename": "pinboard-card.js",
   "homeassistant": "2024.10.0"
 }

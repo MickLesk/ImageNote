@@ -1,15 +1,20 @@
 # Changelog
 
-All notable changes to ImageNote are documented here. The format follows
+All notable changes to Pinboard are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+### Changed
+
+- Renamed from ImageNote to Pinboard: the card type is `custom:pinboard-card`
+  and the resource is `pinboard-card.js`.
 
 ## [0.1.0] - 2026-09-18
 
 ### Added
 
-- `custom:imagenote-card` — a picture with a note on its back.
+- `custom:pinboard-card` — a picture with a note on its back.
 - Transitions: 3D flip, crossfade, slide, cube, none; horizontal or vertical.
 - Picture from an upload (stored by Home Assistant), a URL, a `/local/` path,
   a `media-source://` id or an `image`, `camera` or `person` entity.

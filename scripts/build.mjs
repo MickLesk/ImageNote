@@ -6,14 +6,14 @@ const watch = process.argv.includes("--watch");
 
 /** @type {import("esbuild").BuildOptions} */
 const options = {
-  entryPoints: ["src/imagenote-card.ts"],
+  entryPoints: ["src/pinboard-card.ts"],
   bundle: true,
   format: "esm",
   target: "es2022",
-  outfile: "dist/imagenote-card.js",
+  outfile: "dist/pinboard-card.js",
   define: { __VERSION__: JSON.stringify(pkg.version) },
   banner: {
-    js: `/*! ImageNote Card v${pkg.version} | MIT | https://github.com/MickLesk/ImageNote */`,
+    js: `/*! Pinboard Card v${pkg.version} | MIT | https://github.com/MickLesk/pinboard-card */`,
   },
   legalComments: "none",
   sourcemap: false,

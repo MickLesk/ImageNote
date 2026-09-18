@@ -1,19 +1,16 @@
-<h1 align="center">ImageNote</h1>
+<h1 align="center">Pinboard</h1>
 
 <p align="center">
-  A picture with a note on its back. Tap the card and it flips over.<br>
-  A Home Assistant dashboard card, installable through HACS.
+  Pictures, notes, checklists and voice memos on one dashboard card.<br>
+  Tap it and it turns to the next page. A Home Assistant card, installable through HACS.
 </p>
 
-ImageNote pairs pictures with notes. The simplest card shows a picture in
-front and a note on its back; a tap (or a key press, a hover, or a timer) turns
-it over with a 3D flip, a crossfade, a slide or a cube rotation. A card can
-also hold up to ten pictures and notes in any order, and every tap turns to the
-next one.
-
-Typical uses: the fridge with the shopping list on its back, the boiler with the
-last service date, a plant with its watering schedule, a family photo with a
-message for the wall panel.
+Pinboard is the pinboard in the hallway, as a card: the fridge with the
+shopping list on its back, the boiler with its last service date, a plant with
+its watering schedule, a family photo with a voice memo. The simplest card is a
+picture with a note on its back; a tap (or a key press, a hover, or a timer)
+turns it over with a 3D flip, a crossfade, a slide or a cube rotation. A card
+can hold up to ten pictures, notes and recordings in any order.
 
 ![Picture side, note side and a gallery of several pictures](docs/images/cards.png)
 
@@ -59,27 +56,27 @@ message for the wall panel.
 ### HACS
 
 1. Open HACS, three-dot menu, **Custom repositories**.
-2. Add `https://github.com/MickLesk/ImageNote`, category **Dashboard**.
-3. Install **ImageNote** and reload the browser when HACS asks.
+2. Add `https://github.com/MickLesk/pinboard-card`, category **Dashboard**.
+3. Install **Pinboard** and reload the browser when HACS asks.
 
 HACS registers the resource automatically. If you manage resources yourself,
-add `/hacsfiles/ImageNote/imagenote-card.js` as a *JavaScript module*.
+add `/hacsfiles/pinboard-card/pinboard-card.js` as a *JavaScript module*.
 
 ### Manual
 
-Copy `dist/imagenote-card.js` to `/config/www/imagenote-card.js` and add
-`/local/imagenote-card.js` under **Settings → Dashboards → Resources** as a
+Copy `dist/pinboard-card.js` to `/config/www/pinboard-card.js` and add
+`/local/pinboard-card.js` under **Settings → Dashboards → Resources** as a
 *JavaScript module*.
 
 Requires Home Assistant 2024.10 or newer.
 
 ## Usage
 
-Add the card from the card picker (**ImageNote Card**) and fill in the editor,
+Add the card from the card picker (**Pinboard Card**) and fill in the editor,
 or write YAML:
 
 ```yaml
-type: custom:imagenote-card
+type: custom:pinboard-card
 title: Boiler
 image: /api/image/serve/3f2a9c…/original   # what the editor's upload produces
 note: |
@@ -90,7 +87,7 @@ note: |
 Note from an entity, editable on the card:
 
 ```yaml
-type: custom:imagenote-card
+type: custom:pinboard-card
 title: Fridge
 image: /local/pictures/fridge.jpg
 note_entity: input_text.fridge_note
@@ -100,7 +97,7 @@ transition: fade
 Wall-panel slideshow that turns over on its own:
 
 ```yaml
-type: custom:imagenote-card
+type: custom:pinboard-card
 image: media-source://media_source/local/family/summer.jpg
 note: See you on Sunday!
 aspect_ratio: "4:3"
@@ -112,7 +109,7 @@ Pictures and notes in any order, up to ten. An entry with both a picture and a
 note counts as two:
 
 ```yaml
-type: custom:imagenote-card
+type: custom:pinboard-card
 title: Holiday
 slides:
   - image: /local/pictures/arrival.jpg
@@ -130,7 +127,7 @@ The same entries side by side as tiles; each tile turns between its own
 picture and note:
 
 ```yaml
-type: custom:imagenote-card
+type: custom:pinboard-card
 title: Garage
 layout: grid
 columns: 3
@@ -149,7 +146,7 @@ slides:
 Picture from an entity, note from an attribute:
 
 ```yaml
-type: custom:imagenote-card
+type: custom:pinboard-card
 title: Front door
 image_entity: camera.front_door
 note_entity: sensor.last_visitor
@@ -194,7 +191,7 @@ direction: vertical
 | `auto_flip` | `0` | Move to the next slide automatically every *n* seconds. `0` disables it. `auto_advance` is an older name for the same thing. |
 | `show_navigation` | `true` | With more than two slides: show the arrows and dots. Swiping and the arrow keys always work. |
 | `upload_target` | `image` | Where the editor's upload button stores files: `image` (Home Assistant's image store) or `media` (the media folder). |
-| `upload_folder` | `imagenote` | With `upload_target: media`: the folder below `/media`. Created on the first upload. |
+| `upload_folder` | `pinboard` | With `upload_target: media`: the folder below `/media`. Created on the first upload. |
 | `hover_flip` | `false` | Show the note while the pointer hovers over the card (mouse devices only). |
 | `show_hint` | `true` | Show the small “Note” / “Photo” badge in the corner. |
 | `show_title` | `true` | Show the title overlay on the picture. |
@@ -208,7 +205,7 @@ direction: vertical
 Pins on a picture point at things and say what they are:
 
 ```yaml
-type: custom:imagenote-card
+type: custom:pinboard-card
 title: Boiler room
 image: /local/pictures/boiler.jpg
 markers:
@@ -240,7 +237,7 @@ its address is written into the entity with `set_value`. Automations can do
 the same: any URL, `/local/` path or `media-source://` id works as a state.
 
 ```yaml
-type: custom:imagenote-card
+type: custom:pinboard-card
 title: Damage report
 image_entity: input_text.damage_photo
 note_entity: input_text.damage_note
@@ -262,7 +259,7 @@ tap to seek, and the title. Three ways to fill it:
   administrator account for the media upload.
 
 ```yaml
-type: custom:imagenote-card
+type: custom:pinboard-card
 title: Message for Dad
 slides:
   - image: /local/pictures/kids.jpg
@@ -308,7 +305,7 @@ action. A double tap is only detected when `double_tap_action` is set, so a
 single tap stays instant otherwise.
 
 ```yaml
-type: custom:imagenote-card
+type: custom:pinboard-card
 title: Fridge
 image: /local/pictures/fridge.jpg
 note_entity: input_text.fridge_note
@@ -332,10 +329,10 @@ The card uses your theme. These CSS variables can be overridden with
 
 | Variable | Purpose |
 | --- | --- |
-| `--imagenote-note-background` | Background of the note side. |
-| `--imagenote-badge-background`, `--imagenote-badge-color` | The corner badge on the picture. |
-| `--imagenote-placeholder-background` | Background when no picture is set. |
-| `--imagenote-easing` | Timing function of the flip. |
+| `--pinboard-note-background` | Background of the note side. |
+| `--pinboard-badge-background`, `--pinboard-badge-color` | The corner badge on the picture. |
+| `--pinboard-placeholder-background` | Background when no picture is set. |
+| `--pinboard-easing` | Timing function of the flip. |
 
 ## How pictures are stored
 
@@ -376,25 +373,27 @@ is hidden.
 
 ## Development
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository layout, the branch
+and pull request workflow, and how releases are cut. In short:
+
 ```bash
 npm ci
-npm run build        # bundles src/ into dist/imagenote-card.js
-npm run typecheck    # tsc --noEmit
-npm run verify       # sanity checks on the bundle
-npm test             # Playwright smoke tests against the demo page (needs Chromium: npx playwright install chromium)
-npm run demo         # http://localhost:8765/demo/ — local preview with stubbed HA elements
+npm run build        # bundles src/ into dist/pinboard-card.js
+npm run demo         # http://localhost:8765/demo/ with stubbed Home Assistant elements
+npm run validate     # typecheck, build, bundle checks and browser tests
 ```
 
-`dist/imagenote-card.js` is committed; CI fails when it does not match the
-sources. The card is a plain custom element written in TypeScript, bundled with
-esbuild, without a framework dependency.
+The card is a plain custom element written in TypeScript, bundled with
+esbuild, without a framework dependency. `dist/pinboard-card.js` is committed;
+CI fails when it does not match the sources.
 
 ## Ideas for later
 
-- Several pictures per card (gallery on the front, one note per picture).
-- Voice notes and drawings on the back.
-- A small backend integration that keeps notes with the picture, with history.
-- Actions on the note side (mark done, snooze, open a task).
+- A companion integration that keeps notes with their history, author and
+  timestamp and offers services for automations.
+- Actions on a note page: mark done, snooze, open a task.
+- Reading notes aloud through Assist.
+- A QR code that opens the card on a phone.
 
 ## License
 

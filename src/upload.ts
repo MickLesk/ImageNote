@@ -1,4 +1,3 @@
-// Uploading pictures: shared by the editor's upload button and the camera button on the card.
 import { MEDIA_SOURCE_PREFIX } from "./const";
 import type { HomeAssistant } from "./types";
 

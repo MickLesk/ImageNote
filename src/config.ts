@@ -1,7 +1,7 @@
 import { DEFAULTS, DIRECTIONS, EXPIRED_MODES, IMAGE_FITS, LAYOUTS, MAX_SLIDES, NOTE_STYLES, SIDES, TRANSITIONS } from "./const";
 import type {
   ActionConfig,
-  ImageNoteCardConfig,
+  PinboardCardConfig,
   Marker,
   MarkerConfig,
   MediaValue,
@@ -43,47 +43,47 @@ function action(value: unknown, fallback: ActionConfig): ActionConfig {
   return fallback;
 }
 
-export function validateConfig(config: unknown): asserts config is ImageNoteCardConfig {
+export function validateConfig(config: unknown): asserts config is PinboardCardConfig {
   if (!config || typeof config !== "object") {
-    throw new Error("ImageNote: configuration must be an object");
+    throw new Error("Pinboard: configuration must be an object");
   }
   const c = config as Record<string, unknown>;
   if (c.transition !== undefined && !TRANSITIONS.includes(c.transition as never)) {
-    throw new Error(`ImageNote: unknown transition "${String(c.transition)}" (use ${TRANSITIONS.join(", ")})`);
+    throw new Error(`Pinboard: unknown transition "${String(c.transition)}" (use ${TRANSITIONS.join(", ")})`);
   }
   if (c.direction !== undefined && !DIRECTIONS.includes(c.direction as never)) {
-    throw new Error(`ImageNote: unknown direction "${String(c.direction)}" (use ${DIRECTIONS.join(", ")})`);
+    throw new Error(`Pinboard: unknown direction "${String(c.direction)}" (use ${DIRECTIONS.join(", ")})`);
   }
   if (c.default_side !== undefined && !SIDES.includes(c.default_side as never)) {
-    throw new Error(`ImageNote: unknown default_side "${String(c.default_side)}" (use ${SIDES.join(", ")})`);
+    throw new Error(`Pinboard: unknown default_side "${String(c.default_side)}" (use ${SIDES.join(", ")})`);
   }
   validatePage(c, "");
   for (const key of ["slides", "images"] as const) {
     const list = c[key];
     if (list === undefined) continue;
     if (!Array.isArray(list)) {
-      throw new Error(`ImageNote: ${key} must be a list`);
+      throw new Error(`Pinboard: ${key} must be a list`);
     }
     list.forEach((entry, index) => {
       if (typeof entry === "string") return;
       if (!entry || typeof entry !== "object") {
-        throw new Error(`ImageNote: ${key}[${index}] must be a URL or an object`);
+        throw new Error(`Pinboard: ${key}[${index}] must be a URL or an object`);
       }
       validatePage(entry as Record<string, unknown>, `${key}[${index}].`);
     });
   }
-  const total = expandSlides(configPages(config as ImageNoteCardConfig).map(normalizePage)).length;
+  const total = expandSlides(configPages(config as PinboardCardConfig).map(normalizePage)).length;
   if (total > MAX_SLIDES) {
-    throw new Error(`ImageNote: at most ${MAX_SLIDES} slides per card (this card has ${total})`);
+    throw new Error(`Pinboard: at most ${MAX_SLIDES} slides per card (this card has ${total})`);
   }
 }
 
 function validatePage(c: Record<string, unknown>, prefix: string): void {
   if (c.note_entity !== undefined && c.note_entity !== "" && typeof c.note_entity !== "string") {
-    throw new Error(`ImageNote: ${prefix}note_entity must be an entity id`);
+    throw new Error(`Pinboard: ${prefix}note_entity must be an entity id`);
   }
   if (c.image_entity !== undefined && c.image_entity !== "" && typeof c.image_entity !== "string") {
-    throw new Error(`ImageNote: ${prefix}image_entity must be an entity id`);
+    throw new Error(`Pinboard: ${prefix}image_entity must be an entity id`);
   }
   for (const key of ["image", "audio"] as const) {
     const value = c[key];
@@ -93,7 +93,7 @@ function validatePage(c: Record<string, unknown>, prefix: string): void {
       typeof value !== "string" &&
       !(typeof value === "object" && typeof (value as { media_content_id?: unknown }).media_content_id === "string")
     ) {
-      throw new Error(`ImageNote: ${prefix}${key} must be a URL, a media-source id or a media object`);
+      throw new Error(`Pinboard: ${prefix}${key} must be a URL, a media-source id or a media object`);
     }
   }
 }
@@ -139,7 +139,7 @@ export function hasAudio(page: PageConfig | NormalizedPage): boolean {
 }
 
 /** The config entries of a card: `slides` (or the older `images`) when given, otherwise the top-level fields as one entry. */
-export function configPages(config: ImageNoteCardConfig): PageConfig[] {
+export function configPages(config: PinboardCardConfig): PageConfig[] {
   const list = Array.isArray(config.slides) && config.slides.length > 0 ? config.slides : config.images;
   if (Array.isArray(list) && list.length > 0) {
     return list.map((entry) => (typeof entry === "string" ? { image: entry } : entry));
@@ -189,7 +189,7 @@ export function expandSlides(entries: NormalizedPage[]): Slide[] {
   return slides;
 }
 
-export function normalizeConfig(config: ImageNoteCardConfig): NormalizedConfig {
+export function normalizeConfig(config: PinboardCardConfig): NormalizedConfig {
   const entries = configPages(config).map(normalizePage);
   return {
     type: config.type,

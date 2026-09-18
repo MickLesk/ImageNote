@@ -91,16 +91,16 @@ export interface NormalizedPage {
 
 export type SlideKind = "image" | "note" | "audio";
 
-/** One screen of the card: either a picture or a note. */
+/** One page of the card: a picture, a note or a recording. */
 export interface Slide extends NormalizedPage {
   kind: SlideKind;
-  /** Index of the config entry this slide came from (an entry with picture and note yields two slides). */
+  /** Index of the config entry this slide came from; an entry with several parts yields several slides. */
   entry: number;
 }
 
-export interface ImageNoteCardConfig extends PageConfig {
+export interface PinboardCardConfig extends PageConfig {
   type: string;
-  /** Pictures and notes in free order. `images` is an older alias. */
+  /** Pictures, notes and recordings in free order. `images` is an older alias. */
   slides?: Array<PageConfig | string>;
   images?: Array<PageConfig | string>;
   layout?: Layout;
@@ -144,7 +144,7 @@ export interface NormalizedConfig {
   title: string;
   /** The config entries (one per `slides` item, or one for the flat form). */
   entries: NormalizedPage[];
-  /** All screens in order; an entry with picture and note becomes two slides. */
+  /** All pages in order; an entry with several parts becomes several slides. */
   slides: Slide[];
   layout: Layout;
   columns: number;

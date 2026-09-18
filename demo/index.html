@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ImageNote Card – demo</title>
+  <title>Pinboard Card – demo</title>
   <style>
     :root {
       --primary-color: #03a9f4;
@@ -52,7 +52,7 @@
   </style>
 </head>
 <body>
-  <h1>ImageNote Card – demo</h1>
+  <h1>Pinboard Card – demo</h1>
   <p class="lead">Local preview with minimal Home Assistant stubs. Tap a card to flip it.</p>
   <div class="toolbar">
     <button id="theme">Toggle dark theme</button>
@@ -71,7 +71,7 @@
 
   <div id="editor">
     <h2>Editor element (ha-form is stubbed as a JSON dump)</h2>
-    <imagenote-card-editor></imagenote-card-editor>
+    <pinboard-card-editor></pinboard-card-editor>
   </div>
 
   <script type="module">
@@ -180,7 +180,7 @@
         await new Promise((r) => setTimeout(r, 200));
         window.__uploads = (window.__uploads ?? 0) + 1;
         if (path === "/api/image/upload") return new Response(JSON.stringify({ id: "demo123" }), { status: 200 });
-        return new Response(JSON.stringify({ media_content_id: "media-source://media_source/local/imagenote/demo.jpg" }), { status: 200 });
+        return new Response(JSON.stringify({ media_content_id: "media-source://media_source/local/pinboard/demo.jpg" }), { status: 200 });
       },
       async callWS(msg) {
         if (msg.type === "media_source/resolve_media") return { url: "./sample-2.svg", mime_type: "image/svg+xml" };
@@ -193,7 +193,7 @@
       },
     });
 
-    await import("../dist/imagenote-card.js");
+    await import("../dist/pinboard-card.js");
 
     // A one-second silent WAV so the audio player has something to play.
     const silentWav = (() => {
@@ -206,48 +206,48 @@
       return "data:audio/wav;base64," + btoa(String.fromCharCode(...new Uint8Array(buf)));
     })();
     const configs = [
-      { label: "3D flip (default)", config: { type: "custom:imagenote-card", title: "Kitchen", image: "./sample-1.svg", note: "**Filter replaced** on 12 Oct.\n\nNext change due in 6 months.\n\n- Model: XY-200\n- Ordered from the usual shop" } },
-      { label: "Vertical flip, editable note (input_text)", config: { type: "custom:imagenote-card", title: "Fridge", image: "./sample-2.svg", direction: "vertical", note_entity: "input_text.fridge_note" } },
-      { label: "Crossfade, 4:3, contain", config: { type: "custom:imagenote-card", title: "Garden", image: "./sample-3.svg", transition: "fade", aspect_ratio: "4:3", image_fit: "contain", note: "Water the tomatoes every second day.\nSeedlings go out after the last frost." } },
-      { label: "Slide, no title, starts on note", config: { type: "custom:imagenote-card", image: "./sample-1.svg", transition: "slide", default_side: "note", note: "A card without a title.\n\nIt starts on the note side and slides to the picture." } },
-      { label: "Cube, media-source picture, auto flip 4 s", config: { type: "custom:imagenote-card", title: "Cube", image: "media-source://media_source/local/demo.jpg", transition: "cube", auto_flip: 4, note: "Media-source ids are resolved through the websocket API.\n\nThis one auto-flips every 4 seconds." } },
-      { label: "Empty states", config: { type: "custom:imagenote-card", title: "Nothing yet" } },
-      { label: "Broken picture + missing entity", config: { type: "custom:imagenote-card", title: "Broken", image: "./does-not-exist.jpg", note_entity: "input_text.missing" } },
-      { label: "Natural size, hover flip", config: { type: "custom:imagenote-card", title: "Natural", image: "./sample-3.svg", aspect_ratio: "auto", hover_flip: true, note: "Hover me on a desktop." } },
-      { label: "Gallery: three pictures, each with its own note", config: { type: "custom:imagenote-card", title: "Garage", images: [
+      { label: "3D flip (default)", config: { type: "custom:pinboard-card", title: "Kitchen", image: "./sample-1.svg", note: "**Filter replaced** on 12 Oct.\n\nNext change due in 6 months.\n\n- Model: XY-200\n- Ordered from the usual shop" } },
+      { label: "Vertical flip, editable note (input_text)", config: { type: "custom:pinboard-card", title: "Fridge", image: "./sample-2.svg", direction: "vertical", note_entity: "input_text.fridge_note" } },
+      { label: "Crossfade, 4:3, contain", config: { type: "custom:pinboard-card", title: "Garden", image: "./sample-3.svg", transition: "fade", aspect_ratio: "4:3", image_fit: "contain", note: "Water the tomatoes every second day.\nSeedlings go out after the last frost." } },
+      { label: "Slide, no title, starts on note", config: { type: "custom:pinboard-card", image: "./sample-1.svg", transition: "slide", default_side: "note", note: "A card without a title.\n\nIt starts on the note side and slides to the picture." } },
+      { label: "Cube, media-source picture, auto flip 4 s", config: { type: "custom:pinboard-card", title: "Cube", image: "media-source://media_source/local/demo.jpg", transition: "cube", auto_flip: 4, note: "Media-source ids are resolved through the websocket API.\n\nThis one auto-flips every 4 seconds." } },
+      { label: "Empty states", config: { type: "custom:pinboard-card", title: "Nothing yet" } },
+      { label: "Broken picture + missing entity", config: { type: "custom:pinboard-card", title: "Broken", image: "./does-not-exist.jpg", note_entity: "input_text.missing" } },
+      { label: "Natural size, hover flip", config: { type: "custom:pinboard-card", title: "Natural", image: "./sample-3.svg", aspect_ratio: "auto", hover_flip: true, note: "Hover me on a desktop." } },
+      { label: "Gallery: three pictures, each with its own note", config: { type: "custom:pinboard-card", title: "Garage", images: [
         { image: "./sample-1.svg", title: "Bike", note: "Chain oiled in March." },
         { image: "./sample-2.svg", note: "Tyres: 2.5 bar front, 2.8 bar rear." },
         { image: "./sample-3.svg", title: "Tools", note_entity: "input_text.fridge_note" },
       ] } },
-      { label: "Free order: picture, note, note, picture, note (5 slides)", config: { type: "custom:imagenote-card", title: "Trip", slides: [
+      { label: "Free order: picture, note, note, picture, note (5 slides)", config: { type: "custom:pinboard-card", title: "Trip", slides: [
         { image: "./sample-3.svg", title: "Arrival" },
         { note: "Day 1: **arrived** late, hotel is fine." },
         { note: "Day 2: hiking. Bring water." },
         { image: "./sample-2.svg", title: "Lake" },
         { note_entity: "input_text.fridge_note", title: "Shopping" },
       ] } },
-      { label: "Tiles: four pictures side by side, each flips on its own", config: { type: "custom:imagenote-card", title: "Garden", layout: "grid", columns: 2, images: [
+      { label: "Tiles: four pictures side by side, each flips on its own", config: { type: "custom:pinboard-card", title: "Garden", layout: "grid", columns: 2, images: [
         { image: "./sample-1.svg", title: "Tomatoes", note: "Water every second day." },
         { image: "./sample-2.svg", title: "Herbs", note: "Cut back the mint." },
         { image: "./sample-3.svg", title: "Lawn", note_entity: "input_text.fridge_note" },
         { image: "./sample-1.svg", title: "Compost", note: "Turn it on Sunday." },
       ] } },
-      { label: "Checklist from an input_text (writes back), sticky look", config: { type: "custom:imagenote-card", title: "Shopping", image: "./sample-2.svg", note_entity: "input_text.shopping", note_style: "sticky", default_side: "note" } },
-      { label: "Checklist in the config (ticks stay in this browser), template, colour, expiry", config: { type: "custom:imagenote-card", title: "Boiler", slides: [
+      { label: "Checklist from an input_text (writes back), sticky look", config: { type: "custom:pinboard-card", title: "Shopping", image: "./sample-2.svg", note_entity: "input_text.shopping", note_style: "sticky", default_side: "note" } },
+      { label: "Checklist in the config (ticks stay in this browser), template, colour, expiry", config: { type: "custom:pinboard-card", title: "Boiler", slides: [
         { image: "./sample-1.svg" },
         { note: "Boiler is at **{{ states('sensor.boiler_temp') }} °C**.\n\n- [ ] Check pressure\n- [x] Bleed radiators\n- [ ] Order filter", color: "blue" },
         { note: "Parcel at the neighbour's until Friday.", color: "yellow", expires: "2020-01-01", title: "Old note" },
         { note: "Valid for a while.", color: "green", expires: "2099-12-31" },
       ] } },
-      { label: "Markers on the picture, Ken Burns", config: { type: "custom:imagenote-card", title: "Boiler room", image: "./sample-1.svg", ken_burns: true, markers: [
+      { label: "Markers on the picture, Ken Burns", config: { type: "custom:pinboard-card", title: "Boiler room", image: "./sample-1.svg", ken_burns: true, markers: [
         { x: 30, y: 45, label: "Stopcock", icon: "mdi:water-off" },
         { x: 72, y: 30, label: "Pressure gauge", entity: "sensor.pressure" },
         { x: 85, y: 85, entity: "sensor.boiler_temp" },
       ], note: "Turn the stopcock (1) before opening the filter." } },
-      { label: "Picture from an input_text with a camera button", config: { type: "custom:imagenote-card", title: "Front door", image_entity: "input_text.door_photo", note: "Latest photo of the door. Tap the camera to replace it." } },
-      { label: "Audio memo: picture, then a recording", config: { type: "custom:imagenote-card", title: "Voice memo", image: "./sample-2.svg", audio: silentWav, note: "Also a note after the memo." } },
-      { label: "Audio from an input_text with a record button", config: { type: "custom:imagenote-card", title: "Memo box", audio_entity: "input_text.memo", color: "purple", note_style: "sticky" } },
-      { label: "Hold → more-info, double tap → URL", config: { type: "custom:imagenote-card", title: "Actions", image: "./sample-2.svg", note_entity: "input_text.fridge_note", hold_action: { action: "more-info" }, double_tap_action: { action: "url", url_path: "https://example.com" } } },
+      { label: "Picture from an input_text with a camera button", config: { type: "custom:pinboard-card", title: "Front door", image_entity: "input_text.door_photo", note: "Latest photo of the door. Tap the camera to replace it." } },
+      { label: "Audio memo: picture, then a recording", config: { type: "custom:pinboard-card", title: "Voice memo", image: "./sample-2.svg", audio: silentWav, note: "Also a note after the memo." } },
+      { label: "Audio from an input_text with a record button", config: { type: "custom:pinboard-card", title: "Memo box", audio_entity: "input_text.memo", color: "purple", note_style: "sticky" } },
+      { label: "Hold → more-info, double tap → URL", config: { type: "custom:pinboard-card", title: "Actions", image: "./sample-2.svg", note_entity: "input_text.fridge_note", hold_action: { action: "more-info" }, double_tap_action: { action: "url", url_path: "https://example.com" } } },
     ];
     window.__events = [];
     document.addEventListener("hass-more-info", (ev) => window.__events.push({ type: "hass-more-info", detail: ev.detail }));
@@ -260,7 +260,7 @@
       cell.className = "cell";
       const h = document.createElement("h2");
       h.textContent = label;
-      const card = document.createElement("imagenote-card");
+      const card = document.createElement("pinboard-card");
       card.setConfig(config);
       card.hass = makeHass();
       cell.append(h, card);
@@ -268,19 +268,19 @@
       cards.push(card);
     }
     const sectionConfigs = [
-      { type: "custom:imagenote-card", title: "BildNote", image: "./sample-2.svg", default_side: "note", note: "**Hallo!** Klick auf das Bild um etwas mehr zu sehen, BLABLABLA\n\nMarkdown funktionieren hier problemlos: Dies ist ein Test für **André**." },
-      { type: "custom:imagenote-card", title: "Kitchen", slides: [{ image: "./sample-1.svg" }, { note: "Note between" }, { image: "./sample-3.svg" }] },
-      { type: "custom:imagenote-card", title: "Long note", image: "./sample-3.svg", default_side: "note", note_entity: "input_text.fridge_note", note: "" },
-      { type: "custom:imagenote-card", layout: "grid", images: [{ image: "./sample-1.svg", title: "A", note: "Note A" }, { image: "./sample-2.svg", title: "B", note: "Note B" }] },
+      { type: "custom:pinboard-card", title: "BildNote", image: "./sample-2.svg", default_side: "note", note: "**Hallo!** Klick auf das Bild um etwas mehr zu sehen, BLABLABLA\n\nMarkdown funktionieren hier problemlos: Dies ist ein Test für **André**." },
+      { type: "custom:pinboard-card", title: "Kitchen", slides: [{ image: "./sample-1.svg" }, { note: "Note between" }, { image: "./sample-3.svg" }] },
+      { type: "custom:pinboard-card", title: "Long note", image: "./sample-3.svg", default_side: "note", note_entity: "input_text.fridge_note", note: "" },
+      { type: "custom:pinboard-card", layout: "grid", images: [{ image: "./sample-1.svg", title: "A", note: "Note A" }, { image: "./sample-2.svg", title: "B", note: "Note B" }] },
     ];
     document.querySelectorAll("#sections .host").forEach((host, i) => {
-      const card = document.createElement("imagenote-card");
+      const card = document.createElement("pinboard-card");
       card.setConfig(sectionConfigs[i]);
       card.hass = makeHass();
       host.append(card);
       cards.push(card);
     });
-    const editor = document.querySelector("imagenote-card-editor");
+    const editor = document.querySelector("pinboard-card-editor");
     editor.setConfig(configs[1].config);
     editor.hass = makeHass();
     editor.addEventListener("config-changed", (ev) => console.log("config-changed", ev.detail.config));

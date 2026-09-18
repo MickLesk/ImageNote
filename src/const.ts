@@ -1,11 +1,11 @@
 import type { ActionConfig, NormalizedConfig, Transition, Direction, Side, ImageFit, Layout, NoteStyle, ExpiredMode } from "./types";
 
-export const CARD_TYPE = "imagenote-card";
-export const EDITOR_TYPE = "imagenote-card-editor";
-export const CARD_NAME = "ImageNote Card";
+export const CARD_TYPE = "pinboard-card";
+export const EDITOR_TYPE = "pinboard-card-editor";
+export const CARD_NAME = "Pinboard Card";
 export const CARD_DESCRIPTION =
-  "A picture with a note on its back. Tap to flip between them.";
-export const DOCUMENTATION_URL = "https://github.com/MickLesk/ImageNote";
+  "Pictures, notes, checklists and voice memos on one card. Tap to turn to the next page.";
+export const DOCUMENTATION_URL = "https://github.com/MickLesk/pinboard-card";
 export const VERSION = __VERSION__;
 
 export const TRANSITIONS: Transition[] = ["flip", "fade", "slide", "cube", "none"];
@@ -17,7 +17,7 @@ export const TILE_MIN_WIDTH_PX = 150;
 export const MAX_SLIDES = 10;
 export const NOTE_STYLES: NoteStyle[] = ["plain", "sticky"];
 export const EXPIRED_MODES: ExpiredMode[] = ["dim", "hide"];
-export const CHECKLIST_STORAGE_PREFIX = "imagenote:checks:";
+export const CHECKLIST_STORAGE_PREFIX = "pinboard:checks:";
 export const ASPECT_RATIOS = ["16:9", "4:3", "3:2", "1:1", "3:4", "9:16", "auto"];
 
 export const NOTE_ENTITY_DOMAINS = ["input_text", "text"];
@@ -62,7 +62,7 @@ export const DEFAULTS: Omit<NormalizedConfig, "type" | "entries" | "slides"> = {
   checklist: true,
   checklist_writeback: true,
   upload_target: "image",
-  upload_folder: "imagenote",
+  upload_folder: "pinboard",
   upload_max_size: 1920,
   upload_crop: false,
   ken_burns: false,

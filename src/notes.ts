@@ -1,5 +1,3 @@
-// Helpers for note text: checklists, templates, expiry and colours.
-
 export interface ChecklistItem {
   /** Line index in the original text, for writing the toggle back. */
   line: number;

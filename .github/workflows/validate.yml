@@ -37,7 +37,7 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Snapshot committed bundle
-        run: cp dist/imagenote-card.js "$RUNNER_TEMP/committed.js"
+        run: cp dist/pinboard-card.js "$RUNNER_TEMP/committed.js"
 
       - name: Typecheck
         run: npm run typecheck
@@ -56,8 +56,8 @@ jobs:
 
       - name: Verify committed bundle is current
         run: |
-          if ! diff -u "$RUNNER_TEMP/committed.js" dist/imagenote-card.js > "$RUNNER_TEMP/bundle.diff"; then
-            echo "::error file=dist/imagenote-card.js::Committed bundle is out of date. Run npm ci && npm run build and commit the result."
+          if ! diff -u "$RUNNER_TEMP/committed.js" dist/pinboard-card.js > "$RUNNER_TEMP/bundle.diff"; then
+            echo "::error file=dist/pinboard-card.js::Committed bundle is out of date. Run npm ci && npm run build and commit the result."
             head -n 80 "$RUNNER_TEMP/bundle.diff"
             exit 1
           fi

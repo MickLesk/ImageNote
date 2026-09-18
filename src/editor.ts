@@ -19,7 +19,7 @@ import { configPages, expandSlides, hasAudio, hasNote, hasPicture, normalizePage
 import { NOTE_COLOR_PRESETS } from "./notes";
 import { resolveLanguage, translate } from "./i18n";
 import { EDITOR_STYLES } from "./styles";
-import type { HomeAssistant, ImageNoteCardConfig, MarkerConfig, PageConfig, ResolvedMedia } from "./types";
+import type { HomeAssistant, PinboardCardConfig, MarkerConfig, PageConfig, ResolvedMedia } from "./types";
 
 type FormSchema = Record<string, unknown> & { name: string };
 
@@ -96,7 +96,7 @@ const TEMPLATE = `
   <div class="preview-card"></div>
   <div class="buttons"><button class="btn primary play" type="button"><ha-icon icon="mdi:play"></ha-icon><span></span></button></div>
 </div>
-<div class="version">ImageNote ${VERSION}</div>`;
+<div class="version">Pinboard ${VERSION}</div>`;
 
 const STYLES = `
 .pages {
@@ -179,7 +179,7 @@ const STYLES = `
   margin: 10px 0;
   max-width: 420px;
 }
-.preview-card imagenote-card {
+.preview-card pinboard-card {
   display: block;
 }
 .entry-actions:not(:has(.btn:not(.hidden))) {
@@ -425,9 +425,9 @@ const STYLES = `
 }
 `;
 
-export class ImageNoteCardEditor extends HTMLElement {
+export class PinboardCardEditor extends HTMLElement {
   private readonly _root: ShadowRoot;
-  private _config?: ImageNoteCardConfig;
+  private _config?: PinboardCardConfig;
   private _hass?: HomeAssistant;
   private _lang = "en";
   private _built = false;
@@ -448,7 +448,7 @@ export class ImageNoteCardEditor extends HTMLElement {
   private _previewToken = 0;
   private _selectedMarker = -1;
   private _canvasImg?: HTMLImageElement;
-  private _previewCard?: HTMLElement & { setConfig(config: ImageNoteCardConfig): void; hass?: HomeAssistant; flip(): void };
+  private _previewCard?: HTMLElement & { setConfig(config: PinboardCardConfig): void; hass?: HomeAssistant; flip(): void };
   private _dragIndex = -1;
   private _importing = false;
   private _recorder?: MediaRecorder;
@@ -459,7 +459,7 @@ export class ImageNoteCardEditor extends HTMLElement {
     this._root = this.attachShadow({ mode: "open" });
   }
 
-  setConfig(config: ImageNoteCardConfig): void {
+  setConfig(config: PinboardCardConfig): void {
     this._config = { ...config };
     const total = configPages(this._config).length;
     if (this._pageIndex >= total) this._pageIndex = total - 1;
@@ -485,8 +485,6 @@ export class ImageNoteCardEditor extends HTMLElement {
     return this._hass;
   }
 
-  // ---------------------------------------------------------------- pages
-
   private _pages(): PageConfig[] {
     return this._config ? configPages(this._config) : [{}];
   }
@@ -510,14 +508,14 @@ export class ImageNoteCardEditor extends HTMLElement {
   }
 
   /** Writes an entry back into the config: into `slides` when there are several, flat otherwise. */
-  private _withPage(index: number, page: PageConfig): ImageNoteCardConfig {
-    const config = { ...(this._config ?? { type: "" }) } as ImageNoteCardConfig;
+  private _withPage(index: number, page: PageConfig): PinboardCardConfig {
+    const config = { ...(this._config ?? { type: "" }) } as PinboardCardConfig;
     const pages = this._pages().map((p) => ({ ...p }));
     pages[index] = cleanPage(page);
     return this._withPages(config, pages);
   }
 
-  private _withPages(config: ImageNoteCardConfig, pages: PageConfig[]): ImageNoteCardConfig {
+  private _withPages(config: PinboardCardConfig, pages: PageConfig[]): PinboardCardConfig {
     const next: Record<string, unknown> = { ...config };
     for (const key of PAGE_KEYS) {
       if (key !== "title") delete next[key];
@@ -536,7 +534,7 @@ export class ImageNoteCardEditor extends HTMLElement {
     } else {
       next.slides = pages.map(cleanPage);
     }
-    return next as unknown as ImageNoteCardConfig;
+    return next as unknown as PinboardCardConfig;
   }
 
   private _addPage(kind: "image" | "note" | "audio"): void {
@@ -619,8 +617,6 @@ export class ImageNoteCardEditor extends HTMLElement {
       if (button) button.disabled = false;
     }
   }
-
-  // ---------------------------------------------------------------- audio
 
   private _renderAudioEditor(show: boolean): void {
     const section = this._root.querySelector<HTMLElement>(".audio-editor");
@@ -764,8 +760,6 @@ export class ImageNoteCardEditor extends HTMLElement {
     this._pageIndex = index;
     this._render();
   }
-
-  // ---------------------------------------------------------------- rendering
 
   private _ensureForm(): void {
     if (customElements.get("ha-form")) return;
@@ -1204,7 +1198,7 @@ export class ImageNoteCardEditor extends HTMLElement {
   }
 
   private _cardData(): Record<string, unknown> {
-    const config = this._config ?? ({ type: "" } as ImageNoteCardConfig);
+    const config = this._config ?? ({ type: "" } as PinboardCardConfig);
     const data: Record<string, unknown> = { ...DEFAULTS, ...EDITOR_DEFAULTS };
     for (const [key, value] of Object.entries(config)) {
       if (LIST_KEYS.includes(key) || ((PAGE_KEYS as string[]).includes(key) && key !== "title")) continue;
@@ -1212,8 +1206,6 @@ export class ImageNoteCardEditor extends HTMLElement {
     }
     return data;
   }
-
-  // ---------------------------------------------------------------- events
 
   private readonly _onPageValueChanged = (ev: CustomEvent<{ value: Record<string, unknown> }>): void => {
     ev.stopPropagation();
@@ -1254,15 +1246,15 @@ export class ImageNoteCardEditor extends HTMLElement {
         next[key] = raw;
       }
     }
-    this._emit(next as unknown as ImageNoteCardConfig);
+    this._emit(next as unknown as PinboardCardConfig);
   };
 
-  private _emit(config: ImageNoteCardConfig): void {
+  private _emit(config: PinboardCardConfig): void {
     const cleaned: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(config)) {
       if (value !== undefined && value !== null && value !== "") cleaned[key] = value;
     }
-    this._config = cleaned as unknown as ImageNoteCardConfig;
+    this._config = cleaned as unknown as PinboardCardConfig;
     this._render();
     this.dispatchEvent(
       new CustomEvent("config-changed", {
@@ -1273,8 +1265,6 @@ export class ImageNoteCardEditor extends HTMLElement {
     );
   }
 
-  // ---------------------------------------------------------------- picture upload
-
   private async _upload(file: File): Promise<void> {
     const hass = this._hass;
     if (!hass || this._uploading) return;
@@ -1283,7 +1273,7 @@ export class ImageNoteCardEditor extends HTMLElement {
     this._setStatus(t("editor_uploading"), false);
     if (this._uploadButton) this._uploadButton.disabled = true;
     try {
-      const config = this._config ?? ({} as ImageNoteCardConfig);
+      const config = this._config ?? ({} as PinboardCardConfig);
       const image = await uploadPicture(hass, file, {
         target: config.upload_target === "media" ? "media" : "image",
         folder: config.upload_folder ?? (DEFAULTS.upload_folder as string),
@@ -1309,8 +1299,6 @@ export class ImageNoteCardEditor extends HTMLElement {
     }
   }
 
-  // ---------------------------------------------------------------- markers
-
   private _markers(): MarkerConfig[] {
     const list = this._page().markers;
     return Array.isArray(list) ? list.map((m) => ({ ...m })) : [];
@@ -1327,7 +1315,6 @@ export class ImageNoteCardEditor extends HTMLElement {
   }
 
   private _onCanvasClick(ev: MouseEvent): void {
-    const canvas = ev.currentTarget as HTMLElement;
     const target = ev.target as HTMLElement;
     if (target.closest(".pin")) return;
     const img = this._canvasImg;
@@ -1344,7 +1331,6 @@ export class ImageNoteCardEditor extends HTMLElement {
       markers.push({ x, y });
       this._selectedMarker = markers.length - 1;
     }
-    void canvas;
     this._setMarkers(markers);
   }
 

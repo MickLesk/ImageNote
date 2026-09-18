@@ -34,7 +34,7 @@ import {
 import type {
   HassEntity,
   HomeAssistant,
-  ImageNoteCardConfig,
+  PinboardCardConfig,
   NormalizedConfig,
   ResolvedMedia,
   Side,
@@ -42,7 +42,7 @@ import type {
   Transition,
 } from "./types";
 
-/** Everything one face of the card can show: a picture layer and a note layer. */
+/** One of the two faces; each carries a picture, a note and an audio layer and shows one of them. */
 interface FaceView {
   el: HTMLElement;
   img: HTMLImageElement;
@@ -207,15 +207,15 @@ function formatSeconds(total: number): string {
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export class ImageNoteCard extends HTMLElement {
+export class PinboardCard extends HTMLElement {
   static getConfigElement(): HTMLElement {
     return document.createElement(EDITOR_TYPE);
   }
 
-  static getStubConfig(): ImageNoteCardConfig {
+  static getStubConfig(): PinboardCardConfig {
     return {
       type: `custom:${CARD_TYPE}`,
-      title: "ImageNote",
+      title: "Pinboard",
       image: SAMPLE_IMAGE,
       note: "**Hello!** Tap the picture to read this note.\n\nMarkdown works here: lists, links, *emphasis*.",
     };
@@ -233,7 +233,7 @@ export class ImageNoteCard extends HTMLElement {
   private _editing = false;
   private _saving = false;
   private _els?: Elements;
-  private _tiles?: ImageNoteCard[];
+  private _tiles?: PinboardCard[];
   private _resolved = new Map<string, ResolvedImage>();
   private _mediaPending = false;
   private _refreshTimer?: number;
@@ -263,8 +263,6 @@ export class ImageNoteCard extends HTMLElement {
     this._ensureMarkdown();
   }
 
-  // ---------------------------------------------------------------- lifecycle
-
   connectedCallback(): void {
     this._motionQuery.addEventListener("change", this._onMotionChange);
     this._observeResize();
@@ -290,7 +288,7 @@ export class ImageNoteCard extends HTMLElement {
     this._stopRecording(true);
   }
 
-  setConfig(config: ImageNoteCardConfig): void {
+  setConfig(config: PinboardCardConfig): void {
     validateConfig(config);
     this._config = normalizeConfig(config);
     this._stopTimers();
@@ -453,10 +451,8 @@ export class ImageNoteCard extends HTMLElement {
     return 0;
   }
 
-  // ---------------------------------------------------------------- tiles
-
   /** layout: grid — every config entry becomes its own tile, each a complete card of its own. */
-  private _buildTiles(raw: ImageNoteCardConfig): void {
+  private _buildTiles(raw: PinboardCardConfig): void {
     const config = this._config;
     if (!config) return;
     this._root.innerHTML = `<style>${CARD_STYLES}</style><ha-card class="tiles-card"><div class="tiles-header hidden"></div><div class="tiles"></div></ha-card>`;
@@ -467,17 +463,17 @@ export class ImageNoteCard extends HTMLElement {
       header.textContent = config.title;
       header.classList.remove("hidden");
     }
-    grid.style.setProperty("--imagenote-tile-min", `${TILE_MIN_WIDTH_PX}px`);
+    grid.style.setProperty("--pinboard-tile-min", `${TILE_MIN_WIDTH_PX}px`);
     if (config.columns > 0) {
       grid.classList.add("fixed-columns");
-      grid.style.setProperty("--imagenote-columns", String(config.columns));
+      grid.style.setProperty("--pinboard-columns", String(config.columns));
     }
-    const shared: Partial<ImageNoteCardConfig> = { ...raw };
+    const shared: Partial<PinboardCardConfig> = { ...raw };
     for (const key of ["slides", "images", "image", "image_entity", "note", "note_entity", "note_attribute", "audio", "audio_entity", "expires", "color", "markers", "title", "layout", "columns"] as const) {
       delete shared[key];
     }
     this._tiles = config.entries.map((entry) => {
-      const tile = document.createElement(CARD_TYPE) as ImageNoteCard;
+      const tile = document.createElement(CARD_TYPE) as PinboardCard;
       tile.setConfig({
         ...shared,
         type: raw.type,
@@ -500,13 +496,11 @@ export class ImageNoteCard extends HTMLElement {
     });
   }
 
-  // ---------------------------------------------------------------- building
-
   private _build(): void {
     this._root.innerHTML = TEMPLATE;
     const q = <T extends Element>(root: ParentNode, selector: string): T => {
       const el = root.querySelector<T>(selector);
-      if (!el) throw new Error(`ImageNote: missing element ${selector}`);
+      if (!el) throw new Error(`Pinboard: missing element ${selector}`);
       return el;
     };
     const face = (el: HTMLElement): FaceView => ({
@@ -673,11 +667,11 @@ export class ImageNoteCard extends HTMLElement {
     els.stage.classList.toggle("natural", ratio === null);
     els.stage.classList.toggle("ratio", ratio !== null);
     if (ratio !== null) {
-      els.stage.style.setProperty("--imagenote-aspect", String(ratio));
+      els.stage.style.setProperty("--pinboard-aspect", String(ratio));
     } else {
-      els.stage.style.removeProperty("--imagenote-aspect");
+      els.stage.style.removeProperty("--pinboard-aspect");
     }
-    this.style.setProperty("--imagenote-fit", config.image_fit);
+    this.style.setProperty("--pinboard-fit", config.image_fit);
     els.stage.classList.toggle("hover-flip", config.hover_flip);
     els.stage.classList.toggle("ken-burns", config.ken_burns && !this._motionQuery.matches);
     els.badge.classList.toggle("hidden", !config.show_hint || this._slides().length < 2);
@@ -696,7 +690,7 @@ export class ImageNoteCard extends HTMLElement {
     if (!els || !config) return;
     const reduced = this._motionQuery.matches;
     const duration = reduced ? Math.min(config.duration, 200) : config.duration;
-    this.style.setProperty("--imagenote-duration", `${duration}ms`);
+    this.style.setProperty("--pinboard-duration", `${duration}ms`);
     els.scene.classList.remove("mode-flip", "mode-fade", "mode-slide", "mode-cube", "mode-none");
     els.scene.classList.add(`mode-${this._mode()}`);
     this._resetPositions();
@@ -722,8 +716,6 @@ export class ImageNoteCard extends HTMLElement {
       this._afterSlideChange(false);
     }
   }
-
-  // ---------------------------------------------------------------- slide engine
 
   private _rot(): "rotateX" | "rotateY" {
     return this._config?.direction === "vertical" ? "rotateX" : "rotateY";
@@ -785,7 +777,7 @@ export class ImageNoteCard extends HTMLElement {
     const from = els.faces[fromIndex];
     const to = els.faces[toIndex];
     const mode = animate ? this._mode() : "none";
-    const duration = Number.parseFloat(getComputedStyle(this).getPropertyValue("--imagenote-duration")) || 0;
+    const duration = Number.parseFloat(getComputedStyle(this).getPropertyValue("--pinboard-duration")) || 0;
 
     window.clearTimeout(this._animTimer);
     this._stopAudio();
@@ -873,8 +865,8 @@ export class ImageNoteCard extends HTMLElement {
     this._updateScrollState(this._currentFace);
     if (emit) {
       const detail = { index: this._index, kind: slide.kind, side: slide.kind };
-      this.dispatchEvent(new CustomEvent("imagenote-slide", { detail, bubbles: true, composed: true }));
-      this.dispatchEvent(new CustomEvent("imagenote-flip", { detail, bubbles: true, composed: true }));
+      this.dispatchEvent(new CustomEvent("pinboard-slide", { detail, bubbles: true, composed: true }));
+      this.dispatchEvent(new CustomEvent("pinboard-flip", { detail, bubbles: true, composed: true }));
     }
   }
 
@@ -882,8 +874,6 @@ export class ImageNoteCard extends HTMLElement {
     if (!this._config || this._slides().length < 2 || this._editing) return;
     this.goTo(direction === "left" ? "next" : "prev");
   }
-
-  // ---------------------------------------------------------------- rendering a slide into a face
 
   private _renderSlide(view: FaceView, slide: Slide): void {
     const config = this._config;
@@ -927,12 +917,12 @@ export class ImageNoteCard extends HTMLElement {
     const color = resolveNoteColor(slide.color);
     view.el.classList.toggle("sticky", config?.note_style === "sticky");
     if (color) {
-      view.el.style.setProperty("--imagenote-note-background", color);
-      view.el.style.setProperty("--imagenote-note-text", contrastTextColor(color));
+      view.el.style.setProperty("--pinboard-note-background", color);
+      view.el.style.setProperty("--pinboard-note-text", contrastTextColor(color));
       view.el.classList.add("tinted");
     } else {
-      view.el.style.removeProperty("--imagenote-note-background");
-      view.el.style.removeProperty("--imagenote-note-text");
+      view.el.style.removeProperty("--pinboard-note-background");
+      view.el.style.removeProperty("--pinboard-note-text");
       view.el.classList.remove("tinted");
     }
   }
@@ -949,8 +939,6 @@ export class ImageNoteCard extends HTMLElement {
     view.imageTag.textContent = label;
     view.imageTag.classList.toggle("hidden", !dim);
   }
-
-  // ---------------------------------------------------------------- templates
 
   /** Notes with {{ }} or {% %} are rendered by Home Assistant and follow state changes. */
   private _ensureTemplate(slide: Slide): void {
@@ -1005,8 +993,6 @@ export class ImageNoteCard extends HTMLElement {
     }
     return entity.state === "unknown" || entity.state === "unavailable" ? "" : entity.state;
   }
-
-  // ---------------------------------------------------------------- picture
 
   /** The picture address an entity provides: entity_picture, or the state of an input_text / text. */
   private _imageSourceFromEntity(slide: Slide): string | undefined {
@@ -1127,8 +1113,6 @@ export class ImageNoteCard extends HTMLElement {
     this._updateDepth();
   }
 
-  // ---------------------------------------------------------------- markers
-
   private _renderMarkers(view: FaceView, slide: Slide): void {
     view.markers.replaceChildren();
     view.markerStates = slide.markers
@@ -1191,8 +1175,6 @@ export class ImageNoteCard extends HTMLElement {
     });
   }
 
-  // ---------------------------------------------------------------- camera
-
   /** Takes or picks a photo, uploads it and stores its address in the slide's input_text. */
   private async _uploadPhoto(view: FaceView, file: File): Promise<void> {
     const config = this._config;
@@ -1224,8 +1206,6 @@ export class ImageNoteCard extends HTMLElement {
       view.camera.disabled = false;
     }
   }
-
-  // ---------------------------------------------------------------- audio
 
   private _audioSourceFromEntity(slide: Slide): string | undefined {
     if (!slide.audio_entity || !this._hass) return undefined;
@@ -1334,7 +1314,7 @@ export class ImageNoteCard extends HTMLElement {
       if (audio.paused) await audio.play();
       else audio.pause();
     } catch (err) {
-      console.warn("ImageNote: playback failed", err);
+      console.warn("Pinboard: playback failed", err);
     }
   }
 
@@ -1368,7 +1348,7 @@ export class ImageNoteCard extends HTMLElement {
     try {
       audio.currentTime = 0;
     } catch {
-      // Not seekable yet; fine.
+      /* not seekable yet */
     }
   }
 
@@ -1467,8 +1447,6 @@ export class ImageNoteCard extends HTMLElement {
     }
     if (recorder.state !== "inactive") recorder.stop();
   }
-
-  // ---------------------------------------------------------------- note
 
   private _noteSource(slide: Slide): NoteSource {
     const config = this._config;
@@ -1661,7 +1639,7 @@ export class ImageNoteCard extends HTMLElement {
           label.classList.toggle("done", input.checked);
           input.addEventListener("change", () => {
             label.classList.toggle("done", input.checked);
-            void this._toggleCheck(view, source, item.line, input.checked);
+            void this._toggleCheck(source, item.line, input.checked);
           });
           label.append(input, text);
           list.append(label);
@@ -1687,8 +1665,6 @@ export class ImageNoteCard extends HTMLElement {
     return div;
   }
 
-  // ---------------------------------------------------------------- checklists
-
   private _canWriteBack(source: NoteSource): boolean {
     return Boolean(this._config?.checklist_writeback) && source.editable && !source.templated && Boolean(this._hass);
   }
@@ -1708,7 +1684,7 @@ export class ImageNoteCard extends HTMLElement {
     }
   }
 
-  private async _toggleCheck(view: FaceView, source: NoteSource, line: number, checked: boolean): Promise<void> {
+  private async _toggleCheck(source: NoteSource, line: number, checked: boolean): Promise<void> {
     if (this._canWriteBack(source) && this._hass) {
       const value = toggleChecklistLine(source.raw, line, checked);
       const optimistic = { ...source, raw: value, text: value };
@@ -1716,7 +1692,7 @@ export class ImageNoteCard extends HTMLElement {
       try {
         await this._hass.callService(source.domain, "set_value", { entity_id: source.entityId, value });
       } catch (err) {
-        console.warn("ImageNote: could not save the checklist", err);
+        console.warn("Pinboard: could not save the checklist", err);
         this._lastNote = undefined;
         this._applyHass();
       }
@@ -1728,9 +1704,8 @@ export class ImageNoteCard extends HTMLElement {
       current[line] = checked;
       window.localStorage.setItem(key, JSON.stringify(current));
     } catch {
-      // Private mode or blocked storage: the tick still shows until the next render.
+      /* private mode or blocked storage: the tick still shows until the next render */
     }
-    void view;
   }
 
   private _ensureMarkdown(): void {
@@ -1748,8 +1723,6 @@ export class ImageNoteCard extends HTMLElement {
       }
     });
   }
-
-  // ---------------------------------------------------------------- editing
 
   private _startEdit(): void {
     const els = this._els;
@@ -1849,8 +1822,6 @@ export class ImageNoteCard extends HTMLElement {
     view.counter.classList.toggle("over", left < 0);
   }
 
-  // ---------------------------------------------------------------- interaction
-
   private _gestureAllowed(ev: PointerEvent): boolean {
     if (this._editing) return false;
     for (const node of ev.composedPath()) {
@@ -1885,7 +1856,7 @@ export class ImageNoteCard extends HTMLElement {
       );
       if (shouldFlip) this.goTo("next");
     } catch (err) {
-      console.warn("ImageNote: action failed", err);
+      console.warn("Pinboard: action failed", err);
     }
   }
 
@@ -1917,8 +1888,6 @@ export class ImageNoteCard extends HTMLElement {
   private readonly _onMotionChange = (): void => {
     this._applyMode();
   };
-
-  // ---------------------------------------------------------------- timers & layout
 
   private _startTimers(): void {
     this._stopTimers();

@@ -6,9 +6,9 @@ const hacs = JSON.parse(await readFile(new URL("../hacs.json", import.meta.url),
 const bundle = await readFile(new URL(`../dist/${hacs.filename}`, import.meta.url), "utf8");
 
 const checks = [
-  [`version banner v${pkg.version}`, bundle.includes(`ImageNote Card v${pkg.version}`)],
-  ["defines imagenote-card", bundle.includes('"imagenote-card"')],
-  ["defines imagenote-card-editor", bundle.includes('"imagenote-card-editor"')],
+  [`version banner v${pkg.version}`, bundle.includes(`Pinboard Card v${pkg.version}`)],
+  ["defines pinboard-card", bundle.includes('"pinboard-card"')],
+  ["defines pinboard-card-editor", bundle.includes('"pinboard-card-editor"')],
   ["registers in window.customCards", bundle.includes("customCards")],
   ["no leftover __VERSION__ placeholder", !bundle.includes("__VERSION__")],
   ["bundle below 200 kB", bundle.length < 200_000],

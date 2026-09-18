@@ -1,11 +1,11 @@
-/*! ImageNote Card v0.1.0 | MIT | https://github.com/MickLesk/ImageNote */
+/*! Pinboard Card v0.1.0 | MIT | https://github.com/MickLesk/pinboard-card */
 
 // src/const.ts
-var CARD_TYPE = "imagenote-card";
-var EDITOR_TYPE = "imagenote-card-editor";
-var CARD_NAME = "ImageNote Card";
-var CARD_DESCRIPTION = "A picture with a note on its back. Tap to flip between them.";
-var DOCUMENTATION_URL = "https://github.com/MickLesk/ImageNote";
+var CARD_TYPE = "pinboard-card";
+var EDITOR_TYPE = "pinboard-card-editor";
+var CARD_NAME = "Pinboard Card";
+var CARD_DESCRIPTION = "Pictures, notes, checklists and voice memos on one card. Tap to turn to the next page.";
+var DOCUMENTATION_URL = "https://github.com/MickLesk/pinboard-card";
 var VERSION = "0.1.0";
 var TRANSITIONS = ["flip", "fade", "slide", "cube", "none"];
 var DIRECTIONS = ["horizontal", "vertical"];
@@ -16,7 +16,7 @@ var TILE_MIN_WIDTH_PX = 150;
 var MAX_SLIDES = 10;
 var NOTE_STYLES = ["plain", "sticky"];
 var EXPIRED_MODES = ["dim", "hide"];
-var CHECKLIST_STORAGE_PREFIX = "imagenote:checks:";
+var CHECKLIST_STORAGE_PREFIX = "pinboard:checks:";
 var ASPECT_RATIOS = ["16:9", "4:3", "3:2", "1:1", "3:4", "9:16", "auto"];
 var NOTE_ENTITY_DOMAINS = ["input_text", "text"];
 var IMAGE_URL_ENTITY_DOMAINS = ["input_text", "text"];
@@ -52,7 +52,7 @@ var DEFAULTS = {
   checklist: true,
   checklist_writeback: true,
   upload_target: "image",
-  upload_folder: "imagenote",
+  upload_folder: "pinboard",
   upload_max_size: 1920,
   upload_crop: false,
   ken_burns: false,
@@ -255,49 +255,49 @@ function action(value, fallback) {
 }
 function validateConfig(config) {
   if (!config || typeof config !== "object") {
-    throw new Error("ImageNote: configuration must be an object");
+    throw new Error("Pinboard: configuration must be an object");
   }
   const c = config;
   if (c.transition !== void 0 && !TRANSITIONS.includes(c.transition)) {
-    throw new Error(`ImageNote: unknown transition "${String(c.transition)}" (use ${TRANSITIONS.join(", ")})`);
+    throw new Error(`Pinboard: unknown transition "${String(c.transition)}" (use ${TRANSITIONS.join(", ")})`);
   }
   if (c.direction !== void 0 && !DIRECTIONS.includes(c.direction)) {
-    throw new Error(`ImageNote: unknown direction "${String(c.direction)}" (use ${DIRECTIONS.join(", ")})`);
+    throw new Error(`Pinboard: unknown direction "${String(c.direction)}" (use ${DIRECTIONS.join(", ")})`);
   }
   if (c.default_side !== void 0 && !SIDES.includes(c.default_side)) {
-    throw new Error(`ImageNote: unknown default_side "${String(c.default_side)}" (use ${SIDES.join(", ")})`);
+    throw new Error(`Pinboard: unknown default_side "${String(c.default_side)}" (use ${SIDES.join(", ")})`);
   }
   validatePage(c, "");
   for (const key of ["slides", "images"]) {
     const list = c[key];
     if (list === void 0) continue;
     if (!Array.isArray(list)) {
-      throw new Error(`ImageNote: ${key} must be a list`);
+      throw new Error(`Pinboard: ${key} must be a list`);
     }
     list.forEach((entry, index) => {
       if (typeof entry === "string") return;
       if (!entry || typeof entry !== "object") {
-        throw new Error(`ImageNote: ${key}[${index}] must be a URL or an object`);
+        throw new Error(`Pinboard: ${key}[${index}] must be a URL or an object`);
       }
       validatePage(entry, `${key}[${index}].`);
     });
   }
   const total = expandSlides(configPages(config).map(normalizePage)).length;
   if (total > MAX_SLIDES) {
-    throw new Error(`ImageNote: at most ${MAX_SLIDES} slides per card (this card has ${total})`);
+    throw new Error(`Pinboard: at most ${MAX_SLIDES} slides per card (this card has ${total})`);
   }
 }
 function validatePage(c, prefix) {
   if (c.note_entity !== void 0 && c.note_entity !== "" && typeof c.note_entity !== "string") {
-    throw new Error(`ImageNote: ${prefix}note_entity must be an entity id`);
+    throw new Error(`Pinboard: ${prefix}note_entity must be an entity id`);
   }
   if (c.image_entity !== void 0 && c.image_entity !== "" && typeof c.image_entity !== "string") {
-    throw new Error(`ImageNote: ${prefix}image_entity must be an entity id`);
+    throw new Error(`Pinboard: ${prefix}image_entity must be an entity id`);
   }
   for (const key of ["image", "audio"]) {
     const value = c[key];
     if (value !== void 0 && value !== null && typeof value !== "string" && !(typeof value === "object" && typeof value.media_content_id === "string")) {
-      throw new Error(`ImageNote: ${prefix}${key} must be a URL, a media-source id or a media object`);
+      throw new Error(`Pinboard: ${prefix}${key} must be a URL, a media-source id or a media object`);
     }
   }
 }
@@ -810,13 +810,13 @@ var CARD_STYLES = `
 :host {
   display: block;
   height: 100%;
-  --imagenote-duration: 700ms;
-  --imagenote-easing: cubic-bezier(0.4, 0.05, 0.2, 1);
-  --imagenote-radius: var(--ha-card-border-radius, 12px);
-  --imagenote-note-background: var(--ha-card-background, var(--card-background-color, #fff));
-  --imagenote-badge-background: rgba(0, 0, 0, 0.55);
-  --imagenote-badge-color: #fff;
-  --imagenote-placeholder-background: var(--secondary-background-color, #f2f2f2);
+  --pinboard-duration: 700ms;
+  --pinboard-easing: cubic-bezier(0.4, 0.05, 0.2, 1);
+  --pinboard-radius: var(--ha-card-border-radius, 12px);
+  --pinboard-note-background: var(--ha-card-background, var(--card-background-color, #fff));
+  --pinboard-badge-background: rgba(0, 0, 0, 0.55);
+  --pinboard-badge-color: #fff;
+  --pinboard-placeholder-background: var(--secondary-background-color, #f2f2f2);
 }
 
 ha-card {
@@ -824,7 +824,7 @@ ha-card {
   overflow: hidden;
   height: 100%;
   box-sizing: border-box;
-  border-radius: var(--imagenote-radius);
+  border-radius: var(--pinboard-radius);
 }
 
 .hidden {
@@ -839,11 +839,11 @@ ha-card {
   min-height: 96px;
   perspective: 1400px;
   overflow: hidden;
-  border-radius: var(--imagenote-radius);
+  border-radius: var(--pinboard-radius);
   outline: none;
 }
 .stage.ratio {
-  aspect-ratio: var(--imagenote-aspect, 16 / 9);
+  aspect-ratio: var(--pinboard-aspect, 16 / 9);
   container-type: size;
 }
 .stage.natural {
@@ -867,7 +867,7 @@ ha-card {
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-  transition: transform var(--imagenote-duration) var(--imagenote-easing);
+  transition: transform var(--pinboard-duration) var(--pinboard-easing);
 }
 .stage.natural .scene {
   position: relative;
@@ -885,16 +885,16 @@ ha-card {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border-radius: var(--imagenote-radius);
+  border-radius: var(--pinboard-radius);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  background: var(--imagenote-note-background);
+  background: var(--pinboard-note-background);
 }
 .face.hidden-face {
   visibility: hidden;
 }
 .face.tinted .layer-note {
-  color: var(--imagenote-note-text, var(--primary-text-color));
+  color: var(--pinboard-note-text, var(--primary-text-color));
 }
 .face.tinted .note-header ha-icon,
 .face.tinted .icon-button,
@@ -904,12 +904,12 @@ ha-card {
   opacity: 0.75;
 }
 .face.sticky.kind-note {
-  --imagenote-note-background: var(--imagenote-sticky-color, #fff3a8);
-  --imagenote-note-text: #2b2b2b;
+  --pinboard-note-background: var(--pinboard-sticky-color, #fff3a8);
+  --pinboard-note-text: #2b2b2b;
   box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
 }
 .face.sticky.kind-note .layer-note {
-  color: var(--imagenote-note-text);
+  color: var(--pinboard-note-text);
   background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.35), rgba(0, 0, 0, 0) 60%);
 }
 .face.sticky.kind-note .layer-note::after {
@@ -957,10 +957,10 @@ ha-card {
   inset: auto;
 }
 .scene.mode-fade .face {
-  transition: opacity var(--imagenote-duration) ease;
+  transition: opacity var(--pinboard-duration) ease;
 }
 .scene.mode-slide .face {
-  transition: transform var(--imagenote-duration) var(--imagenote-easing);
+  transition: transform var(--pinboard-duration) var(--pinboard-easing);
 }
 
 /* ---------- layers ---------- */
@@ -1074,9 +1074,9 @@ ha-card {
 .record.active {
   background: var(--error-color, #db4437);
   color: #fff;
-  animation: imagenote-pulse 1.2s ease-in-out infinite;
+  animation: pinboard-pulse 1.2s ease-in-out infinite;
 }
-@keyframes imagenote-pulse {
+@keyframes pinboard-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(219, 68, 55, 0.5); }
   50% { box-shadow: 0 0 0 8px rgba(219, 68, 55, 0); }
 }
@@ -1112,27 +1112,27 @@ ha-card {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: var(--imagenote-fit, cover);
-  background: var(--imagenote-placeholder-background);
+  object-fit: var(--pinboard-fit, cover);
+  background: var(--pinboard-placeholder-background);
 }
 .stage.natural .face.current .layer-image img {
   height: auto;
 }
 /* ---------- ken burns ---------- */
-@keyframes imagenote-kenburns-a {
+@keyframes pinboard-kenburns-a {
   from { transform: scale(1) translate(0, 0); }
   to { transform: scale(1.12) translate(-2.5%, 1.5%); }
 }
-@keyframes imagenote-kenburns-b {
+@keyframes pinboard-kenburns-b {
   from { transform: scale(1.12) translate(2%, -2%); }
   to { transform: scale(1) translate(0, 0); }
 }
 .stage.ken-burns .face.kind-image.current img {
-  animation: imagenote-kenburns-a 22s ease-in-out infinite alternate;
+  animation: pinboard-kenburns-a 22s ease-in-out infinite alternate;
   will-change: transform;
 }
 .stage.ken-burns .face-b.kind-image.current img {
-  animation-name: imagenote-kenburns-b;
+  animation-name: pinboard-kenburns-b;
 }
 @media (prefers-reduced-motion: reduce) {
   .stage.ken-burns .face.kind-image.current img {
@@ -1305,9 +1305,9 @@ ha-card {
   padding: 16px;
   text-align: center;
   color: var(--secondary-text-color);
-  background: var(--imagenote-placeholder-background);
+  background: var(--pinboard-placeholder-background);
   border: 2px dashed var(--divider-color, rgba(0, 0, 0, 0.12));
-  border-radius: var(--imagenote-radius);
+  border-radius: var(--pinboard-radius);
   box-sizing: border-box;
 }
 .stage.natural .placeholder {
@@ -1473,7 +1473,7 @@ ha-card {
   right: 0;
   top: -28px;
   height: 28px;
-  background: linear-gradient(to bottom, transparent, var(--imagenote-note-background));
+  background: linear-gradient(to bottom, transparent, var(--pinboard-note-background));
   pointer-events: none;
   opacity: 0;
   transition: opacity 150ms ease;
@@ -1694,8 +1694,8 @@ ha-card {
   font-size: 0.78em;
   font-weight: 500;
   letter-spacing: 0.02em;
-  color: var(--imagenote-badge-color);
-  background: var(--imagenote-badge-background);
+  color: var(--pinboard-badge-color);
+  background: var(--pinboard-badge-background);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   opacity: 0.85;
@@ -1726,7 +1726,7 @@ ha-card {
 .tiles-card {
   display: flex;
   flex-direction: column;
-  padding: var(--imagenote-tile-gap, 8px);
+  padding: var(--pinboard-tile-gap, 8px);
   box-sizing: border-box;
 }
 .tiles-header {
@@ -1739,19 +1739,19 @@ ha-card {
   flex: 1;
   min-height: 0;
   display: grid;
-  gap: var(--imagenote-tile-gap, 8px);
-  grid-template-columns: repeat(auto-fill, minmax(min(var(--imagenote-tile-min, 150px), 100%), 1fr));
+  gap: var(--pinboard-tile-gap, 8px);
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--pinboard-tile-min, 150px), 100%), 1fr));
   grid-auto-rows: minmax(0, 1fr);
 }
 .tiles.fixed-columns {
-  grid-template-columns: repeat(var(--imagenote-columns, 2), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--pinboard-columns, 2), minmax(0, 1fr));
 }
-.tiles imagenote-card {
+.tiles pinboard-card {
   min-width: 0;
   min-height: 0;
   --ha-card-border-width: 0;
   --ha-card-box-shadow: none;
-  --ha-card-border-radius: calc(var(--imagenote-radius) - 4px);
+  --ha-card-border-radius: calc(var(--pinboard-radius) - 4px);
 }
 
 /* ---------- small cards ---------- */
@@ -2093,14 +2093,14 @@ function formatSeconds(total) {
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
-var ImageNoteCard = class extends HTMLElement {
+var PinboardCard = class extends HTMLElement {
   static getConfigElement() {
     return document.createElement(EDITOR_TYPE);
   }
   static getStubConfig() {
     return {
       type: `custom:${CARD_TYPE}`,
-      title: "ImageNote",
+      title: "Pinboard",
       image: SAMPLE_IMAGE,
       note: "**Hello!** Tap the picture to read this note.\n\nMarkdown works here: lists, links, *emphasis*."
     };
@@ -2145,7 +2145,6 @@ var ImageNoteCard = class extends HTMLElement {
     this._root = this.attachShadow({ mode: "open" });
     this._ensureMarkdown();
   }
-  // ---------------------------------------------------------------- lifecycle
   connectedCallback() {
     this._motionQuery.addEventListener("change", this._onMotionChange);
     this._observeResize();
@@ -2317,7 +2316,6 @@ var ImageNoteCard = class extends HTMLElement {
     }
     return 0;
   }
-  // ---------------------------------------------------------------- tiles
   /** layout: grid — every config entry becomes its own tile, each a complete card of its own. */
   _buildTiles(raw) {
     const config = this._config;
@@ -2330,10 +2328,10 @@ var ImageNoteCard = class extends HTMLElement {
       header.textContent = config.title;
       header.classList.remove("hidden");
     }
-    grid.style.setProperty("--imagenote-tile-min", `${TILE_MIN_WIDTH_PX}px`);
+    grid.style.setProperty("--pinboard-tile-min", `${TILE_MIN_WIDTH_PX}px`);
     if (config.columns > 0) {
       grid.classList.add("fixed-columns");
-      grid.style.setProperty("--imagenote-columns", String(config.columns));
+      grid.style.setProperty("--pinboard-columns", String(config.columns));
     }
     const shared = { ...raw };
     for (const key of ["slides", "images", "image", "image_entity", "note", "note_entity", "note_attribute", "audio", "audio_entity", "expires", "color", "markers", "title", "layout", "columns"]) {
@@ -2362,12 +2360,11 @@ var ImageNoteCard = class extends HTMLElement {
       return tile;
     });
   }
-  // ---------------------------------------------------------------- building
   _build() {
     this._root.innerHTML = TEMPLATE;
     const q = (root, selector) => {
       const el = root.querySelector(selector);
-      if (!el) throw new Error(`ImageNote: missing element ${selector}`);
+      if (!el) throw new Error(`Pinboard: missing element ${selector}`);
       return el;
     };
     const face = (el) => ({
@@ -2529,11 +2526,11 @@ var ImageNoteCard = class extends HTMLElement {
     els.stage.classList.toggle("natural", ratio === null);
     els.stage.classList.toggle("ratio", ratio !== null);
     if (ratio !== null) {
-      els.stage.style.setProperty("--imagenote-aspect", String(ratio));
+      els.stage.style.setProperty("--pinboard-aspect", String(ratio));
     } else {
-      els.stage.style.removeProperty("--imagenote-aspect");
+      els.stage.style.removeProperty("--pinboard-aspect");
     }
-    this.style.setProperty("--imagenote-fit", config.image_fit);
+    this.style.setProperty("--pinboard-fit", config.image_fit);
     els.stage.classList.toggle("hover-flip", config.hover_flip);
     els.stage.classList.toggle("ken-burns", config.ken_burns && !this._motionQuery.matches);
     els.badge.classList.toggle("hidden", !config.show_hint || this._slides().length < 2);
@@ -2550,7 +2547,7 @@ var ImageNoteCard = class extends HTMLElement {
     if (!els || !config) return;
     const reduced = this._motionQuery.matches;
     const duration = reduced ? Math.min(config.duration, 200) : config.duration;
-    this.style.setProperty("--imagenote-duration", `${duration}ms`);
+    this.style.setProperty("--pinboard-duration", `${duration}ms`);
     els.scene.classList.remove("mode-flip", "mode-fade", "mode-slide", "mode-cube", "mode-none");
     els.scene.classList.add(`mode-${this._mode()}`);
     this._resetPositions();
@@ -2575,7 +2572,6 @@ var ImageNoteCard = class extends HTMLElement {
       this._afterSlideChange(false);
     }
   }
-  // ---------------------------------------------------------------- slide engine
   _rot() {
     return this._config?.direction === "vertical" ? "rotateX" : "rotateY";
   }
@@ -2631,7 +2627,7 @@ var ImageNoteCard = class extends HTMLElement {
     const from = els.faces[fromIndex];
     const to = els.faces[toIndex];
     const mode = animate ? this._mode() : "none";
-    const duration = Number.parseFloat(getComputedStyle(this).getPropertyValue("--imagenote-duration")) || 0;
+    const duration = Number.parseFloat(getComputedStyle(this).getPropertyValue("--pinboard-duration")) || 0;
     window.clearTimeout(this._animTimer);
     this._stopAudio();
     this._index = index;
@@ -2714,15 +2710,14 @@ var ImageNoteCard = class extends HTMLElement {
     this._updateScrollState(this._currentFace);
     if (emit) {
       const detail = { index: this._index, kind: slide.kind, side: slide.kind };
-      this.dispatchEvent(new CustomEvent("imagenote-slide", { detail, bubbles: true, composed: true }));
-      this.dispatchEvent(new CustomEvent("imagenote-flip", { detail, bubbles: true, composed: true }));
+      this.dispatchEvent(new CustomEvent("pinboard-slide", { detail, bubbles: true, composed: true }));
+      this.dispatchEvent(new CustomEvent("pinboard-flip", { detail, bubbles: true, composed: true }));
     }
   }
   _onSwipe(direction) {
     if (!this._config || this._slides().length < 2 || this._editing) return;
     this.goTo(direction === "left" ? "next" : "prev");
   }
-  // ---------------------------------------------------------------- rendering a slide into a face
   _renderSlide(view, slide) {
     const config = this._config;
     if (!config) return;
@@ -2764,12 +2759,12 @@ var ImageNoteCard = class extends HTMLElement {
     const color = resolveNoteColor(slide.color);
     view.el.classList.toggle("sticky", config?.note_style === "sticky");
     if (color) {
-      view.el.style.setProperty("--imagenote-note-background", color);
-      view.el.style.setProperty("--imagenote-note-text", contrastTextColor(color));
+      view.el.style.setProperty("--pinboard-note-background", color);
+      view.el.style.setProperty("--pinboard-note-text", contrastTextColor(color));
       view.el.classList.add("tinted");
     } else {
-      view.el.style.removeProperty("--imagenote-note-background");
-      view.el.style.removeProperty("--imagenote-note-text");
+      view.el.style.removeProperty("--pinboard-note-background");
+      view.el.style.removeProperty("--pinboard-note-text");
       view.el.classList.remove("tinted");
     }
   }
@@ -2785,7 +2780,6 @@ var ImageNoteCard = class extends HTMLElement {
     view.imageTag.textContent = label;
     view.imageTag.classList.toggle("hidden", !dim);
   }
-  // ---------------------------------------------------------------- templates
   /** Notes with {{ }} or {% %} are rendered by Home Assistant and follow state changes. */
   _ensureTemplate(slide) {
     const raw = this._rawNoteText(slide);
@@ -2837,7 +2831,6 @@ var ImageNoteCard = class extends HTMLElement {
     }
     return entity.state === "unknown" || entity.state === "unavailable" ? "" : entity.state;
   }
-  // ---------------------------------------------------------------- picture
   /** The picture address an entity provides: entity_picture, or the state of an input_text / text. */
   _imageSourceFromEntity(slide) {
     if (!slide.image_entity || !this._hass) return void 0;
@@ -2946,7 +2939,6 @@ var ImageNoteCard = class extends HTMLElement {
     this._updatePlaceholder(view);
     this._updateDepth();
   }
-  // ---------------------------------------------------------------- markers
   _renderMarkers(view, slide) {
     view.markers.replaceChildren();
     view.markerStates = slide.markers.map((m) => m.entity ? this._hass?.states[m.entity]?.state ?? "" : "").join("|");
@@ -3005,7 +2997,6 @@ var ImageNoteCard = class extends HTMLElement {
       view.markers.append(pin);
     });
   }
-  // ---------------------------------------------------------------- camera
   /** Takes or picks a photo, uploads it and stores its address in the slide's input_text. */
   async _uploadPhoto(view, file) {
     const config = this._config;
@@ -3036,7 +3027,6 @@ var ImageNoteCard = class extends HTMLElement {
       view.camera.disabled = false;
     }
   }
-  // ---------------------------------------------------------------- audio
   _audioSourceFromEntity(slide) {
     if (!slide.audio_entity || !this._hass) return void 0;
     const entity = this._hass.states[slide.audio_entity];
@@ -3135,7 +3125,7 @@ var ImageNoteCard = class extends HTMLElement {
       if (audio.paused) await audio.play();
       else audio.pause();
     } catch (err) {
-      console.warn("ImageNote: playback failed", err);
+      console.warn("Pinboard: playback failed", err);
     }
   }
   _seek(view, ev) {
@@ -3258,7 +3248,6 @@ var ImageNoteCard = class extends HTMLElement {
     }
     if (recorder.state !== "inactive") recorder.stop();
   }
-  // ---------------------------------------------------------------- note
   _noteSource(slide) {
     const config = this._config;
     const empty = {
@@ -3435,7 +3424,7 @@ var ImageNoteCard = class extends HTMLElement {
           label.classList.toggle("done", input.checked);
           input.addEventListener("change", () => {
             label.classList.toggle("done", input.checked);
-            void this._toggleCheck(view, source, item.line, input.checked);
+            void this._toggleCheck(source, item.line, input.checked);
           });
           label.append(input, text);
           list.append(label);
@@ -3459,7 +3448,6 @@ var ImageNoteCard = class extends HTMLElement {
     div.textContent = text;
     return div;
   }
-  // ---------------------------------------------------------------- checklists
   _canWriteBack(source) {
     return Boolean(this._config?.checklist_writeback) && source.editable && !source.templated && Boolean(this._hass);
   }
@@ -3476,7 +3464,7 @@ var ImageNoteCard = class extends HTMLElement {
       return void 0;
     }
   }
-  async _toggleCheck(view, source, line, checked) {
+  async _toggleCheck(source, line, checked) {
     if (this._canWriteBack(source) && this._hass) {
       const value = toggleChecklistLine(source.raw, line, checked);
       const optimistic = { ...source, raw: value, text: value };
@@ -3484,7 +3472,7 @@ var ImageNoteCard = class extends HTMLElement {
       try {
         await this._hass.callService(source.domain, "set_value", { entity_id: source.entityId, value });
       } catch (err) {
-        console.warn("ImageNote: could not save the checklist", err);
+        console.warn("Pinboard: could not save the checklist", err);
         this._lastNote = void 0;
         this._applyHass();
       }
@@ -3497,7 +3485,6 @@ var ImageNoteCard = class extends HTMLElement {
       window.localStorage.setItem(key, JSON.stringify(current));
     } catch {
     }
-    void view;
   }
   _ensureMarkdown() {
     if (this._markdownReady) return;
@@ -3511,7 +3498,6 @@ var ImageNoteCard = class extends HTMLElement {
       }
     });
   }
-  // ---------------------------------------------------------------- editing
   _startEdit() {
     const els = this._els;
     if (!els || this._slide.kind !== "note" || !this._hass) return;
@@ -3605,7 +3591,6 @@ var ImageNoteCard = class extends HTMLElement {
     view.counter.textContent = translate(this._lang, "charsLeft", { count: left });
     view.counter.classList.toggle("over", left < 0);
   }
-  // ---------------------------------------------------------------- interaction
   _gestureAllowed(ev) {
     if (this._editing) return false;
     for (const node of ev.composedPath()) {
@@ -3637,7 +3622,7 @@ var ImageNoteCard = class extends HTMLElement {
       );
       if (shouldFlip) this.goTo("next");
     } catch (err) {
-      console.warn("ImageNote: action failed", err);
+      console.warn("Pinboard: action failed", err);
     }
   }
   _onStageKeydown = (ev) => {
@@ -3665,7 +3650,6 @@ var ImageNoteCard = class extends HTMLElement {
   _onMotionChange = () => {
     this._applyMode();
   };
-  // ---------------------------------------------------------------- timers & layout
   _startTimers() {
     this._stopTimers();
     const config = this._config;
@@ -3771,7 +3755,7 @@ var TEMPLATE2 = `
   <div class="preview-card"></div>
   <div class="buttons"><button class="btn primary play" type="button"><ha-icon icon="mdi:play"></ha-icon><span></span></button></div>
 </div>
-<div class="version">ImageNote ${VERSION}</div>`;
+<div class="version">Pinboard ${VERSION}</div>`;
 var STYLES = `
 .pages {
   margin-bottom: 16px;
@@ -3853,7 +3837,7 @@ var STYLES = `
   margin: 10px 0;
   max-width: 420px;
 }
-.preview-card imagenote-card {
+.preview-card pinboard-card {
   display: block;
 }
 .entry-actions:not(:has(.btn:not(.hidden))) {
@@ -4098,7 +4082,7 @@ var STYLES = `
   .preview { width: 100%; min-height: 140px; }
 }
 `;
-var ImageNoteCardEditor = class extends HTMLElement {
+var PinboardCardEditor = class extends HTMLElement {
   _root;
   _config;
   _hass;
@@ -4153,7 +4137,6 @@ var ImageNoteCardEditor = class extends HTMLElement {
   get hass() {
     return this._hass;
   }
-  // ---------------------------------------------------------------- pages
   _pages() {
     return this._config ? configPages(this._config) : [{}];
   }
@@ -4275,7 +4258,6 @@ var ImageNoteCardEditor = class extends HTMLElement {
       if (button) button.disabled = false;
     }
   }
-  // ---------------------------------------------------------------- audio
   _renderAudioEditor(show) {
     const section = this._root.querySelector(".audio-editor");
     if (!section) return;
@@ -4401,7 +4383,6 @@ var ImageNoteCardEditor = class extends HTMLElement {
     this._pageIndex = index;
     this._render();
   }
-  // ---------------------------------------------------------------- rendering
   _ensureForm() {
     if (customElements.get("ha-form")) return;
     window.loadCardHelpers?.().then((helpers) => {
@@ -4830,7 +4811,6 @@ var ImageNoteCardEditor = class extends HTMLElement {
     }
     return data;
   }
-  // ---------------------------------------------------------------- events
   _onPageValueChanged = (ev) => {
     ev.stopPropagation();
     if (!this._config) return;
@@ -4881,7 +4861,6 @@ var ImageNoteCardEditor = class extends HTMLElement {
       })
     );
   }
-  // ---------------------------------------------------------------- picture upload
   async _upload(file) {
     const hass = this._hass;
     if (!hass || this._uploading) return;
@@ -4908,7 +4887,6 @@ var ImageNoteCardEditor = class extends HTMLElement {
       if (this._uploadButton) this._uploadButton.disabled = false;
     }
   }
-  // ---------------------------------------------------------------- markers
   _markers() {
     const list = this._page().markers;
     return Array.isArray(list) ? list.map((m) => ({ ...m })) : [];
@@ -4923,7 +4901,6 @@ var ImageNoteCardEditor = class extends HTMLElement {
     this._emit(this._withPage(this._pageIndex, page));
   }
   _onCanvasClick(ev) {
-    const canvas = ev.currentTarget;
     const target = ev.target;
     if (target.closest(".pin")) return;
     const img = this._canvasImg;
@@ -4940,7 +4917,6 @@ var ImageNoteCardEditor = class extends HTMLElement {
       markers.push({ x, y });
       this._selectedMarker = markers.length - 1;
     }
-    void canvas;
     this._setMarkers(markers);
   }
   _renderMarkers(show) {
@@ -5087,12 +5063,12 @@ function cleanPage(page) {
   return out;
 }
 
-// src/imagenote-card.ts
+// src/pinboard-card.ts
 if (!customElements.get(CARD_TYPE)) {
-  customElements.define(CARD_TYPE, ImageNoteCard);
+  customElements.define(CARD_TYPE, PinboardCard);
 }
 if (!customElements.get(EDITOR_TYPE)) {
-  customElements.define(EDITOR_TYPE, ImageNoteCardEditor);
+  customElements.define(EDITOR_TYPE, PinboardCardEditor);
 }
 window.customCards = window.customCards ?? [];
 if (!window.customCards.some((card) => card.type === CARD_TYPE)) {
@@ -5105,11 +5081,11 @@ if (!window.customCards.some((card) => card.type === CARD_TYPE)) {
   });
 }
 console.info(
-  `%c ImageNote %c ${VERSION} `,
+  `%c Pinboard %c ${VERSION} `,
   "color: #fff; background: #2c5364; font-weight: 600; border-radius: 4px 0 0 4px; padding: 2px 6px;",
   "color: #2c5364; background: #e6f0f3; font-weight: 500; border-radius: 0 4px 4px 0; padding: 2px 6px;"
 );
 export {
-  ImageNoteCard,
-  ImageNoteCardEditor
+  PinboardCard,
+  PinboardCardEditor
 };

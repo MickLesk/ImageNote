@@ -28,11 +28,11 @@ async function openDemo(options = {}) {
   return { page, context, errors };
 }
 
-const card = (page, index) => page.locator("#grid > .cell > imagenote-card").nth(index);
+const card = (page, index) => page.locator("#grid > .cell > pinboard-card").nth(index);
 
 test("demo renders every card without page errors", async () => {
   const { page, context, errors } = await openDemo();
-  assert.equal(await page.locator("#grid > .cell > imagenote-card").count(), 18);
+  assert.equal(await page.locator("#grid > .cell > pinboard-card").count(), 18);
   assert.deepEqual(errors, []);
   assert.equal(await card(page, 0).locator(".face.current .title-overlay").innerText(), "Kitchen");
   assert.equal(await card(page, 0).locator(".stage").getAttribute("aria-pressed"), "false");
@@ -73,7 +73,7 @@ test("notes from an input_text entity can be edited on the card", async () => {
   await cur().locator("textarea").fill("Bought the milk.");
   await cur().locator(".save").click();
   await page.waitForFunction(
-    () => document.querySelectorAll("#grid > .cell > imagenote-card")[1].shadowRoot.querySelector(".face.current .note-body").innerText.includes("Bought the milk."),
+    () => document.querySelectorAll("#grid > .cell > pinboard-card")[1].shadowRoot.querySelector(".face.current .note-body").innerText.includes("Bought the milk."),
   );
   assert.match(await cur().locator(".note-meta").innerText(), /Updated/);
   // Escape cancels without saving.
@@ -178,9 +178,9 @@ test("slides can be pictures and notes in any order, at most ten", async () => {
   assert.equal(await trip.locator(".badge span").innerText(), "Note");
 
   const error = await page.evaluate(() => {
-    const el = document.createElement("imagenote-card");
+    const el = document.createElement("pinboard-card");
     try {
-      el.setConfig({ type: "custom:imagenote-card", slides: Array.from({ length: 11 }, () => ({ note: "x" })) });
+      el.setConfig({ type: "custom:pinboard-card", slides: Array.from({ length: 11 }, () => ({ note: "x" })) });
       return "";
     } catch (err) {
       return err.message;
@@ -192,11 +192,11 @@ test("slides can be pictures and notes in any order, at most ten", async () => {
 
 test("the editor adds and removes pictures", async () => {
   const { page, context } = await openDemo();
-  const editor = page.locator("imagenote-card-editor");
+  const editor = page.locator("pinboard-card-editor");
   const configs = [];
   await page.evaluate(() => {
     window.__configs = [];
-    document.querySelector("imagenote-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
+    document.querySelector("pinboard-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
   });
   await editor.locator(".chip.add-image").click();
   let latest = await page.evaluate(() => window.__configs.at(-1));
@@ -220,7 +220,7 @@ test("fixed-height hosts (sections view) are never overflowed", async () => {
   const { page, context } = await openDemo();
   const sizes = await page.evaluate(() =>
     Array.from(document.querySelectorAll("#sections .host")).slice(0, 3).map((host) => {
-      const card = host.querySelector("imagenote-card");
+      const card = host.querySelector("pinboard-card");
       const h = host.getBoundingClientRect();
       const c = card.shadowRoot.querySelector("ha-card").getBoundingClientRect();
       const back = card.shadowRoot.querySelector(".face.current").getBoundingClientRect();
@@ -232,7 +232,7 @@ test("fixed-height hosts (sections view) are never overflowed", async () => {
     assert.deepEqual(back, host);
   }
   // The note side keeps its footer inside the card and scrolls long text.
-  const first = page.locator("#sections imagenote-card").first();
+  const first = page.locator("#sections pinboard-card").first();
   assert.equal(await first.locator(".face.current .layer-note").evaluate((el) => el.classList.contains("scrollable")), true);
   const footer = await first.locator(".face.current .note-footer").boundingBox();
   const host = await page.locator("#sections .host").first().boundingBox();
@@ -242,10 +242,10 @@ test("fixed-height hosts (sections view) are never overflowed", async () => {
 
 test("the editor reorders pictures", async () => {
   const { page, context } = await openDemo();
-  const editor = page.locator("imagenote-card-editor");
+  const editor = page.locator("pinboard-card-editor");
   await page.evaluate(() => {
     window.__configs = [];
-    document.querySelector("imagenote-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
+    document.querySelector("pinboard-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
   });
   await editor.locator(".chip.add-note").click();
   assert.equal(await editor.locator(".chip.active").innerText(), "2 · Note");
@@ -265,7 +265,7 @@ test("the editor reorders pictures", async () => {
 
 test("layout: grid renders one tile per picture that flips on its own", async () => {
   const { page, context } = await openDemo();
-  const tiles = card(page, 10).locator("imagenote-card");
+  const tiles = card(page, 10).locator("pinboard-card");
   assert.equal(await tiles.count(), 4);
   assert.equal(await tiles.nth(0).locator(".face.current .title-overlay").innerText(), "Tomatoes");
   await tiles.nth(1).locator(".stage").click();
@@ -275,7 +275,7 @@ test("layout: grid renders one tile per picture that flips on its own", async ()
   assert.match(await tiles.nth(1).locator(".face.current .note-body").innerText(), /Cut back the mint/);
   // Tiles share the fixed height of a sections host.
   const host = await page.locator("#sections .host").nth(3).boundingBox();
-  const tile = await page.locator("#sections .host").nth(3).locator("imagenote-card imagenote-card").first().boundingBox();
+  const tile = await page.locator("#sections .host").nth(3).locator("pinboard-card pinboard-card").first().boundingBox();
   assert.ok(tile.y + tile.height <= host.y + host.height + 0.5);
   assert.ok(tile.height > 100);
   await context.close();
@@ -300,7 +300,7 @@ test("checklists tick, write back to input_text and stay local otherwise", async
   assert.match(await bc().locator(".note-body").innerText(), /54\.5 °C/);
   await bc().locator(".check input").nth(0).click();
   await page.waitForTimeout(100);
-  const stored = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("imagenote:checks:")).length);
+  const stored = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("pinboard:checks:")).length);
   assert.equal(stored, 1);
   await page.reload({ waitUntil: "networkidle" });
   const boiler2 = card(page, 12);
@@ -322,12 +322,12 @@ test("expired pages are dimmed or hidden, colours and expiry dates show", async 
   await boiler.locator(".dots button").nth(3).click();
   await page.waitForTimeout(800);
   assert.match(await cur().locator(".note-meta").innerText(), /Until/);
-  const bg = await cur().evaluate((el) => getComputedStyle(el).getPropertyValue("--imagenote-note-background").trim());
+  const bg = await cur().evaluate((el) => getComputedStyle(el).getPropertyValue("--pinboard-note-background").trim());
   assert.equal(bg, "#d4f5cd");
 
   const hidden = await page.evaluate(() => {
-    const el = document.createElement("imagenote-card");
-    el.setConfig({ type: "custom:imagenote-card", expired_slides: "hide", slides: [{ note: "a" }, { note: "old", expires: "2020-01-01" }, { note: "c" }] });
+    const el = document.createElement("pinboard-card");
+    el.setConfig({ type: "custom:pinboard-card", expired_slides: "hide", slides: [{ note: "a" }, { note: "old", expires: "2020-01-01" }, { note: "c" }] });
     document.body.append(el);
     const dots = el.shadowRoot.querySelectorAll(".dots button").length;
     el.remove();
@@ -375,10 +375,10 @@ test("a picture from an input_text gets a camera button that uploads and writes 
 
 test("the editor imports pictures from a media folder, reorders by drag and drop and previews", async () => {
   const { page, context } = await openDemo();
-  const editor = page.locator("imagenote-card-editor");
+  const editor = page.locator("pinboard-card-editor");
   await page.evaluate(() => {
     window.__configs = [];
-    document.querySelector("imagenote-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
+    document.querySelector("pinboard-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
   });
   await editor.locator(".import-folder").fill("holiday");
   await editor.locator(".import").click();
@@ -397,7 +397,7 @@ test("the editor imports pictures from a media folder, reorders by drag and drop
   assert.equal(latest.slides[1].image, "./sample-2.svg");
 
   // The preview card follows the config and plays the animation.
-  const preview = editor.locator(".preview-card imagenote-card");
+  const preview = editor.locator(".preview-card pinboard-card");
   assert.equal(await preview.count(), 1);
   assert.equal(await preview.locator(".dots button").count(), 4);
   await editor.locator(".play").click();
@@ -409,20 +409,20 @@ test("the editor imports pictures from a media folder, reorders by drag and drop
 test("uploads are scaled down and cropped before they leave the browser", async () => {
   const { page, context } = await openDemo();
   // The helper is bundled, so exercise it through the editor's upload path.
-  const editor = page.locator("imagenote-card-editor");
+  const editor = page.locator("pinboard-card-editor");
   await page.evaluate(() => {
     window.__uploaded = null;
-    const hass = document.querySelector("imagenote-card-editor").hass;
+    const hass = document.querySelector("pinboard-card-editor").hass;
     hass.fetchWithAuth = async (path, init) => {
       const file = init.body.get("file");
       const bitmap = await createImageBitmap(file);
       window.__uploaded = { width: bitmap.width, height: bitmap.height, type: file.type, name: file.name };
       return new Response(JSON.stringify({ id: "scaled" }), { status: 200 });
     };
-    document.querySelector("imagenote-card-editor").hass = hass;
+    document.querySelector("pinboard-card-editor").hass = hass;
   });
   await page.evaluate(() => {
-    const ed = document.querySelector("imagenote-card-editor");
+    const ed = document.querySelector("pinboard-card-editor");
     ed.setConfig({ ...ed._config, upload_max_size: 600, upload_crop: true, aspect_ratio: "1:1" });
   });
   const [chooser] = await Promise.all([page.waitForEvent("filechooser"), editor.locator(".upload").click()]);
@@ -476,10 +476,10 @@ test("audio pages play a memo and offer recording for input_text entities", asyn
 
 test("the editor adds audio entries with record and upload controls", async () => {
   const { page, context } = await openDemo();
-  const editor = page.locator("imagenote-card-editor");
+  const editor = page.locator("pinboard-card-editor");
   await page.evaluate(() => {
     window.__configs = [];
-    document.querySelector("imagenote-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
+    document.querySelector("pinboard-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
   });
   await editor.locator(".chip.add-audio").click();
   const latest = await page.evaluate(() => window.__configs.at(-1));
@@ -495,7 +495,7 @@ test("empty and broken states show placeholders", async () => {
   const { page, context } = await openDemo();
   assert.match(await card(page, 5).locator(".face.current .placeholder").innerText(), /No picture yet/);
   await page.waitForFunction(
-    () => document.querySelectorAll("#grid > .cell > imagenote-card")[6].shadowRoot.querySelector(".face.current .placeholder").innerText.includes("could not be loaded"),
+    () => document.querySelectorAll("#grid > .cell > pinboard-card")[6].shadowRoot.querySelector(".face.current .placeholder").innerText.includes("could not be loaded"),
   );
   await card(page, 6).locator(".stage").click();
   await page.waitForTimeout(800);
@@ -524,14 +524,14 @@ test("the editor emits config-changed", async () => {
     () =>
       new Promise((resolve) => {
         document
-          .querySelector("imagenote-card-editor")
+          .querySelector("pinboard-card-editor")
           .addEventListener("config-changed", (ev) => resolve(ev.detail.config), { once: true });
       }),
   );
-  await page.locator("imagenote-card-editor").locator(".clear").click();
+  await page.locator("pinboard-card-editor").locator(".clear").click();
   const config = await received;
   assert.equal(config.image, undefined);
   assert.equal(config.title, "Fridge");
-  assert.equal(config.type, "custom:imagenote-card");
+  assert.equal(config.type, "custom:pinboard-card");
   await context.close();
 });
