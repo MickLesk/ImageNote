@@ -26,6 +26,8 @@ All notable changes to ImageNote are documented here. The format follows
   title. Arrows, dots, swipe and arrow keys move between them; `auto_advance`
   runs a slideshow; pictures crossfade. The editor manages the pictures as
   tabs.
+- `layout: grid` shows several pictures side by side as tiles inside one
+  card, each flipping on its own; `columns` fixes the tiles per row.
 - Upload target per card: Home Assistant's image store or a folder in
   `/media`.
 - Pictures can be reordered in the editor.

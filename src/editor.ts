@@ -3,6 +3,7 @@ import {
   DEFAULTS,
   DIRECTIONS,
   IMAGE_FITS,
+  LAYOUTS,
   MEDIA_EXPIRES_SECONDS,
   MEDIA_SOURCE_PREFIX,
   SIDES,
@@ -511,6 +512,18 @@ export class ImageNoteCardEditor extends HTMLElement {
               {
                 name: "duration",
                 selector: { number: { min: 0, max: 5000, step: 50, mode: "box", unit_of_measurement: "ms" } },
+              },
+            ],
+          },
+          {
+            name: "appearance_layout",
+            type: "grid",
+            flatten: true,
+            schema: [
+              { name: "layout", selector: { select: { mode: "dropdown", options: options(LAYOUTS, "layout") } } },
+              {
+                name: "columns",
+                selector: { number: { min: 0, max: 8, step: 1, mode: "box" } },
               },
             ],
           },

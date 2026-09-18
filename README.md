@@ -28,9 +28,9 @@ message for the wall panel.
 - **Edit the note on the card** — link an `input_text` or `text` entity and a
   pencil appears on the note side. Changes are saved with `set_value`, so
   automations and other dashboards see them immediately.
-- **Several pictures per card** — each with its own note. Swipe, use the
-  arrows, the dots or the arrow keys to move between them, or let the card
-  advance on its own.
+- **Several pictures per card** — each with its own note. Either one at a
+  time (swipe, arrows, dots, arrow keys, or an automatic slideshow) or side by
+  side as tiles that flip independently.
 - **Five transitions** — `flip` (3D, default), `fade`, `slide`, `cube`, `none`;
   horizontal or vertical. Respects `prefers-reduced-motion`.
 - **Fits every layout** — fixed aspect ratios or the picture's natural size,
@@ -108,6 +108,25 @@ images:
 auto_advance: 15
 ```
 
+The same pictures side by side, every tile flips on its own:
+
+```yaml
+type: custom:imagenote-card
+title: Garage
+layout: grid
+columns: 3
+images:
+  - image: /local/pictures/bike.jpg
+    title: Bike
+    note: Chain oiled in March.
+  - image: /local/pictures/car.jpg
+    title: Car
+    note: "Tyres: 2.5 bar front, 2.8 bar rear."
+  - image: /local/pictures/tools.jpg
+    title: Tools
+    note_entity: input_text.garage_tools
+```
+
 Picture from an entity, note from an attribute:
 
 ```yaml
@@ -127,6 +146,8 @@ direction: vertical
 | `title` | – | Shown on the picture and above the note. |
 | `image` | – | Picture URL, `/local/` path, `/api/image/serve/…` URL or `media-source://` id. Uploads from the editor land here. |
 | `images` | – | A list of pictures, each an object with `image`, `image_entity`, `title`, `note`, `note_entity`, `note_attribute` (or just a URL string). When set, the top-level picture and note fields are ignored. A picture without `title` uses the card title. |
+| `layout` | `stack` | How several pictures are shown: `stack` (one at a time) or `grid` (tiles side by side, each with its own flip). |
+| `columns` | `0` | With `layout: grid`: tiles per row. `0` fits as many as the width allows (about 150 px each). |
 | `image_entity` | – | Use the picture of an `image`, `camera` or `person` entity instead of `image`. |
 | `image_fit` | `cover` | `cover` fills the card and crops, `contain` shows the whole picture. |
 | `aspect_ratio` | `16:9` | `16:9`, `4:3`, `1:1`, `9:16`, any `w:h`, or `auto` for the picture's natural size. |

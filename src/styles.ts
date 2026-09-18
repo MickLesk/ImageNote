@@ -548,6 +548,38 @@ ha-card {
   }
 }
 
+/* ---------- tile grid (layout: grid) ---------- */
+.tiles-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--imagenote-tile-gap, 8px);
+  box-sizing: border-box;
+}
+.tiles-header {
+  padding: 4px 8px 8px;
+  font-size: 1.05em;
+  font-weight: 500;
+  color: var(--primary-text-color);
+}
+.tiles {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: var(--imagenote-tile-gap, 8px);
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--imagenote-tile-min, 150px), 100%), 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+}
+.tiles.fixed-columns {
+  grid-template-columns: repeat(var(--imagenote-columns, 2), minmax(0, 1fr));
+}
+.tiles imagenote-card {
+  min-width: 0;
+  min-height: 0;
+  --ha-card-border-width: 0;
+  --ha-card-box-shadow: none;
+  --ha-card-border-radius: calc(var(--imagenote-radius) - 4px);
+}
+
 /* ---------- small cards ---------- */
 @container (max-width: 260px) {
   .badge span { display: none; }

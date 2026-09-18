@@ -62,10 +62,11 @@
   <div class="grid" id="grid"></div>
 
   <h2 style="font-size:13px;font-weight:500;margin:28px 0 8px;color:var(--secondary-text-color);text-transform:uppercase;letter-spacing:.06em">Sections view: fixed-height hosts (2 rows = 120px, 3 columns ≈ 245px)</h2>
-  <div id="sections" style="display:flex;gap:16px;align-items:flex-start">
+  <div id="sections" style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
     <div class="host" style="height:120px;width:245px"></div>
     <div class="host" style="height:120px;width:245px"></div>
     <div class="host" style="height:232px;width:520px"></div>
+    <div class="host" style="height:232px;width:400px"></div>
   </div>
 
   <div id="editor">
@@ -170,6 +171,12 @@
         { image: "./sample-2.svg", note: "Tyres: 2.5 bar front, 2.8 bar rear." },
         { image: "./sample-3.svg", title: "Tools", note_entity: "input_text.fridge_note" },
       ] } },
+      { label: "Tiles: four pictures side by side, each flips on its own", config: { type: "custom:imagenote-card", title: "Garden", layout: "grid", columns: 2, images: [
+        { image: "./sample-1.svg", title: "Tomatoes", note: "Water every second day." },
+        { image: "./sample-2.svg", title: "Herbs", note: "Cut back the mint." },
+        { image: "./sample-3.svg", title: "Lawn", note_entity: "input_text.fridge_note" },
+        { image: "./sample-1.svg", title: "Compost", note: "Turn it on Sunday." },
+      ] } },
       { label: "Hold → more-info, double tap → URL", config: { type: "custom:imagenote-card", title: "Actions", image: "./sample-2.svg", note_entity: "input_text.fridge_note", hold_action: { action: "more-info" }, double_tap_action: { action: "url", url_path: "https://example.com" } } },
     ];
     window.__events = [];
@@ -194,6 +201,7 @@
       { type: "custom:imagenote-card", title: "BildNote", image: "./sample-2.svg", default_side: "note", note: "**Hallo!** Klick auf das Bild um etwas mehr zu sehen, BLABLABLA\n\nMarkdown funktionieren hier problemlos: Dies ist ein Test für **André**." },
       { type: "custom:imagenote-card", title: "Kitchen", image: "./sample-1.svg", note_entity: "input_text.fridge_note", images: [{ image: "./sample-1.svg" }, { image: "./sample-3.svg" }] },
       { type: "custom:imagenote-card", title: "Long note", image: "./sample-3.svg", default_side: "note", note_entity: "input_text.fridge_note", note: "" },
+      { type: "custom:imagenote-card", layout: "grid", images: [{ image: "./sample-1.svg", title: "A", note: "Note A" }, { image: "./sample-2.svg", title: "B", note: "Note B" }] },
     ];
     document.querySelectorAll("#sections .host").forEach((host, i) => {
       const card = document.createElement("imagenote-card");

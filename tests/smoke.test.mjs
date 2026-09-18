@@ -28,11 +28,11 @@ async function openDemo(options = {}) {
   return { page, context, errors };
 }
 
-const card = (page, index) => page.locator("#grid imagenote-card").nth(index);
+const card = (page, index) => page.locator("#grid > .cell > imagenote-card").nth(index);
 
 test("demo renders every card without page errors", async () => {
   const { page, context, errors } = await openDemo();
-  assert.equal(await page.locator("#grid imagenote-card").count(), 10);
+  assert.equal(await page.locator("#grid > .cell > imagenote-card").count(), 11);
   assert.deepEqual(errors, []);
   assert.equal(await card(page, 0).locator(".title-overlay").innerText(), "Kitchen");
   assert.equal(await card(page, 0).locator(".stage").getAttribute("aria-pressed"), "false");
@@ -84,7 +84,7 @@ test("notes from an input_text entity can be edited on the card", async () => {
 
 test("hold and double tap run their actions instead of flipping", async () => {
   const { page, context } = await openDemo();
-  const actions = card(page, 9);
+  const actions = card(page, 10);
   const box = await actions.locator(".stage").boundingBox();
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
@@ -183,7 +183,7 @@ test("the editor adds and removes pictures", async () => {
 test("fixed-height hosts (sections view) are never overflowed", async () => {
   const { page, context } = await openDemo();
   const sizes = await page.evaluate(() =>
-    Array.from(document.querySelectorAll("#sections .host")).map((host) => {
+    Array.from(document.querySelectorAll("#sections .host")).slice(0, 3).map((host) => {
       const card = host.querySelector("imagenote-card");
       const h = host.getBoundingClientRect();
       const c = card.shadowRoot.querySelector("ha-card").getBoundingClientRect();
@@ -221,6 +221,24 @@ test("the editor reorders pictures", async () => {
   assert.equal(await editor.locator(".chip.active").innerText(), "Picture 1");
   assert.equal(await editor.locator(".move-left").isVisible(), false);
   assert.equal(await editor.locator(".move-right").isVisible(), true);
+  await context.close();
+});
+
+test("layout: grid renders one tile per picture that flips on its own", async () => {
+  const { page, context } = await openDemo();
+  const tiles = card(page, 9).locator("imagenote-card");
+  assert.equal(await tiles.count(), 4);
+  assert.equal(await tiles.nth(0).locator(".title-overlay").innerText(), "Tomatoes");
+  await tiles.nth(1).locator(".stage").click();
+  await page.waitForTimeout(300);
+  assert.equal(await tiles.nth(1).locator(".stage").getAttribute("aria-pressed"), "true");
+  assert.equal(await tiles.nth(0).locator(".stage").getAttribute("aria-pressed"), "false");
+  assert.match(await tiles.nth(1).locator(".note-body").innerText(), /Cut back the mint/);
+  // Tiles share the fixed height of a sections host.
+  const host = await page.locator("#sections .host").nth(3).boundingBox();
+  const tile = await page.locator("#sections .host").nth(3).locator("imagenote-card imagenote-card").first().boundingBox();
+  assert.ok(tile.y + tile.height <= host.y + host.height + 0.5);
+  assert.ok(tile.height > 100);
   await context.close();
 });
 

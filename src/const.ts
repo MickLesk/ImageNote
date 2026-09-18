@@ -1,4 +1,4 @@
-import type { ActionConfig, NormalizedConfig, Transition, Direction, Side, ImageFit } from "./types";
+import type { ActionConfig, NormalizedConfig, Transition, Direction, Side, ImageFit, Layout } from "./types";
 
 export const CARD_TYPE = "imagenote-card";
 export const EDITOR_TYPE = "imagenote-card-editor";
@@ -12,6 +12,8 @@ export const TRANSITIONS: Transition[] = ["flip", "fade", "slide", "cube", "none
 export const DIRECTIONS: Direction[] = ["horizontal", "vertical"];
 export const SIDES: Side[] = ["image", "note"];
 export const IMAGE_FITS: ImageFit[] = ["cover", "contain"];
+export const LAYOUTS: Layout[] = ["stack", "grid"];
+export const TILE_MIN_WIDTH_PX = 150;
 export const ASPECT_RATIOS = ["16:9", "4:3", "3:2", "1:1", "3:4", "9:16", "auto"];
 
 export const NOTE_ENTITY_DOMAINS = ["input_text", "text"];
@@ -31,6 +33,8 @@ export const SWIPE_THRESHOLD_PX = 40;
 
 export const DEFAULTS: Omit<NormalizedConfig, "type" | "pages"> = {
   title: "",
+  layout: "stack",
+  columns: 0,
   image_fit: "cover",
   aspect_ratio: "16:9",
   transition: "flip",

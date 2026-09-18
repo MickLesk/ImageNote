@@ -2,6 +2,7 @@ export type Transition = "flip" | "fade" | "slide" | "cube" | "none";
 export type Direction = "horizontal" | "vertical";
 export type Side = "image" | "note";
 export type ImageFit = "cover" | "contain";
+export type Layout = "stack" | "grid";
 
 export type ActionName =
   | "flip"
@@ -53,6 +54,8 @@ export interface NormalizedPage {
 export interface ImageNoteCardConfig extends PageConfig {
   type: string;
   images?: Array<PageConfig | string>;
+  layout?: Layout;
+  columns?: number;
   image_fit?: ImageFit;
   aspect_ratio?: string;
   transition?: Transition;
@@ -77,6 +80,8 @@ export interface NormalizedConfig {
   type: string;
   title: string;
   pages: NormalizedPage[];
+  layout: Layout;
+  columns: number;
   image_fit: ImageFit;
   aspect_ratio: string;
   transition: Transition;

@@ -11,6 +11,8 @@ var TRANSITIONS = ["flip", "fade", "slide", "cube", "none"];
 var DIRECTIONS = ["horizontal", "vertical"];
 var SIDES = ["image", "note"];
 var IMAGE_FITS = ["cover", "contain"];
+var LAYOUTS = ["stack", "grid"];
+var TILE_MIN_WIDTH_PX = 150;
 var ASPECT_RATIOS = ["16:9", "4:3", "3:2", "1:1", "3:4", "9:16", "auto"];
 var NOTE_ENTITY_DOMAINS = ["input_text", "text"];
 var MEDIA_SOURCE_PREFIX = "media-source://";
@@ -23,6 +25,8 @@ var DOUBLE_TAP_WINDOW_MS = 250;
 var SWIPE_THRESHOLD_PX = 40;
 var DEFAULTS = {
   title: "",
+  layout: "stack",
+  columns: 0,
   image_fit: "cover",
   aspect_ratio: "16:9",
   transition: "flip",
@@ -299,6 +303,8 @@ function normalizeConfig(config) {
     type: config.type,
     title: str(config.title).trim(),
     pages: configPages(config).map(normalizePage),
+    layout: pick(config.layout, LAYOUTS, DEFAULTS.layout),
+    columns: Math.round(num(config.columns, DEFAULTS.columns, 0, 8)),
     image_fit: pick(config.image_fit, IMAGE_FITS, DEFAULTS.image_fit),
     aspect_ratio: str(config.aspect_ratio, DEFAULTS.aspect_ratio).trim() || DEFAULTS.aspect_ratio,
     transition: pick(config.transition, TRANSITIONS, DEFAULTS.transition),
@@ -384,6 +390,11 @@ var en = {
   editor_hover_flip: "Flip on hover (desktop)",
   editor_show_updated: "Show when the note was last changed",
   editor_show_navigation: "Show arrows and dots for several pictures",
+  editor_layout: "Several pictures",
+  layout_stack: "One at a time (swipe / arrows)",
+  layout_grid: "Side by side as tiles",
+  editor_columns: "Tiles per row",
+  editor_columns_help: "0 fits as many tiles as the width allows.",
   editor_auto_advance: "Next picture every",
   editor_auto_advance_help: "0 disables the slideshow.",
   editor_pages: "Pictures",
@@ -476,6 +487,11 @@ var de = {
   editor_hover_flip: "Beim Überfahren umdrehen (Desktop)",
   editor_show_updated: "Anzeigen, wann die Notiz zuletzt geändert wurde",
   editor_show_navigation: "Pfeile und Punkte bei mehreren Bildern anzeigen",
+  editor_layout: "Mehrere Bilder",
+  layout_stack: "Nacheinander (wischen / Pfeile)",
+  layout_grid: "Nebeneinander als Kacheln",
+  editor_columns: "Kacheln pro Zeile",
+  editor_columns_help: "0 nimmt so viele Kacheln nebeneinander, wie die Breite erlaubt.",
   editor_auto_advance: "Nächstes Bild alle",
   editor_auto_advance_help: "0 deaktiviert die Diashow.",
   editor_pages: "Bilder",
@@ -1081,6 +1097,38 @@ ha-card {
   }
 }
 
+/* ---------- tile grid (layout: grid) ---------- */
+.tiles-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--imagenote-tile-gap, 8px);
+  box-sizing: border-box;
+}
+.tiles-header {
+  padding: 4px 8px 8px;
+  font-size: 1.05em;
+  font-weight: 500;
+  color: var(--primary-text-color);
+}
+.tiles {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: var(--imagenote-tile-gap, 8px);
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--imagenote-tile-min, 150px), 100%), 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+}
+.tiles.fixed-columns {
+  grid-template-columns: repeat(var(--imagenote-columns, 2), minmax(0, 1fr));
+}
+.tiles imagenote-card {
+  min-width: 0;
+  min-height: 0;
+  --ha-card-border-width: 0;
+  --ha-card-box-shadow: none;
+  --ha-card-border-radius: calc(var(--imagenote-radius) - 4px);
+}
+
 /* ---------- small cards ---------- */
 @container (max-width: 260px) {
   .badge span { display: none; }
@@ -1230,6 +1278,7 @@ var ImageNoteCard = class extends HTMLElement {
   _gestures;
   _metaTimer;
   _markdownReady = customElements.get("ha-markdown") !== void 0;
+  _tiles;
   constructor() {
     super();
     this._root = this.attachShadow({ mode: "open" });
@@ -1254,6 +1303,15 @@ var ImageNoteCard = class extends HTMLElement {
   setConfig(config) {
     validateConfig(config);
     this._config = normalizeConfig(config);
+    this._stopTimers();
+    this._gestures?.destroy();
+    this._gestures = void 0;
+    this._els = void 0;
+    this._tiles = void 0;
+    if (this._config.layout === "grid" && this._config.pages.length > 1) {
+      this._buildTiles(config);
+      return;
+    }
     this._side = this._config.default_side;
     this._index = 0;
     this._editing = false;
@@ -1275,6 +1333,10 @@ var ImageNoteCard = class extends HTMLElement {
       this._lang = lang;
       this._applyStrings();
     }
+    if (this._tiles) {
+      for (const tile of this._tiles) tile.hass = hass;
+      return;
+    }
     if (this._mediaPending) {
       this._resolveImage();
     }
@@ -1287,10 +1349,19 @@ var ImageNoteCard = class extends HTMLElement {
     return 4;
   }
   getGridOptions() {
+    if (this._tiles) {
+      const perRow = this._config?.columns || Math.min(this._tiles.length, 2);
+      const tileRows = Math.ceil(this._tiles.length / perRow);
+      return { columns: 12, rows: 4 * tileRows, min_columns: 6, min_rows: 2 * tileRows };
+    }
     return { columns: 6, rows: 4, min_columns: 4, min_rows: 2 };
   }
   /** Public helper so automations / other cards can flip the card programmatically. */
   flip(side) {
+    if (this._tiles) {
+      for (const tile of this._tiles) tile.flip(side);
+      return;
+    }
     if (this._editing) return;
     this._setSide(side ?? (this._side === "image" ? "note" : "image"));
     this._restartTimers();
@@ -1311,6 +1382,46 @@ var ImageNoteCard = class extends HTMLElement {
   }
   get page() {
     return this._config?.pages[this._index];
+  }
+  // ---------------------------------------------------------------- tiles
+  /** layout: grid — every picture becomes its own tile, each a full card of its own. */
+  _buildTiles(raw) {
+    const config = this._config;
+    if (!config) return;
+    this._root.innerHTML = `<style>${CARD_STYLES}</style><ha-card class="tiles-card"><div class="tiles-header hidden"></div><div class="tiles"></div></ha-card>`;
+    const header = this._root.querySelector(".tiles-header");
+    const grid = this._root.querySelector(".tiles");
+    if (!header || !grid) return;
+    if (config.title && config.show_title) {
+      header.textContent = config.title;
+      header.classList.remove("hidden");
+    }
+    grid.style.setProperty("--imagenote-tile-min", `${TILE_MIN_WIDTH_PX}px`);
+    if (config.columns > 0) {
+      grid.classList.add("fixed-columns");
+      grid.style.setProperty("--imagenote-columns", String(config.columns));
+    }
+    const shared = { ...raw };
+    for (const key of ["images", "image", "image_entity", "note", "note_entity", "note_attribute", "title", "layout", "columns"]) {
+      delete shared[key];
+    }
+    this._tiles = config.pages.map((page) => {
+      const tile = document.createElement(CARD_TYPE);
+      tile.setConfig({
+        ...shared,
+        type: raw.type,
+        layout: "stack",
+        title: page.title,
+        image: page.image,
+        image_entity: page.image_entity,
+        note: page.note,
+        note_entity: page.note_entity,
+        note_attribute: page.note_attribute
+      });
+      if (this._hass) tile.hass = this._hass;
+      grid.append(tile);
+      return tile;
+    });
   }
   // ---------------------------------------------------------------- rendering
   _build() {
@@ -1985,7 +2096,7 @@ var ImageNoteCard = class extends HTMLElement {
   _startTimers() {
     this._stopTimers();
     const config = this._config;
-    if (!this.isConnected || !config) return;
+    if (!this.isConnected || !config || this._tiles) return;
     if (config.auto_flip > 0) {
       this._autoFlipTimer = window.setInterval(() => {
         if (this._editing) return;
@@ -2487,6 +2598,18 @@ var ImageNoteCardEditor = class extends HTMLElement {
               {
                 name: "duration",
                 selector: { number: { min: 0, max: 5e3, step: 50, mode: "box", unit_of_measurement: "ms" } }
+              }
+            ]
+          },
+          {
+            name: "appearance_layout",
+            type: "grid",
+            flatten: true,
+            schema: [
+              { name: "layout", selector: { select: { mode: "dropdown", options: options(LAYOUTS, "layout") } } },
+              {
+                name: "columns",
+                selector: { number: { min: 0, max: 8, step: 1, mode: "box" } }
               }
             ]
           },

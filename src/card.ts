@@ -9,6 +9,7 @@ import {
   NOTE_ENTITY_DOMAINS,
   SAMPLE_IMAGE,
   SWIPE_THRESHOLD_PX,
+  TILE_MIN_WIDTH_PX,
 } from "./const";
 import { GestureDetector, runAction, type ActionKind, type SwipeDirection } from "./actions";
 import { normalizeConfig, parseAspectRatio, validateConfig } from "./config";
@@ -171,6 +172,7 @@ export class ImageNoteCard extends HTMLElement {
   private _gestures?: GestureDetector;
   private _metaTimer?: number;
   private _markdownReady = customElements.get("ha-markdown") !== undefined;
+  private _tiles?: ImageNoteCard[];
 
   constructor() {
     super();
@@ -200,6 +202,15 @@ export class ImageNoteCard extends HTMLElement {
   setConfig(config: ImageNoteCardConfig): void {
     validateConfig(config);
     this._config = normalizeConfig(config);
+    this._stopTimers();
+    this._gestures?.destroy();
+    this._gestures = undefined;
+    this._els = undefined;
+    this._tiles = undefined;
+    if (this._config.layout === "grid" && this._config.pages.length > 1) {
+      this._buildTiles(config);
+      return;
+    }
     this._side = this._config.default_side;
     this._index = 0;
     this._editing = false;
@@ -222,6 +233,10 @@ export class ImageNoteCard extends HTMLElement {
       this._lang = lang;
       this._applyStrings();
     }
+    if (this._tiles) {
+      for (const tile of this._tiles) tile.hass = hass;
+      return;
+    }
     if (this._mediaPending) {
       this._resolveImage();
     }
@@ -237,11 +252,20 @@ export class ImageNoteCard extends HTMLElement {
   }
 
   getGridOptions(): Record<string, number> {
+    if (this._tiles) {
+      const perRow = this._config?.columns || Math.min(this._tiles.length, 2);
+      const tileRows = Math.ceil(this._tiles.length / perRow);
+      return { columns: 12, rows: 4 * tileRows, min_columns: 6, min_rows: 2 * tileRows };
+    }
     return { columns: 6, rows: 4, min_columns: 4, min_rows: 2 };
   }
 
   /** Public helper so automations / other cards can flip the card programmatically. */
   flip(side?: Side): void {
+    if (this._tiles) {
+      for (const tile of this._tiles) tile.flip(side);
+      return;
+    }
     if (this._editing) return;
     this._setSide(side ?? (this._side === "image" ? "note" : "image"));
     this._restartTimers();
@@ -264,6 +288,48 @@ export class ImageNoteCard extends HTMLElement {
 
   get page(): NormalizedPage | undefined {
     return this._config?.pages[this._index];
+  }
+
+  // ---------------------------------------------------------------- tiles
+
+  /** layout: grid — every picture becomes its own tile, each a full card of its own. */
+  private _buildTiles(raw: ImageNoteCardConfig): void {
+    const config = this._config;
+    if (!config) return;
+    this._root.innerHTML = `<style>${CARD_STYLES}</style><ha-card class="tiles-card"><div class="tiles-header hidden"></div><div class="tiles"></div></ha-card>`;
+    const header = this._root.querySelector<HTMLElement>(".tiles-header");
+    const grid = this._root.querySelector<HTMLElement>(".tiles");
+    if (!header || !grid) return;
+    if (config.title && config.show_title) {
+      header.textContent = config.title;
+      header.classList.remove("hidden");
+    }
+    grid.style.setProperty("--imagenote-tile-min", `${TILE_MIN_WIDTH_PX}px`);
+    if (config.columns > 0) {
+      grid.classList.add("fixed-columns");
+      grid.style.setProperty("--imagenote-columns", String(config.columns));
+    }
+    const shared: Partial<ImageNoteCardConfig> = { ...raw };
+    for (const key of ["images", "image", "image_entity", "note", "note_entity", "note_attribute", "title", "layout", "columns"] as const) {
+      delete shared[key];
+    }
+    this._tiles = config.pages.map((page) => {
+      const tile = document.createElement(CARD_TYPE) as ImageNoteCard;
+      tile.setConfig({
+        ...shared,
+        type: raw.type,
+        layout: "stack",
+        title: page.title,
+        image: page.image,
+        image_entity: page.image_entity,
+        note: page.note,
+        note_entity: page.note_entity,
+        note_attribute: page.note_attribute,
+      });
+      if (this._hass) tile.hass = this._hass;
+      grid.append(tile);
+      return tile;
+    });
   }
 
   // ---------------------------------------------------------------- rendering
@@ -1020,7 +1086,7 @@ export class ImageNoteCard extends HTMLElement {
   private _startTimers(): void {
     this._stopTimers();
     const config = this._config;
-    if (!this.isConnected || !config) return;
+    if (!this.isConnected || !config || this._tiles) return;
     if (config.auto_flip > 0) {
       this._autoFlipTimer = window.setInterval(() => {
         if (this._editing) return;

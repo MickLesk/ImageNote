@@ -1,4 +1,4 @@
-import { DEFAULTS, DIRECTIONS, IMAGE_FITS, SIDES, TRANSITIONS } from "./const";
+import { DEFAULTS, DIRECTIONS, IMAGE_FITS, LAYOUTS, SIDES, TRANSITIONS } from "./const";
 import type { ActionConfig, ImageNoteCardConfig, MediaValue, NormalizedConfig, NormalizedPage, PageConfig } from "./types";
 
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -111,6 +111,8 @@ export function normalizeConfig(config: ImageNoteCardConfig): NormalizedConfig {
     type: config.type,
     title: str(config.title).trim(),
     pages: configPages(config).map(normalizePage),
+    layout: pick(config.layout, LAYOUTS, DEFAULTS.layout),
+    columns: Math.round(num(config.columns, DEFAULTS.columns, 0, 8)),
     image_fit: pick(config.image_fit, IMAGE_FITS, DEFAULTS.image_fit),
     aspect_ratio: str(config.aspect_ratio, DEFAULTS.aspect_ratio).trim() || DEFAULTS.aspect_ratio,
     transition: pick(config.transition, TRANSITIONS, DEFAULTS.transition),
