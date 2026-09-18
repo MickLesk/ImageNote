@@ -53,6 +53,7 @@ export const DEFAULTS: Omit<NormalizedConfig, "type" | "entries" | "slides"> = {
   auto_flip: 0,
   auto_advance: 0,
   hover_flip: false,
+  swipe: true,
   show_hint: true,
   show_title: true,
   show_updated: true,

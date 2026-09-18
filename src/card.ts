@@ -571,6 +571,7 @@ export class PinboardCard extends HTMLElement {
       holdDelay: HOLD_DELAY_MS,
       doubleTapWindow: DOUBLE_TAP_WINDOW_MS,
       swipeThreshold: SWIPE_THRESHOLD_PX,
+      captureTouch: () => Boolean(this._config?.swipe) && this._slides().length > 1 && !this._editing,
       hasDoubleTap: () => this._config?.double_tap_action.action !== "none",
       enabled: (ev) => this._gestureAllowed(ev),
       onSwipe: (direction) => this._onSwipe(direction),
@@ -871,7 +872,7 @@ export class PinboardCard extends HTMLElement {
   }
 
   private _onSwipe(direction: SwipeDirection): void {
-    if (!this._config || this._slides().length < 2 || this._editing) return;
+    if (!this._config?.swipe || this._slides().length < 2 || this._editing) return;
     this.goTo(direction === "left" ? "next" : "prev");
   }
 

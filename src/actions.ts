@@ -105,12 +105,17 @@ export class GestureDetector {
       holdDelay: number;
       doubleTapWindow: number;
       swipeThreshold: number;
+      /** While true, touch events stay inside the card so dashboard swipe navigation ignores them. */
+      captureTouch?: () => boolean;
       hasDoubleTap: () => boolean;
       enabled: (ev: PointerEvent) => boolean;
       onSwipe?: (direction: SwipeDirection) => void;
     },
   ) {
     _target.addEventListener("pointerdown", this._onPointerDown);
+    for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"] as const) {
+      _target.addEventListener(type, this._onTouch, { passive: true });
+    }
     _target.addEventListener("pointerup", this._onPointerUp);
     _target.addEventListener("pointercancel", this._onPointerCancel);
     _target.addEventListener("pointermove", this._onPointerMove);
@@ -125,7 +130,19 @@ export class GestureDetector {
     this._target.removeEventListener("pointercancel", this._onPointerCancel);
     this._target.removeEventListener("pointermove", this._onPointerMove);
     this._target.removeEventListener("contextmenu", this._onContextMenu);
+    for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"] as const) {
+      this._target.removeEventListener(type, this._onTouch);
+    }
   }
+
+  /**
+   * Swipe-to-navigate plugins listen for touch events on the dashboard and would turn a
+   * swipe over the card into a view change. Keeping the events inside the card lets the
+   * card have them; native scrolling is unaffected.
+   */
+  private readonly _onTouch = (ev: TouchEvent): void => {
+    if (this._options.captureTouch?.()) ev.stopPropagation();
+  };
 
   private readonly _onPointerDown = (ev: PointerEvent): void => {
     if (!this._options.enabled(ev) || ev.button !== 0) return;

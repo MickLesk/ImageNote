@@ -491,6 +491,29 @@ test("the editor adds audio entries with record and upload controls", async () =
   await context.close();
 });
 
+test("touches on a multi-page card do not reach dashboard swipe navigation", async () => {
+  const { page, context } = await openDemo();
+  const result = await page.evaluate(() => {
+    const cards = document.querySelectorAll("#grid > .cell > pinboard-card");
+    const fire = (card) => card.shadowRoot.querySelector(".stage").dispatchEvent(new TouchEvent("touchstart", { bubbles: true, composed: true }));
+    let count = 0;
+    const listener = () => count++;
+    document.addEventListener("touchstart", listener);
+    fire(cards[8]); // six pages: kept inside the card
+    const multi = count;
+    const single = document.createElement("pinboard-card");
+    single.setConfig({ type: "custom:pinboard-card", image: "./sample-1.svg" });
+    document.body.append(single);
+    fire(single); // one page: nothing to swipe, so the dashboard may have it
+    single.remove();
+    document.removeEventListener("touchstart", listener);
+    return { multi, single: count === 1 };
+  });
+  assert.equal(result.multi, 0);
+  assert.equal(result.single, true);
+  await context.close();
+});
+
 test("empty and broken states show placeholders", async () => {
   const { page, context } = await openDemo();
   assert.match(await card(page, 5).locator(".face.current .placeholder").innerText(), /No picture yet/);

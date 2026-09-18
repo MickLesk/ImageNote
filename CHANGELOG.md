@@ -5,6 +5,12 @@ All notable changes to Pinboard are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Swiping over a card with several pages turned the dashboard view instead of
+  the page when a swipe-navigation plugin was installed. Touches on such a
+  card now stay inside it; `swipe: false` restores the old behaviour.
+
 ## [0.1.0] - 2026-09-18
 
 First release. Pinboard started as "ImageNote"; the card type is

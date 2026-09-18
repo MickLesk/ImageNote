@@ -114,6 +114,8 @@ export interface PinboardCardConfig extends PageConfig {
   auto_flip?: number;
   auto_advance?: number;
   hover_flip?: boolean;
+  /** Swiping on the card turns pages and is kept away from dashboard swipe navigation. */
+  swipe?: boolean;
   show_hint?: boolean;
   show_title?: boolean;
   show_updated?: boolean;
@@ -157,6 +159,7 @@ export interface NormalizedConfig {
   auto_flip: number;
   auto_advance: number;
   hover_flip: boolean;
+  swipe: boolean;
   show_hint: boolean;
   show_title: boolean;
   show_updated: boolean;

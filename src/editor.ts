@@ -1158,6 +1158,7 @@ export class PinboardCardEditor extends HTMLElement {
                 selector: { number: { min: 0, max: 3600, step: 1, mode: "box", unit_of_measurement: "s" } },
               },
               { name: "hover_flip", selector: { boolean: {} } },
+              { name: "swipe", selector: { boolean: {} } },
             ],
           },
           {

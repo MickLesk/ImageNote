@@ -208,6 +208,7 @@ export function normalizeConfig(config: PinboardCardConfig): NormalizedConfig {
     // auto_advance is the older name; both advance to the next slide.
     auto_advance: num(config.auto_advance, DEFAULTS.auto_advance, 0, 86400),
     hover_flip: bool(config.hover_flip, DEFAULTS.hover_flip),
+    swipe: bool(config.swipe, DEFAULTS.swipe),
     show_hint: bool(config.show_hint, DEFAULTS.show_hint),
     show_title: bool(config.show_title, DEFAULTS.show_title),
     show_updated: bool(config.show_updated, DEFAULTS.show_updated),

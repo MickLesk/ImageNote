@@ -191,7 +191,10 @@ auto_flip: 15
 ```
 
 Tap, swipe, the arrows, the dots and the arrow keys move between pages;
-`auto_flip` runs a slideshow. With more than two pages, arrows and dots appear
+`auto_flip` runs a slideshow. Touches that start on a card with more than one
+page stay inside the card, so dashboards with swipe navigation (for example
+the "swipe-navigation" HACS plugin) do not switch views when you swipe over
+it. `swipe: false` hands those swipes back to the dashboard. With more than two pages, arrows and dots appear
 on pictures (`show_navigation`). On note pages the arrows stay hidden so they
 never sit on the text.
 
