@@ -2,6 +2,8 @@ import {
   CARD_TYPE,
   DOUBLE_TAP_WINDOW_MS,
   EDITOR_TYPE,
+  HISTORY_DAYS,
+  HISTORY_ROWS,
   HOLD_DELAY_MS,
   IMAGE_URL_ENTITY_DOMAINS,
   MAX_RECORDING_SECONDS,
@@ -18,20 +20,22 @@ import { conditionsHold, normalizeConfig, parseAspectRatio, validateConfig } fro
 import { resolveLanguage, translate } from "./i18n";
 import { CARD_STYLES } from "./styles";
 import { formatRelativeTime } from "./time";
+import { buildToolbar } from "./markdown-toolbar";
 import { UploadError, preferredAudioType, uploadAudio, uploadPicture } from "./upload";
 import {
-  contrastTextColor,
   hasChecklist,
   hasTemplate,
   isExpired,
   parseExpiry,
   parseNoteBlocks,
   resolveNoteColor,
+  resolveTextColor,
   toggleChecklistLine,
 } from "./notes";
 import type {
   HassEntity,
   HomeAssistant,
+  LogbookEntry,
   PinboardCardConfig,
   NormalizedConfig,
   ResolvedMedia,
@@ -63,6 +67,9 @@ interface FaceView {
   noteBody: HTMLElement;
   noteFooter: HTMLElement;
   noteMeta: HTMLElement;
+  historyButton: HTMLButtonElement;
+  historyPanel: HTMLElement;
+  toolbarSlot: HTMLElement;
   noteEditor: HTMLElement;
   textarea: HTMLTextAreaElement;
   errorText: HTMLElement;
@@ -153,7 +160,9 @@ const FACE_TEMPLATE = `
       <button class="icon-button edit" type="button"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
     </div>
     <div class="note-body"></div>
+    <div class="history-panel hidden"></div>
     <div class="note-editor">
+      <div class="md-toolbar-slot"></div>
       <textarea rows="4" spellcheck="true"></textarea>
       <div class="error-text"></div>
       <div class="actions">
@@ -162,7 +171,10 @@ const FACE_TEMPLATE = `
         <button class="btn primary save" type="button"></button>
       </div>
     </div>
-    <div class="note-footer"><div class="note-meta"></div></div>
+    <div class="note-footer">
+      <div class="note-meta"></div>
+      <button class="icon-button history-button hidden" type="button"><ha-icon icon="mdi:history"></ha-icon></button>
+    </div>
   </div>
   <div class="layer layer-audio">
     <div class="note-header">
@@ -564,6 +576,9 @@ export class PinboardCard extends HTMLElement {
       noteBody: q(el, ".note-body"),
       noteFooter: q(el, ".note-footer"),
       noteMeta: q(el, ".note-meta"),
+      historyButton: q(el, ".history-button"),
+      historyPanel: q(el, ".history-panel"),
+      toolbarSlot: q(el, ".md-toolbar-slot"),
       noteEditor: q(el, ".note-editor"),
       textarea: q(el, "textarea"),
       errorText: q(el, ".error-text"),
@@ -670,6 +685,10 @@ export class PinboardCard extends HTMLElement {
       });
       view.cancelButton.addEventListener("click", () => this._cancelEdit());
       view.saveButton.addEventListener("click", () => void this._saveEdit());
+      view.historyButton.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void this._toggleHistory(view);
+      });
       view.noteBody.addEventListener("scroll", () => this._updateScrollState(view), { passive: true });
     }
 
@@ -748,6 +767,9 @@ export class PinboardCard extends HTMLElement {
     for (const view of els.faces) {
       view.editButton.title = t("editNote");
       view.editButton.setAttribute("aria-label", t("editNote"));
+      view.historyButton.title = t("history");
+      view.historyButton.setAttribute("aria-label", t("history"));
+      view.toolbarSlot.replaceChildren(buildToolbar(view.textarea, t));
       view.cancelButton.textContent = t("cancel");
       view.saveButton.textContent = this._saving ? t("saving") : t("save");
     }
@@ -951,10 +973,80 @@ export class PinboardCard extends HTMLElement {
       const source = this._noteSource(slide);
       if (view === this._currentFace) this._lastNote = source;
       view.editButton.classList.toggle("hidden", !source.editable);
+      this._closeHistory(view);
+      view.historyButton.classList.toggle("hidden", !this._historyAllowed(source));
       this._renderNote(view, source);
       this._renderMetaFor(view, source);
     }
     this._applyExpiry(view, slide);
+  }
+
+  private _historyAllowed(source: NoteSource): boolean {
+    return Boolean(this._config?.show_history) && Boolean(source.entityId) && !source.todo && Boolean(this._hass);
+  }
+
+  private _closeHistory(view: FaceView): void {
+    view.historyPanel.classList.add("hidden");
+    view.historyPanel.replaceChildren();
+    view.noteBody.style.display = "";
+    view.historyButton.classList.remove("active");
+  }
+
+  /** The last changes of the note entity from Home Assistant's logbook, with the person who made them. */
+  private async _toggleHistory(view: FaceView): Promise<void> {
+    const hass = this._hass;
+    const source = this._lastNote ?? this._noteSource(this._slide);
+    if (!hass || !source.entityId || this._editing) return;
+    if (!view.historyPanel.classList.contains("hidden")) {
+      this._closeHistory(view);
+      return;
+    }
+    const t = (key: string) => translate(this._lang, key);
+    view.noteBody.style.display = "none";
+    view.historyPanel.classList.remove("hidden");
+    view.historyButton.classList.add("active");
+    view.historyPanel.textContent = t("historyLoading");
+    const start = new Date(Date.now() - HISTORY_DAYS * 24 * 3600 * 1000).toISOString();
+    let entries: LogbookEntry[] = [];
+    try {
+      const result = await hass.callWS<LogbookEntry[]>({ type: "logbook/get_events", start_time: start, entity_ids: [source.entityId] });
+      entries = Array.isArray(result) ? result : [];
+    } catch (err) {
+      console.warn("Pinboard: could not load the history", err);
+    }
+    if (view.historyPanel.classList.contains("hidden")) return;
+    const people = new Map<string, string>();
+    for (const entity of Object.values(hass.states)) {
+      if (entity.entity_id.startsWith("person.") && typeof entity.attributes.user_id === "string") {
+        people.set(entity.attributes.user_id, (entity.attributes.friendly_name as string | undefined) ?? entity.entity_id);
+      }
+    }
+    const rows = entries
+      .filter((entry) => entry.entity_id === source.entityId && typeof entry.state === "string" && entry.state !== "unknown")
+      .sort((a, b) => b.when - a.when)
+      .filter((entry, index, all) => index === 0 || entry.state !== all[index - 1].state)
+      .slice(0, HISTORY_ROWS);
+    view.historyPanel.replaceChildren();
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.className = "history-empty";
+      empty.textContent = t("historyEmpty");
+      view.historyPanel.append(empty);
+      return;
+    }
+    for (const entry of rows) {
+      const row = document.createElement("div");
+      row.className = "history-row";
+      const meta = document.createElement("div");
+      meta.className = "history-meta";
+      const who = entry.context_user_id ? (people.get(entry.context_user_id) ?? entry.context_user_id) : t("historyUnknownUser");
+      meta.textContent = `${formatRelativeTime(new Date(entry.when * 1000), this._lang)} · ${who}`;
+      const text = document.createElement("div");
+      text.className = "history-text";
+      text.textContent = entry.state ?? "";
+      row.append(meta, text);
+      view.historyPanel.append(row);
+    }
   }
 
   private _applyNoteTitle(view: FaceView, slide: Slide): void {
@@ -969,16 +1061,22 @@ export class PinboardCard extends HTMLElement {
   private _applyNoteColor(view: FaceView, slide: Slide): void {
     const config = this._config;
     const color = resolveNoteColor(slide.color);
-    view.el.classList.toggle("sticky", config?.note_style === "sticky");
+    const sticky = config?.note_style === "sticky";
+    view.el.classList.toggle("sticky", sticky);
+    const text = resolveTextColor(slide.text_color, color ?? (sticky ? "#fff3a8" : null));
     if (color) {
       view.el.style.setProperty("--pinboard-note-background", color);
-      view.el.style.setProperty("--pinboard-note-text", contrastTextColor(color));
       view.el.classList.add("tinted");
     } else {
       view.el.style.removeProperty("--pinboard-note-background");
-      view.el.style.removeProperty("--pinboard-note-text");
       view.el.classList.remove("tinted");
     }
+    if (text) {
+      view.el.style.setProperty("--pinboard-note-text", text);
+    } else {
+      view.el.style.removeProperty("--pinboard-note-text");
+    }
+    view.el.classList.toggle("custom-text", Boolean(slide.text_color.trim()));
   }
 
   private _applyExpiry(view: FaceView, slide: Slide): void {
@@ -1740,6 +1838,8 @@ export class PinboardCard extends HTMLElement {
     const done = items.filter((item) => item.status === "completed");
 
     const row = (item: TodoItem) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "todo-item";
       const label = document.createElement("label");
       label.className = `check${item.status === "completed" ? " done" : ""}${this._todoBusy.has(item.uid) ? " busy" : ""}`;
       const input = document.createElement("input");
@@ -1753,7 +1853,26 @@ export class PinboardCard extends HTMLElement {
         void this._setTodoStatus(source.todo, item, input.checked);
       });
       label.append(input, text);
-      return label;
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "icon-button todo-edit";
+      edit.title = t("todoEdit");
+      edit.setAttribute("aria-label", t("todoEdit"));
+      edit.innerHTML = `<ha-icon icon="mdi:pencil-outline"></ha-icon>`;
+      wrapper.append(label, edit);
+      const holder = document.createElement("div");
+      holder.append(wrapper);
+      if (item.description) {
+        const desc = document.createElement("div");
+        desc.className = "todo-desc";
+        desc.append(this._markdownElement(item.description));
+        holder.append(desc);
+      }
+      edit.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this._openTodoEditor(holder, source.todo, item);
+      });
+      return holder;
     };
 
     if (!items.length) {
@@ -1877,6 +1996,84 @@ export class PinboardCard extends HTMLElement {
     }
   }
 
+  /** Inline form for a to-do item: title and details, so a list can hold long notes. */
+  private _openTodoEditor(holder: HTMLElement, entity: string, item: TodoItem): void {
+    const hass = this._hass;
+    if (!hass || holder.querySelector(".todo-editor")) return;
+    const t = (key: string) => translate(this._lang, key);
+    holder.querySelector(".todo-desc")?.classList.add("hidden");
+    const form = document.createElement("div");
+    form.className = "todo-editor";
+    const title = document.createElement("input");
+    title.type = "text";
+    title.value = item.summary;
+    title.placeholder = t("todoTitle");
+    const details = document.createElement("textarea");
+    details.rows = 4;
+    details.value = item.description ?? "";
+    details.placeholder = t("todoDetails");
+    const toolbar = buildToolbar(details, t);
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "btn";
+    remove.textContent = t("todoDelete");
+    const spacer = document.createElement("div");
+    spacer.className = "spacer";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "btn";
+    cancel.textContent = t("cancel");
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "btn primary";
+    save.textContent = t("save");
+    actions.append(remove, spacer, cancel, save);
+    form.append(title, toolbar, details, actions);
+    holder.append(form);
+    for (const el of [title, details] as Array<HTMLInputElement | HTMLTextAreaElement>) {
+      el.addEventListener("keydown", (event: Event) => {
+        const ev = event as KeyboardEvent;
+        ev.stopPropagation();
+        if (ev.key === "Escape") close();
+        if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey || el === title)) {
+          ev.preventDefault();
+          void submit();
+        }
+      });
+      el.addEventListener("click", (ev) => ev.stopPropagation());
+    }
+    const close = () => {
+      form.remove();
+      holder.querySelector(".todo-desc")?.classList.remove("hidden");
+    };
+    const submit = async () => {
+      const summary = title.value.trim() || item.summary;
+      const description = details.value.trim();
+      save.disabled = true;
+      try {
+        const data: Record<string, unknown> = { entity_id: entity, item: item.uid };
+        if (summary !== item.summary) data.rename = summary;
+        if (description !== (item.description ?? "")) data.description = description;
+        if (Object.keys(data).length > 2) await hass.callService("todo", "update_item", data);
+        close();
+      } catch (err) {
+        console.warn("Pinboard: could not update the to-do item", err);
+        save.disabled = false;
+      }
+    };
+    cancel.addEventListener("click", close);
+    save.addEventListener("click", () => void submit());
+    remove.addEventListener("click", () => {
+      void hass
+        .callService("todo", "remove_item", { entity_id: entity, item: [item.uid] })
+        .then(close)
+        .catch((err: unknown) => console.warn("Pinboard: could not delete the to-do item", err));
+    });
+    title.focus();
+  }
+
   private async _addTodoItem(entity: string, summary: string): Promise<void> {
     if (!this._hass) return;
     try {
@@ -1943,6 +2140,7 @@ export class PinboardCard extends HTMLElement {
     this._stopTimers();
     els.scene.classList.add("editing");
     els.stage.classList.add("editing");
+    this._closeHistory(view);
     view.noteBody.style.display = "none";
     view.noteFooter.style.display = "none";
     view.editButton.classList.add("hidden");
@@ -2037,7 +2235,7 @@ export class PinboardCard extends HTMLElement {
       if (node instanceof HTMLAnchorElement || node instanceof HTMLButtonElement) return false;
       if (node instanceof HTMLInputElement || node instanceof HTMLLabelElement) return false;
       if (node instanceof HTMLElement && node.classList.contains("audio-progress")) return false;
-      if (node instanceof HTMLElement && node.classList.contains("note-editor")) return false;
+      if (node instanceof HTMLElement && (node.classList.contains("note-editor") || node.classList.contains("todo-editor"))) return false;
     }
     return true;
   }

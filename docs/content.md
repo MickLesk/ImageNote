@@ -76,7 +76,10 @@ note: "Before the weekend:"
 
 The page shows the open items as checkboxes, the completed ones struck
 through below (`todo_show_completed`), and an input row for new items
-(`todo_add`). Ticks call `todo.update_item`, new items `todo.add_item`, so the
+(`todo_add`). Every item can carry details: the pencil next to an item opens
+title and details for editing (with the formatting buttons) and offers
+deletion. Details are shown under the item, so a to-do list doubles as a stack
+of longer notes without the 255-character limit of `input_text`. Ticks call `todo.update_item`, new items `todo.add_item`, so the
 list stays the same on every device, in Home Assistant's To-do view and for
 automations. The list's name is used as the page title when the page has
 none; `note` is shown as text above the list.
@@ -118,8 +121,22 @@ slides:
 
 `color` tints a note page: `yellow`, `green`, `blue`, `pink`, `orange`,
 `purple`, `grey` or any CSS colour. Text switches to light or dark to stay
-readable. `note_style: sticky` on the card gives all notes a paper tint and a
-folded corner.
+readable; `text_color` overrides that with `light`, `dark` or any CSS colour.
+`note_style: sticky` on the card gives all notes a paper tint and a folded
+corner.
+
+### History
+
+Notes from an entity get a history button in the footer (`show_history`). It
+lists the last changes of the last 30 days with the time and the person who
+made them, taken from Home Assistant's logbook. Changes by automations show
+as "Automation or system". Repeated identical values are collapsed.
+
+### Writing notes without Markdown
+
+The note box in the editor and the inline editor on the card have buttons for
+bold, italic, heading, list, checklist and link; the editor also shows a live
+preview. Plain text works as it is, the buttons only add the Markdown marks.
 
 ## Markers
 

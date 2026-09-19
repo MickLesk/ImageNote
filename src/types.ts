@@ -78,6 +78,8 @@ export interface PageConfig {
   expires?: string;
   /** Tint of a note page: a preset name (yellow, green, …) or any CSS colour. */
   color?: string;
+  /** Text on a note page: auto (contrast to the tint), light, dark or any CSS colour. */
+  text_color?: string;
   /** Pins on the picture with a label: "here is the stopcock". */
   markers?: MarkerConfig[];
   /** A voice memo or any audio file: URL or media-source id. */
@@ -102,6 +104,7 @@ export interface NormalizedPage {
   todo_entity: string;
   expires: string;
   color: string;
+  text_color: string;
   markers: Marker[];
   audio: string | MediaValue | undefined;
   audio_entity: string;
@@ -150,6 +153,8 @@ export interface PinboardCardConfig extends PageConfig {
   todo_add?: boolean;
   /** Keep completed to-do items visible, struck through. */
   todo_show_completed?: boolean;
+  /** History button on notes from entities (recorder and logbook). */
+  show_history?: boolean;
   upload_target?: "image" | "media";
   upload_folder?: string;
   /** Longest edge for uploaded pictures in pixels; 0 keeps originals. */
@@ -196,6 +201,7 @@ export interface NormalizedConfig {
   checklist_writeback: boolean;
   todo_add: boolean;
   todo_show_completed: boolean;
+  show_history: boolean;
   upload_target: "image" | "media";
   upload_folder: string;
   upload_max_size: number;
@@ -234,6 +240,15 @@ export interface HomeAssistant {
     ): Promise<() => Promise<void>>;
   };
   auth?: { data?: { access_token?: string } };
+}
+
+export interface LogbookEntry {
+  when: number;
+  entity_id?: string;
+  state?: string;
+  message?: string;
+  name?: string;
+  context_user_id?: string | null;
 }
 
 export interface TodoItem {

@@ -26,8 +26,13 @@ can hold up to ten pictures, notes and recordings in any order.
 - **Notes in Markdown** — bold, lists, links, plus **templates** such as
   `{{ states('sensor.boiler') }}` that follow state changes.
 - **To-do lists as pages** — a `todo.*` list becomes a checklist you tick and
-  extend on the card. Home Assistant keeps the list, so every device, the
-  To-do view and automations see the same state.
+  extend on the card. Items carry details, so a list also works as a stack of
+  longer notes. Home Assistant keeps the list, so every device, the To-do view
+  and automations see the same state.
+- **History** — notes from entities show their last changes with time and
+  person, straight from Home Assistant's logbook.
+- **No Markdown required** — the editor's note box has buttons for bold,
+  italic, heading, list, checklist and link, and a live preview.
 - **Notes with a shelf life and a colour** — `expires` dims or hides a note
   after a date, `color` tints the page, and the sticky-note look makes notes
   read like a note on the fridge.
@@ -123,6 +128,7 @@ slides:
   - todo_entity: todo.garage                 # a to-do list as a checklist page
     note: "Before the weekend:"              # optional text above the list
     color: yellow                            # yellow, green, blue, pink, orange, purple, grey or any CSS colour
+    text_color: auto                         # auto (contrast to the page colour), light, dark or any CSS colour
     expires: "2026-10-01 18:00"              # afterwards dimmed and tagged, or hidden (expired_slides)
   - audio: media-source://media_source/local/pinboard/memo.webm   # a recording or any audio file
     title: Voice memo
@@ -166,6 +172,7 @@ checklist: true                    # "- [ ] item" lines become checkboxes
 checklist_writeback: true          # save ticks to input_text / text entities
 todo_add: true                     # input row on to-do pages for new items
 todo_show_completed: true          # keep completed to-do items visible, struck through
+show_history: true                 # history button on notes from entities
 
 # --- uploads (editor upload button, camera and record buttons) -------------
 upload_target: image               # image: Home Assistant's image store (/config/image) | media: the media folder
@@ -223,6 +230,7 @@ double_tap_action:
 | `checklist_writeback` | `true` | Save ticks on notes from an `input_text` or `text` entity to the entity. |
 | `todo_add` | `true` | Input row on to-do pages for adding items. |
 | `todo_show_completed` | `true` | Keep completed to-do items visible below the open ones, struck through. |
+| `show_history` | `true` | History button on notes from entities: the last changes with time and person, from the logbook. |
 | `upload_target` | `image` | Where the editor's upload button and the camera and record buttons store files: `image` (Home Assistant's image store) or `media` (the media folder). Audio always goes to the media folder. |
 | `upload_folder` | `pinboard` | With `upload_target: media`: the folder below `/media`. Created on the first upload. |
 | `upload_max_size` | `1920` | Longest edge in pixels that pictures are scaled down to before upload. `0` keeps originals. |
@@ -252,6 +260,7 @@ string is treated as `image`.
 | `audio_entity` | – | Audio from an `input_text` / `text` entity whose state is the audio address. Gets a record button. |
 | `expires` | – | `2026-10-01` or `2026-10-01 18:00`. Until then the footer shows "Until …"; afterwards the page is dimmed or hidden. |
 | `color` | – | Tint of a note page: `yellow`, `green`, `blue`, `pink`, `orange`, `purple`, `grey` or any CSS colour. |
+| `text_color` | `auto` | Text on a note page: `auto` picks dark or light for contrast with `color`, `light` and `dark` force it, any CSS colour works too. |
 | `markers` | – | A list of pins on the picture. See [Marker](#marker). |
 | `kind` | – | `image`, `note` or `audio`. Only needed for an entry that has no content yet; the editor sets it. |
 | `visible` | – | One condition or a list: `{ entity, state }`, `{ entity, state_not }` or `{ entity, attribute, state }`. `state` may be a list. Without `state` the page shows whenever the entity is available. The page is only part of the sequence while every condition holds. |

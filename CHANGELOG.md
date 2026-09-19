@@ -10,8 +10,17 @@ All notable changes to Pinboard are documented here. The format follows
 - Conditional pages: `visible` on a page shows it only while an entity has
   (or does not have) a state.
 - Per-page `tap_action`, `hold_action` and `double_tap_action`.
+- History on notes from entities: the last changes with time and person from
+  the logbook, behind a button in the footer.
+- To-do items show their details; the pencil next to an item edits title and
+  details or deletes it, so lists can hold longer notes.
+- Formatting buttons (bold, italic, heading, list, checklist, link) on the
+  note box in the editor and on the card, with a live preview in the editor.
+- `text_color` per note page, with automatic contrast as the default.
 - Dutch, French and Spanish translations.
 - The demo page is published to GitHub Pages on every push to `main`.
+- The editor's own blocks (picture, markers, note text, audio, import,
+  preview) are collapsible sections too, and remember whether you opened them.
 - The editor groups page and card settings into sections: picture, note,
   audio, display, visibility, actions; appearance, navigation, notes and
   to-do lists, uploads, actions.

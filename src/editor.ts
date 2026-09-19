@@ -17,6 +17,7 @@ import { parseAspectRatio } from "./config";
 import { UploadError, preferredAudioType, uploadAudio, uploadPicture } from "./upload";
 import { configPages, expandSlides, hasAudio, hasNote, hasPicture, normalizePage } from "./config";
 import { NOTE_COLOR_PRESETS } from "./notes";
+import { buildToolbar } from "./markdown-toolbar";
 import { resolveLanguage, translate } from "./i18n";
 import { EDITOR_STYLES } from "./styles";
 import type { HomeAssistant, PinboardCardConfig, MarkerConfig, PageConfig, ResolvedMedia, VisibilityCondition } from "./types";
@@ -36,7 +37,7 @@ const UPLOAD_TARGETS = ["image", "media"];
 const EDITOR_DEFAULTS: Record<string, unknown> = {};
 const PAGE_KEYS: Array<keyof PageConfig> = [
   "kind", "title", "image", "image_entity", "note", "note_entity", "note_attribute", "todo_entity",
-  "expires", "color", "markers", "audio", "audio_entity", "visible", "tap_action", "hold_action", "double_tap_action",
+  "expires", "color", "text_color", "markers", "audio", "audio_entity", "visible", "tap_action", "hold_action", "double_tap_action",
 ];
 type EntryKind = "image" | "note" | "audio" | "both";
 const LIST_KEYS = ["slides", "images"];
@@ -48,57 +49,82 @@ const TEMPLATE = `
   <div class="chips"></div>
   <div class="chips add-row"></div>
   <div class="status max-note"></div>
-  <div class="import-row">
-    <input class="import-folder" type="text" />
-    <button class="btn import" type="button"><ha-icon icon="mdi:folder-image"></ha-icon><span></span></button>
-  </div>
-  <div class="status import-status"></div>
   <div class="buttons entry-actions">
     <button class="btn move-left" type="button"><ha-icon icon="mdi:arrow-left"></ha-icon><span></span></button>
     <button class="btn move-right" type="button"><ha-icon icon="mdi:arrow-right"></ha-icon><span></span></button>
     <button class="btn remove-page" type="button"><ha-icon icon="mdi:delete-outline"></ha-icon><span></span></button>
   </div>
 </div>
-<div class="picture">
-  <div class="preview"><img alt="" draggable="false" /><ha-icon icon="mdi:image-outline"></ha-icon></div>
-  <div class="picture-actions">
-    <div class="picture-label"></div>
-    <div class="picture-help"></div>
-    <div class="buttons">
-      <button class="btn primary upload" type="button"><ha-icon icon="mdi:upload"></ha-icon><span></span></button>
-      <button class="btn clear" type="button"><ha-icon icon="mdi:close"></ha-icon><span></span></button>
+<details class="section picture" data-section="picture">
+  <summary class="picture-label"></summary>
+  <div class="section-body">
+    <div class="picture-row">
+      <div class="preview"><img alt="" draggable="false" /><ha-icon icon="mdi:image-outline"></ha-icon></div>
+      <div class="picture-actions">
+        <div class="picture-help"></div>
+        <div class="buttons">
+          <button class="btn primary upload" type="button"><ha-icon icon="mdi:upload"></ha-icon><span></span></button>
+          <button class="btn clear" type="button"><ha-icon icon="mdi:close"></ha-icon><span></span></button>
+        </div>
+        <div class="status"></div>
+        <input class="file" type="file" accept="image/*" hidden />
+      </div>
     </div>
-    <div class="status"></div>
-    <input class="file" type="file" accept="image/*" hidden />
   </div>
-</div>
-<div class="markers-editor hidden">
-  <div class="picture-label markers-label"></div>
-  <div class="picture-help markers-help"></div>
-  <div class="marker-canvas"><img alt="" draggable="false" /><div class="pins"></div></div>
-  <div class="marker-list"></div>
-</div>
-<div class="audio-editor hidden">
-  <div class="picture-label audio-label"></div>
-  <div class="picture-help audio-help"></div>
-  <div class="buttons">
-    <button class="btn primary record-btn" type="button"><ha-icon icon="mdi:microphone"></ha-icon><span></span></button>
-    <button class="btn upload-audio" type="button"><ha-icon icon="mdi:upload"></ha-icon><span></span></button>
-    <input class="audio-file" type="file" accept="audio/*" hidden />
+</details>
+<details class="section markers-editor hidden" data-section="markers">
+  <summary class="markers-label"></summary>
+  <div class="section-body">
+    <div class="picture-help markers-help"></div>
+    <div class="marker-canvas"><img alt="" draggable="false" /><div class="pins"></div></div>
+    <div class="marker-list"></div>
   </div>
-  <div class="status audio-editor-status"></div>
-  <audio class="audio-preview" controls preload="metadata"></audio>
-</div>
+</details>
+<details class="section note-block hidden" data-section="note">
+  <summary class="note-label"></summary>
+  <div class="section-body">
+    <div class="picture-help note-help"></div>
+    <div class="md-toolbar-slot"></div>
+    <textarea class="note-text" rows="6" spellcheck="true"></textarea>
+    <div class="note-preview"></div>
+  </div>
+</details>
+<details class="section audio-editor hidden" data-section="audio">
+  <summary class="audio-label"></summary>
+  <div class="section-body">
+    <div class="picture-help audio-help"></div>
+    <div class="buttons">
+      <button class="btn primary record-btn" type="button"><ha-icon icon="mdi:microphone"></ha-icon><span></span></button>
+      <button class="btn upload-audio" type="button"><ha-icon icon="mdi:upload"></ha-icon><span></span></button>
+      <input class="audio-file" type="file" accept="audio/*" hidden />
+    </div>
+    <div class="status audio-editor-status"></div>
+    <audio class="audio-preview" controls preload="metadata"></audio>
+  </div>
+</details>
 <ha-form class="page-form"></ha-form>
+<details class="section import-section" data-section="import">
+  <summary class="import-label"></summary>
+  <div class="section-body">
+    <div class="picture-help import-help"></div>
+    <div class="import-row">
+      <input class="import-folder" type="text" />
+      <button class="btn import" type="button"><ha-icon icon="mdi:folder-image"></ha-icon><span></span></button>
+    </div>
+    <div class="status import-status"></div>
+  </div>
+</details>
 <div class="divider"></div>
 <ha-form class="card-form"></ha-form>
 <div class="divider"></div>
-<div class="preview-section">
-  <div class="picture-label preview-label"></div>
-  <div class="picture-help preview-help"></div>
-  <div class="preview-card"></div>
-  <div class="buttons"><button class="btn primary play" type="button"><ha-icon icon="mdi:play"></ha-icon><span></span></button></div>
-</div>
+<details class="section preview-section" data-section="preview" open>
+  <summary class="preview-label"></summary>
+  <div class="section-body">
+    <div class="picture-help preview-help"></div>
+    <div class="preview-card"></div>
+    <div class="buttons"><button class="btn primary play" type="button"><ha-icon icon="mdi:play"></ha-icon><span></span></button></div>
+  </div>
+</details>
 <div class="version">Pinboard ${VERSION}</div>`;
 
 const STYLES = `
@@ -158,7 +184,7 @@ const STYLES = `
 .import-row {
   display: flex;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 .import-row input {
   flex: 1;
@@ -175,9 +201,7 @@ const STYLES = `
 .import-row input:focus {
   border-color: var(--primary-color);
 }
-.preview-section {
-  margin-bottom: 8px;
-}
+
 .preview-card {
   margin: 10px 0;
   max-width: 420px;
@@ -196,14 +220,111 @@ const STYLES = `
   border-color: var(--primary-color);
   color: var(--text-primary-color, #fff);
 }
-.picture.hidden {
+.section {
+  border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+  border-radius: 10px;
+  margin-bottom: 12px;
+  background: var(--card-background-color, transparent);
+}
+.section.hidden {
   display: none;
 }
-.picture {
+.section > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+.section > summary::-webkit-details-marker {
+  display: none;
+}
+.section > summary::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--secondary-text-color);
+  border-bottom: 2px solid var(--secondary-text-color);
+  transform: rotate(-45deg);
+  transition: transform 150ms ease;
+  margin-right: 4px;
+  flex: none;
+}
+.section[open] > summary::before {
+  transform: rotate(45deg);
+}
+.section-body {
+  padding: 0 14px 14px;
+}
+.picture-row {
   display: flex;
   gap: 16px;
   align-items: stretch;
-  margin-bottom: 16px;
+}
+.note-text {
+  width: 100%;
+  min-height: 120px;
+  box-sizing: border-box;
+  resize: vertical;
+  margin-top: 6px;
+  padding: 10px 12px;
+  font: inherit;
+  line-height: 1.45;
+  color: var(--primary-text-color);
+  background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+  border-radius: 8px;
+  outline: none;
+}
+.note-text:focus {
+  border-color: var(--primary-color);
+}
+.note-preview {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--divider-color, rgba(0, 0, 0, 0.12));
+  font-size: 0.95em;
+  line-height: 1.5;
+  min-height: 24px;
+}
+.note-preview:empty {
+  display: none;
+}
+.note-preview p:first-child { margin-top: 0; }
+.note-preview p:last-child { margin-bottom: 0; }
+.md-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 8px;
+}
+.md-button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--primary-text-color);
+  opacity: 0.75;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.md-button ha-icon {
+  --mdc-icon-size: 20px;
+}
+.md-button:hover,
+.md-button:focus-visible {
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
+  opacity: 1;
+  outline: none;
 }
 .preview {
   position: relative;
@@ -286,9 +407,7 @@ const STYLES = `
 .status.error {
   color: var(--error-color, #db4437);
 }
-.markers-editor {
-  margin-bottom: 16px;
-}
+
 .marker-canvas {
   position: relative;
   margin-top: 10px;
@@ -402,9 +521,7 @@ const STYLES = `
   .marker-row { grid-template-columns: 28px 1fr 36px; }
   .marker-row input.marker-icon, .marker-row input.marker-entity { grid-column: 2; }
 }
-.audio-editor {
-  margin-bottom: 16px;
-}
+
 .audio-preview {
   display: block;
   width: 100%;
@@ -423,7 +540,7 @@ const STYLES = `
   margin: 20px 0;
 }
 @media (max-width: 480px) {
-  .picture { flex-direction: column; }
+  .picture-row { flex-direction: column; }
   .preview { width: 100%; min-height: 140px; }
 }
 `;
@@ -452,6 +569,9 @@ export class PinboardCardEditor extends HTMLElement {
   private _selectedMarker = -1;
   private _canvasImg?: HTMLImageElement;
   private _previewCard?: HTMLElement & { setConfig(config: PinboardCardConfig): void; hass?: HomeAssistant; flip(): void };
+  private _openSections = new Map<string, boolean>();
+  private _noteText?: HTMLTextAreaElement;
+  private _noteTimer?: number;
   private _dragIndex = -1;
   private _importing = false;
   private _recorder?: MediaRecorder;
@@ -748,6 +868,61 @@ export class PinboardCardEditor extends HTMLElement {
     }, 500);
   }
 
+  private _applySectionState(defaults: Record<string, boolean>): void {
+    for (const section of this._root.querySelectorAll<HTMLDetailsElement>("details.section")) {
+      const name = section.dataset.section;
+      if (!name) continue;
+      const wanted = this._openSections.get(name) ?? defaults[name] ?? false;
+      if (section.open !== wanted) section.open = wanted;
+    }
+  }
+
+  private _renderNoteBlock(show: boolean): void {
+    const block = this._root.querySelector<HTMLElement>(".note-block");
+    const textarea = this._noteText;
+    if (!block || !textarea) return;
+    block.classList.toggle("hidden", !show);
+    if (!show) return;
+    const value = this._page().note ?? "";
+    if (textarea.value !== value && this._root.activeElement !== textarea) {
+      textarea.value = value;
+      this._renderNotePreview(value);
+    } else if (!textarea.value && !value) {
+      this._renderNotePreview("");
+    }
+  }
+
+  private _renderNotePreview(text: string): void {
+    const preview = this._root.querySelector<HTMLElement>(".note-preview");
+    if (!preview) return;
+    preview.replaceChildren();
+    if (!text.trim()) return;
+    if (customElements.get("ha-markdown")) {
+      const md = document.createElement("ha-markdown") as HTMLElement & { content?: string; breaks?: boolean };
+      md.setAttribute("breaks", "");
+      md.breaks = true;
+      md.content = text;
+      preview.append(md);
+    } else {
+      const div = document.createElement("div");
+      div.style.whiteSpace = "pre-wrap";
+      div.textContent = text;
+      preview.append(div);
+    }
+  }
+
+  private _commitNote(): void {
+    const textarea = this._noteText;
+    if (!textarea || !this._config) return;
+    const value = textarea.value;
+    const page: PageConfig = { ...this._page() };
+    if ((page.note ?? "") === value) return;
+    if (value) page.note = value;
+    else delete page.note;
+    if (page.kind === "note" && hasNote(page)) delete page.kind;
+    this._emit(this._withPage(this._pageIndex, page));
+  }
+
   private _updatePreviewCard(): void {
     const card = this._previewCard;
     if (!card || !this._config) return;
@@ -806,6 +981,25 @@ export class PinboardCardEditor extends HTMLElement {
     }
     this._root.querySelector<HTMLButtonElement>(".play")?.addEventListener("click", () => this._previewCard?.flip());
     this._root.querySelector<HTMLButtonElement>(".record-btn")?.addEventListener("click", () => void this._toggleRecord());
+    for (const section of this._root.querySelectorAll<HTMLDetailsElement>("details.section")) {
+      section.addEventListener("toggle", () => {
+        if (section.dataset.section) this._openSections.set(section.dataset.section, section.open);
+      });
+    }
+    this._noteText = q<HTMLTextAreaElement>(".note-text");
+    if (this._noteText) {
+      const textarea = this._noteText;
+      this._root.querySelector(".note-block .md-toolbar-slot")?.append(buildToolbar(textarea, (key) => translate(this._lang, key)));
+      textarea.addEventListener("input", () => {
+        this._renderNotePreview(textarea.value);
+        window.clearTimeout(this._noteTimer);
+        this._noteTimer = window.setTimeout(() => this._commitNote(), 400);
+      });
+      textarea.addEventListener("blur", () => {
+        window.clearTimeout(this._noteTimer);
+        this._commitNote();
+      });
+    }
     const audioFile = this._root.querySelector<HTMLInputElement>(".audio-file");
     this._root.querySelector<HTMLButtonElement>(".upload-audio")?.addEventListener("click", () => audioFile?.click());
     audioFile?.addEventListener("change", () => {
@@ -844,8 +1038,12 @@ export class PinboardCardEditor extends HTMLElement {
     };
     setText(".pages-label", t("editor_pages"));
     setText(".pages-help", t("editor_pages_help"));
-    setText(".picture-label", t("editor_image"));
+    setText(".picture-label", t("editor_section_picture"));
     setText(".picture-help", t("editor_image_help"));
+    setText(".note-label", t("editor_note_editor"));
+    setText(".note-help", t("editor_note_editor_help"));
+    setText(".import-label", t("editor_import"));
+    setText(".import-help", t("editor_import_help"));
     setText(".upload span", t("editor_upload"));
     setText(".clear span", t("editor_clear"));
     setText(".remove-page span", t("editor_remove_page"));
@@ -936,9 +1134,19 @@ export class PinboardCardEditor extends HTMLElement {
     const currentPage = this._page();
     const showPicture = currentKind === "image" || hasPicture(currentPage);
     const showAudio = currentKind === "audio" || hasAudio(currentPage);
+    const showNote = currentKind !== "audio" || hasNote(currentPage);
     this._root.querySelector(".picture")?.classList.toggle("hidden", !showPicture);
     this._renderMarkers(showPicture);
     this._renderAudioEditor(showAudio);
+    this._renderNoteBlock(showNote);
+    this._applySectionState({
+      picture: true,
+      markers: Array.isArray(currentPage.markers) && currentPage.markers.length > 0,
+      note: currentKind !== "image",
+      audio: true,
+      import: false,
+      preview: true,
+    });
     this._removePageButton?.classList.toggle("hidden", pages.length <= 1);
     this._moveLeftButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex === 0);
     this._moveRightButton?.classList.toggle("hidden", pages.length <= 1 || this._pageIndex >= pages.length - 1);
@@ -1007,7 +1215,6 @@ export class PinboardCardEditor extends HTMLElement {
     if (kind !== "audio" || hasNote(page)) {
       schema.push(
         section("note", "mdi:note-text-outline", kind === "note" || kind === "both", [
-          { name: "note", selector: { text: { multiline: true } } },
           { name: "todo_entity", selector: { entity: { filter: [{ domain: "todo" }] } } },
           { name: "note_entity", selector: { entity: {} } },
           {
@@ -1046,6 +1253,20 @@ export class PinboardCardEditor extends HTMLElement {
                   options: [
                     { value: "", label: t("color_none") },
                     ...Object.keys(NOTE_COLOR_PRESETS).map((name) => ({ value: name, label: t(`color_${name}`) })),
+                  ],
+                },
+              },
+            },
+            {
+              name: "text_color",
+              selector: {
+                select: {
+                  mode: "dropdown",
+                  custom_value: true,
+                  options: [
+                    { value: "", label: t("text_color_auto") },
+                    { value: "light", label: t("text_color_light") },
+                    { value: "dark", label: t("text_color_dark") },
                   ],
                 },
               },
@@ -1130,6 +1351,7 @@ export class PinboardCardEditor extends HTMLElement {
           { name: "checklist_writeback", selector: { boolean: {} } },
           { name: "todo_add", selector: { boolean: {} } },
           { name: "todo_show_completed", selector: { boolean: {} } },
+          { name: "show_history", selector: { boolean: {} } },
         ]),
       ]),
       section("upload_settings", "mdi:folder-image", t("editor_upload_settings"), false, [
@@ -1164,6 +1386,7 @@ export class PinboardCardEditor extends HTMLElement {
       todo_entity: page.todo_entity ?? "",
       expires: page.expires ?? "",
       color: page.color ?? "",
+      text_color: page.text_color ?? "",
       audio: typeof page.audio === "object" && page.audio !== null ? page.audio.media_content_id : page.audio ?? "",
       audio_entity: page.audio_entity ?? "",
       visible_entity: firstCondition(page)?.entity ?? "",

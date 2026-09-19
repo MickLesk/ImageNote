@@ -330,7 +330,7 @@ test("expired pages are dimmed or hidden, colours and expiry dates show", async 
   const { page, context } = await openDemo();
   const boiler = card(page, 13);
   const cur = () => boiler.locator(".face.current");
-  assert.equal(await boiler.locator(".dots button").count(), 4);
+  assert.equal(await boiler.locator(".dots button").count(), 5);
   await boiler.locator(".dots button").nth(2).click();
   await page.waitForTimeout(800);
   assert.equal(await cur().evaluate((el) => el.classList.contains("expired")), true);
@@ -340,6 +340,10 @@ test("expired pages are dimmed or hidden, colours and expiry dates show", async 
   assert.match(await cur().locator(".note-meta").innerText(), /Until/);
   const bg = await cur().evaluate((el) => getComputedStyle(el).getPropertyValue("--pinboard-note-background").trim());
   assert.equal(bg, "#d4f5cd");
+  await boiler.locator(".dots button").nth(4).click();
+  await page.waitForTimeout(800);
+  const text = await cur().evaluate((el) => getComputedStyle(el).getPropertyValue("--pinboard-note-text").trim());
+  assert.equal(text, "#ffffff");
 
   const hidden = await page.evaluate(() => {
     const el = document.createElement("pinboard-card");
@@ -396,6 +400,7 @@ test("the editor imports pictures from a media folder, reorders by drag and drop
     window.__configs = [];
     document.querySelector("pinboard-card-editor").addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
   });
+  await editor.locator(".import-section > summary").click(); // the section starts collapsed
   await editor.locator(".import-folder").fill("holiday");
   await editor.locator(".import").click();
   await page.waitForFunction(() => window.__configs.length > 0);
@@ -579,6 +584,74 @@ test("unrelated state changes do not re-render the card", async () => {
   });
   assert.equal(count.unrelated, 0);
   assert.equal(count.related, 1);
+  await context.close();
+});
+
+test("the history panel lists past values with the person who changed them", async () => {
+  const { page, context } = await openDemo();
+  const fridge = card(page, 1);
+  const cur = () => fridge.locator(".face.current");
+  await fridge.locator(".stage").click();
+  await page.waitForTimeout(800);
+  assert.equal(await cur().locator(".history-button").isVisible(), true);
+  await cur().locator(".history-button").click();
+  await page.waitForFunction(() => document.querySelectorAll("#grid > .cell > pinboard-card")[1].shadowRoot.querySelectorAll(".history-row").length > 0);
+  const rows = await cur().locator(".history-row").allInnerTexts();
+  assert.equal(rows.length, 2); // the repeated value collapses
+  assert.match(rows[0], /Mickey/);
+  assert.match(rows[0], /Milk is running low/);
+  assert.match(rows[1], /Automation or system/);
+  assert.equal(await cur().locator(".note-body").isVisible(), false);
+  await cur().locator(".history-button").click();
+  assert.equal(await cur().locator(".note-body").isVisible(), true);
+  await context.close();
+});
+
+test("to-do items show details and can be edited or deleted on the card", async () => {
+  const { page, context } = await openDemo();
+  const todo = card(page, 12);
+  await todo.scrollIntoViewIfNeeded();
+  const cur = () => todo.locator(".face.current");
+  assert.match(await cur().locator(".todo-desc").first().innerText(), /lactose-free/);
+  const item = cur().locator(".todo-item").first(); // Bread
+  await item.hover();
+  await item.locator(".todo-edit").click();
+  await cur().locator(".todo-editor input").fill("Rye bread");
+  await cur().locator(".todo-editor textarea").fill("From the bakery, not the supermarket.");
+  await cur().locator(".todo-editor .btn.primary").click();
+  await page.waitForFunction(() => window.__todoItems.some((i) => i.summary === "Rye bread" && i.description.includes("bakery")));
+  await page.waitForTimeout(200);
+  assert.match(await cur().locator(".todo-desc").nth(0).innerText(), /bakery/);
+  await cur().locator(".todo-item").first().hover();
+  await cur().locator(".todo-item").first().locator(".todo-edit").click();
+  await cur().locator(".todo-editor .btn").first().click(); // delete
+  await page.waitForFunction(() => !window.__todoItems.some((i) => i.summary === "Rye bread"));
+  await context.close();
+});
+
+test("the editor's note block formats text and keeps a live preview", async () => {
+  const { page, context } = await openDemo();
+  const editor = page.locator("pinboard-card-editor");
+  await page.evaluate(() => {
+    const ed = document.querySelector("pinboard-card-editor");
+    ed.setConfig({ type: "custom:pinboard-card", image: "./sample-1.svg", note: "Hello" });
+    window.__configs = [];
+    ed.addEventListener("config-changed", (ev) => window.__configs.push(ev.detail.config));
+  });
+  const block = editor.locator(".note-block");
+  assert.equal(await block.isVisible(), true);
+  const textarea = block.locator(".note-text");
+  assert.equal(await textarea.inputValue(), "Hello");
+  await textarea.click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" world");
+  await block.locator(".md-button").nth(0).click(); // bold, no selection → placeholder
+  assert.equal(await textarea.inputValue(), "Hello world**text**");
+  await textarea.selectText();
+  await block.locator(".md-button").nth(4).click(); // checklist prefix
+  assert.equal(await textarea.inputValue(), "- [ ] Hello world**text**");
+  await page.waitForFunction(() => window.__configs.some((c) => c.note === "- [ ] Hello world**text**"));
+  assert.match(await block.locator(".note-preview").innerText(), /Hello world/);
   await context.close();
 });
 

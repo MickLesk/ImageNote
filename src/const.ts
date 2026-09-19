@@ -23,6 +23,8 @@ export const NOTE_ENTITY_DOMAINS = ["input_text", "text"];
 /** Entities whose state is a picture URL or media id, so the card can write a new photo into them. */
 export const IMAGE_URL_ENTITY_DOMAINS = ["input_text", "text"];
 export const MAX_MARKERS = 20;
+export const HISTORY_DAYS = 30;
+export const HISTORY_ROWS = 15;
 /** Recordings stop on their own after this many seconds. */
 export const MAX_RECORDING_SECONDS = 180;
 
@@ -63,6 +65,7 @@ export const DEFAULTS: Omit<NormalizedConfig, "type" | "entries" | "slides"> = {
   checklist_writeback: true,
   todo_add: true,
   todo_show_completed: true,
+  show_history: true,
   upload_target: "image",
   upload_folder: "pinboard",
   upload_max_size: 1920,

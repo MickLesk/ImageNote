@@ -85,7 +85,8 @@ ha-card {
 .face.hidden-face {
   visibility: hidden;
 }
-.face.tinted .layer-note {
+.face.tinted .layer-note,
+.face.custom-text .layer-note {
   color: var(--pinboard-note-text, var(--primary-text-color));
 }
 .face.tinted .note-header ha-icon,
@@ -697,6 +698,109 @@ ha-card {
 .todo-add button ha-icon {
   --mdc-icon-size: 20px;
 }
+.todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.todo-item .check {
+  flex: 1;
+  min-width: 0;
+}
+.todo-item .todo-edit {
+  width: 30px;
+  height: 30px;
+  margin: 2px 0 0;
+  opacity: 0;
+}
+.todo-item:hover .todo-edit,
+.todo-item .todo-edit:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .todo-item .todo-edit { opacity: 0.6; }
+}
+.todo-desc {
+  margin: -2px 0 6px 30px;
+  font-size: 0.9em;
+  color: var(--secondary-text-color);
+  line-height: 1.4;
+}
+.todo-desc p:first-child { margin-top: 0; }
+.todo-desc p:last-child { margin-bottom: 0; }
+.todo-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 8px 30px;
+}
+.todo-editor input,
+.todo-editor textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.95em;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+  background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
+  color: inherit;
+  outline: none;
+  resize: vertical;
+}
+.todo-editor input:focus,
+.todo-editor textarea:focus {
+  border-color: var(--primary-color);
+}
+.todo-editor .actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.todo-editor .actions .spacer {
+  flex: 1;
+}
+.history-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 16px 8px;
+}
+.history-panel.hidden {
+  display: none;
+}
+.history-row {
+  padding: 6px 0;
+  border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
+}
+.history-row:first-child {
+  border-top: none;
+}
+.history-meta {
+  font-size: 0.75em;
+  color: var(--secondary-text-color);
+  margin-bottom: 2px;
+}
+.history-text {
+  font-size: 0.92em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.history-empty {
+  font-size: 0.85em;
+  color: var(--secondary-text-color);
+  padding: 8px 0;
+}
+.note-footer .history-button {
+  margin-left: auto;
+  width: 30px;
+  height: 30px;
+  margin-top: -4px;
+  margin-bottom: -4px;
+}
+.note-footer .history-button.active {
+  color: var(--primary-color);
+}
 .todo-section {
   margin: 8px 0 2px;
   font-size: 0.75em;
@@ -784,6 +888,35 @@ ha-card {
 }
 .note-editor.visible {
   display: flex;
+}
+.md-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.md-button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.75;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.md-button ha-icon {
+  --mdc-icon-size: 20px;
+}
+.md-button:hover,
+.md-button:focus-visible {
+  background: rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.08);
+  opacity: 1;
+  outline: none;
 }
 .note-editor textarea {
   flex: 1;

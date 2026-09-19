@@ -94,6 +94,15 @@ export function resolveNoteColor(value: string): string | null {
   return NOTE_COLOR_PRESETS[text] ?? value.trim();
 }
 
+/** Resolves the text_color option: auto → contrast to the tint, light/dark → fixed, anything else → as given. */
+export function resolveTextColor(value: string, background: string | null): string | null {
+  const text = value.trim().toLowerCase();
+  if (!text || text === "auto") return background ? contrastTextColor(background) : null;
+  if (text === "light" || text === "white") return "#ffffff";
+  if (text === "dark" || text === "black") return "#1f1f1f";
+  return value.trim();
+}
+
 /** Dark text on light tints, light text on dark ones. Unknown formats fall back to dark text. */
 export function contrastTextColor(color: string): string {
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
