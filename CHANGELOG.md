@@ -5,6 +5,8 @@ All notable changes to Pinboard are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-19
+
 ### Added
 
 - Conditional pages: `visible` on a page shows it only while an entity has
